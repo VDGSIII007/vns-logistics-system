@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VNS Logistics System Portal</title>
+  <meta name="description" content="VNS Logistics internal portal for repair and maintenance, dispatch, tire monitoring, and expenses." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header" id="top">
+    <nav class="nav-shell">
+      <a href="index.html" class="brand" aria-label="VNS Logistics home">
+        <span class="brand-mark">VNS</span>
+        <span class="brand-text">Logistics</span>
+      </a>
+      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav">Menu</button>
+      <div class="nav-links" id="main-nav">
+        <a href="index.html">Home</a>
+        <a href="portal.html" class="active-link">System Portal</a>
+        <a href="repair.html">Repair Module</a>
+        <a href="index.html#contact" class="nav-cta">Request Quote</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero section-pad portal-hero">
+      <div class="container hero-copy">
+        <p class="eyebrow">System Portal</p>
+        <h1>VNS Internal Logistics System</h1>
+        <p class="hero-subtitle">Access internal operations modules for repair, dispatch, tire monitoring and expenses while keeping the VNS brand consistent.</p>
+      </div>
+    </section>
+
+    <section class="section-pad portal-section">
+      <div class="container">
+        <div class="section-heading">
+          <p class="eyebrow">Phase 1</p>
+          <h2>Repair & Maintenance Module</h2>
+          <p>The internal portal starts with a Repair & Maintenance module to capture and structure requests from Viber messages.</p>
+        </div>
+
+        <div class="portal-grid">
+          <a href="repair.html" class="portal-card portal-card-primary">
+            <h3>Repair & Maintenance</h3>
+            <p>Parse messy Viber repair requests into structured request records for logistics and finance teams.</p>
+          </a>
+          <div class="portal-card portal-card-coming">
+            <h3>Dispatch Module</h3>
+            <p>Coming Soon</p>
+          </div>
+          <div class="portal-card portal-card-coming">
+            <h3>Tire Monitoring</h3>
+            <p>Coming Soon</p>
+          </div>
+          <div class="portal-card portal-card-coming">
+            <h3>Expenses</h3>
+            <p>Coming Soon</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-grid">
+      <div>
+        <strong>VNS Logistics</strong>
+        <p>Moving Business Forward</p>
+      </div>
+      <a href="index.html#top">Back to top ↑</a>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Repair & Maintenance Request Module</title>
+  <meta name="description" content="VNS Logistics repair and maintenance request parser for internal operations." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header" id="top">
+    <nav class="nav-shell">
+      <a href="index.html" class="brand" aria-label="VNS Logistics home">
+        <span class="brand-mark">VNS</span>
+        <span class="brand-text">Logistics</span>
+      </a>
+      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav">Menu</button>
+      <div class="nav-links" id="main-nav">
+        <a href="index.html">Home</a>
+        <a href="portal.html">System Portal</a>
+        <a href="repair.html" class="active-link">Repair Module</a>
+        <a href="index.html#contact" class="nav-cta">Request Quote</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="section-pad repair-page">
+      <div class="container">
+        <div class="section-heading">
+          <p class="eyebrow">Repair & Maintenance</p>
+          <h1>Repair & Maintenance Request Module</h1>
+          <p>Paste messy Viber repair messages, parse request details, and generate finance-ready payment messages.</p>
+        </div>
+
+        <div class="repair-panel">
+          <label class="field-label">Viber Message Input</label>
+          <textarea id="repair-input" rows="14">[ Tuesday, 5 May 2026 9:36 AM ] ⁨MayMay⁩: CAA 5021 foton flatbed
+Driver:Cogonon
+1 setTrailer Hose 1,500
+
+NEV 9787 wingvan isuzu
+Driver; Benjamin Laugo
+Headlight Isuzu 6uc1 L@R
+5,000
+
+CAC 8646 WingVan isuzu
+Driver: Lemon Morillo
+2pcs Oil Seal 3,000
+
+CAC 8646 WingVan isuzu
+Driver: Lemon Morillo
+8pcs Brake Bonding 10,400
+
+Total:19,900
+
+[ Tuesday, 5 May 2026 10:28 AM ] ⁨MayMay⁩: 6pcs Hard Hat
+CAC 4355 foton
+Driver: Larry Garibay
+Helper: Arnel Saban
+
+CAB 9837 foton
+Driver; Jebron Aspera
+Helper: Borj</textarea>
+          <button id="parse-button" class="btn btn-primary">Parse Message</button>
+        </div>
+
+        <div class="repair-output">
+          <div class="table-actions">
+            <h2>Parsed Repair Requests</h2>
+            <p>Select a status for each row, then generate the finance message.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="module-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Requested By</th>
+                  <th>Plate Number</th>
+                  <th>Truck Type</th>
+                  <th>Driver</th>
+                  <th>Helper</th>
+                  <th>Item</th>
+                  <th>Quantity</th>
+                  <th>Unit Cost</th>
+                  <th>Total Cost</th>
+                  <th>Category</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="repair-table-body">
+                <tr><td colspan="12" class="empty">No repair records yet. Paste a Viber message and click Parse Message.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="message-panel">
+            <div class="button-group">
+              <button id="save-button" class="btn btn-primary">Save to Google Sheet</button>
+              <button id="generate-button" class="btn btn-outline">Generate Payment Message</button>
+            </div>
+            <div id="save-status" class="save-status"></div>
+            <label class="field-label">Finance / Deposit Message</label>
+            <textarea id="finance-output" rows="10" readonly placeholder="Generated finance message appears here..."></textarea>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-grid">
+      <div>
+        <strong>VNS Logistics</strong>
+        <p>Moving Business Forward</p>
+      </div>
+      <a href="portal.html">Back to portal ↑</a>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
