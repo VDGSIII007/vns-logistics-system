@@ -52,13 +52,34 @@ function extractRequestedBy(lines) {
   return '';
 }
 
+function stripViberPrefix(line) {
+  const normalized = line.replace(/[\u2066-\u2069]/g, '').trim();
+  const prefixMatch = normalized.match(/^\[[^\]]+\]\s*[^:]+:\s*(.*)$/);
+  return prefixMatch ? prefixMatch[1].trim() : normalized;
+}
+
+function normalizePlate(plateText) {
+  const plateMatch = plateText.match(/\b([A-Z]{2,4})\s?(\d{3,4})\b/);
+  return plateMatch ? `${plateMatch[1]} ${plateMatch[2]}` : '';
+}
+
+function parsePrice(value) {
+  if (!value) return '';
+  return parseFloat(value.replace(/,/g, ''));
+}
+
+function findTotalMatch(line) {
+  const matches = Array.from(line.matchAll(/\d{1,3}(?:,\d{3})*(?:\.\d+)?/g));
+  if (!matches.length) return null;
+  const quantityMatch = line.match(/^(\d+)\s*(?:pcs|pc|set)\b/i);
+  if (matches.length === 1 && quantityMatch && matches[0].index === 0) return null;
+  return matches[matches.length - 1];
+}
+
 function parseSegment(segment) {
   const cleaned = segment.replace(/[\u2066-\u2069]/g, '').trim();
   const rawLines = cleaned.split(/\r?\n/).map(line => line.trim());
-  const cleanedLines = rawLines.map(line => {
-    const match = line.match(/^\[.*?\] .*?: (.*)$/);
-    return match ? match[1].trim() : line;
-  });
+  const cleanedLines = rawLines.map(stripViberPrefix);
   const lines = [];
   for (const line of cleanedLines) {
     if (!line) continue;
@@ -71,14 +92,14 @@ function parseSegment(segment) {
 
   const dateMatch = cleaned.match(/\[.*?(\d{1,2}\s+[A-Za-z]+\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)?)/i);
   const date = dateMatch ? dateMatch[1] : '';
-  const requestedBy = extractRequestedBy(lines);
-  const plateMatch = cleaned.match(/\b([A-Z]{2,4}\s?\d{3,4})\b/i);
-  const plateNumber = plateMatch ? plateMatch[1].replace(/\s+/g, ' ') : '';
-  const truckTypeMatch = cleaned.match(/\b(foton|isuzu|wingvan|flatbed)\b/i);
+  const requestedBy = extractRequestedBy(rawLines);
+  const parseText = lines.join('\n');
+  const plateNumber = normalizePlate(parseText);
+  const truckTypeMatch = parseText.match(/\b(foton|isuzu|wingvan|flatbed)\b/i);
   const truckType = truckTypeMatch ? truckTypeMatch[1] : '';
-  const driverMatch = cleaned.match(/driver\s*[:;]\s*(.+)/i);
+  const driverMatch = parseText.match(/driver\s*[:;]\s*(.+)/i);
   const driver = driverMatch ? driverMatch[1].trim() : '';
-  const helperMatch = cleaned.match(/helper\s*[:;]\s*(.+)/i);
+  const helperMatch = parseText.match(/helper\s*[:;]\s*(.+)/i);
   const helper = helperMatch ? helperMatch[1].trim() : '';
 
   const items = [];
@@ -88,24 +109,25 @@ function parseSegment(segment) {
     if (/^Total:/i.test(normalizedLine)) continue;
     if (/^Driver[:;]/i.test(normalizedLine) || /^Helper[:;]/i.test(normalizedLine)) continue;
 
-    const hasPrice = /(\d{1,3}(?:,\d{3})*(?:\.\d+)?)/.test(normalizedLine);
+    const totalMatch = findTotalMatch(normalizedLine);
+    const hasPrice = Boolean(totalMatch);
     const hasQuantity = /^(\d+)\s*(?:pcs|pc|set)\b/i.test(normalizedLine);
     const hasItemKeyword = /\b(hard hat|headlight|hose|seal|bonding|oil seal|trailer hose|isuzu|foton|wingvan|flatbed)\b/i.test(normalizedLine);
-    const isPlateLine = /\b([A-Z]{2,3}\s?\d{4})\b/i.test(normalizedLine) && !hasQuantity && !/hard hat|headlight|hose|seal|bonding/i.test(normalizedLine);
+    const isPlateLine = /\b([A-Z]{2,4})\s?(\d{3,4})\b/.test(normalizedLine) && !hasQuantity && !/hard hat|headlight|hose|seal|bonding/i.test(normalizedLine);
     if (!hasPrice && !hasQuantity && !hasItemKeyword) continue;
     if (isPlateLine && !/hard hat/i.test(normalizedLine)) continue;
 
-    const totalMatch = normalizedLine.match(/(\d{1,3}(?:,\d{3})*(?:\.\d+)?)(?!.*\d{1,3}(?:,\d{3})*(?:\.\d+)?)/);
-    const totalCost = totalMatch ? parseFloat(totalMatch[1].replace(/,/g, '')) : '';
+    const totalCost = totalMatch ? parsePrice(totalMatch[0]) : '';
     const textBefore = totalMatch ? normalizedLine.slice(0, totalMatch.index).trim() : normalizedLine;
-    const qtyMatch = textBefore.match(/^(\d+(?:\s*(?:pcs|pc|set))?)\b/i);
-    const quantity = qtyMatch ? qtyMatch[1] : '';
+    const qtyMatch = textBefore.match(/^(\d+)\s*(pcs|pc|set)?\s*/i);
+    const quantity = qtyMatch ? `${qtyMatch[1]}${qtyMatch[2] ? ` ${qtyMatch[2].toLowerCase()}` : ''}` : '';
     let item = textBefore;
     if (qtyMatch) item = textBefore.slice(qtyMatch[0].length).trim();
     if (!item) item = normalizedLine;
 
     const category = /hard hat/i.test(item) ? 'Safety Equipment' : 'Repair Parts';
-    const unitCost = quantity && totalCost ? totalCost / Number(quantity) : '';
+    const quantityNumber = qtyMatch ? Number(qtyMatch[1]) : '';
+    const unitCost = quantityNumber && totalCost ? totalCost / quantityNumber : '';
 
     items.push({
       date,
@@ -204,6 +226,7 @@ function buildFinanceMessage(rows) {
     if (row.driver) parts.push(`Driver: ${row.driver}`);
     if (row.helper) parts.push(`Helper: ${row.helper}`);
     if (row.item) parts.push(`Item: ${row.item}`);
+    if (row.quantity) parts.push(`Qty: ${row.quantity}`);
     if (row.totalCost) parts.push(`Total: ${row.totalCost}`);
     if (row.status) parts.push(`Status: ${row.status}`);
     return `- ${parts.join(' | ')}`;
