@@ -37,6 +37,14 @@
         </div>
 
         <div class="repair-panel">
+          <label class="field-label" for="request-type-select">Request Type</label>
+          <select id="request-type-select" class="repair-type-select">
+            <option value="Auto Detect">Auto Detect</option>
+            <option value="Parts Request">Parts Request</option>
+            <option value="Completed Repair">Completed Repair</option>
+            <option value="Repair Monitoring Update">Repair Monitoring Update</option>
+            <option value="Safety Equipment Request">Safety Equipment Request</option>
+          </select>
           <label class="field-label">Viber Message Input</label>
           <textarea id="repair-input" rows="14">[ Tuesday, 5 May 2026 9:36 AM ] ⁨MayMay⁩: CAA 5021 foton flatbed
 Driver:Cogonon
@@ -71,28 +79,38 @@ Helper: Borj</textarea>
         <div class="repair-output">
           <div class="table-actions">
             <h2>Parsed Repair Requests</h2>
-            <p>Select a status for each row, then generate the finance message.</p>
+            <p>Select statuses and fill any repair details before saving.</p>
           </div>
           <div class="table-wrap">
             <table class="module-table">
               <thead>
                 <tr>
-                  <th>Date</th>
+                  <th>Request Type</th>
+                  <th>Date Requested</th>
+                  <th>Date Finished</th>
                   <th>Requested By</th>
                   <th>Plate Number</th>
                   <th>Truck Type</th>
                   <th>Driver</th>
                   <th>Helper</th>
+                  <th>Work Done</th>
                   <th>Item</th>
                   <th>Quantity</th>
                   <th>Unit Cost</th>
+                  <th>Parts Cost</th>
+                  <th>Labor Cost</th>
                   <th>Total Cost</th>
                   <th>Category</th>
+                  <th>Mechanic</th>
+                  <th>Photo Link</th>
+                  <th>Receipt Link</th>
                   <th>Status</th>
+                  <th>Repair Status</th>
+                  <th>Payment Status</th>
                 </tr>
               </thead>
               <tbody id="repair-table-body">
-                <tr><td colspan="12" class="empty">No repair records yet. Paste a Viber message and click Parse Message.</td></tr>
+                <tr><td colspan="22" class="empty">No repair records yet. Paste a Viber message and click Parse Message.</td></tr>
               </tbody>
             </table>
           </div>
@@ -103,8 +121,72 @@ Helper: Borj</textarea>
               <button id="generate-button" class="btn btn-outline">Generate Payment Message</button>
             </div>
             <div id="save-status" class="save-status"></div>
-            <label class="field-label">Finance / Deposit Message</label>
-            <textarea id="finance-output" rows="10" readonly placeholder="Generated finance message appears here..."></textarea>
+            <label class="field-label">Finance / Repair Monitoring Message</label>
+            <textarea id="finance-output" rows="10" readonly placeholder="Generated finance or repair monitoring message appears here..."></textarea>
+          </div>
+        </div>
+
+        <div class="saved-records">
+          <div class="table-actions">
+            <div>
+              <h2>Saved Repair Records</h2>
+              <p>Filter records saved in the Repair_Requests sheet.</p>
+            </div>
+            <button id="refresh-records-button" class="btn btn-outline">Refresh Records</button>
+          </div>
+
+          <div class="records-filters">
+            <label>
+              <span>Plate Number</span>
+              <input id="records-plate-filter" type="text" placeholder="Search plate">
+            </label>
+            <label>
+              <span>Request Type</span>
+              <select id="records-type-filter">
+                <option value="">All Types</option>
+                <option value="Parts Request">Parts Request</option>
+                <option value="Completed Repair">Completed Repair</option>
+                <option value="Repair Monitoring Update">Repair Monitoring Update</option>
+                <option value="Safety Equipment Request">Safety Equipment Request</option>
+              </select>
+            </label>
+            <label>
+              <span>Status</span>
+              <select id="records-status-filter">
+                <option value="">All Statuses</option>
+                <option value="Draft">Draft</option>
+                <option value="For Review">For Review</option>
+                <option value="Approved">Approved</option>
+                <option value="For Payment">For Payment</option>
+                <option value="Paid">Paid</option>
+                <option value="Completed">Completed</option>
+              </select>
+            </label>
+          </div>
+
+          <div id="records-status" class="save-status"></div>
+
+          <div class="table-wrap">
+            <table class="module-table">
+              <thead>
+                <tr>
+                  <th>Request_ID</th>
+                  <th>Request_Type</th>
+                  <th>Date_Requested</th>
+                  <th>Plate_Number</th>
+                  <th>Repair_Parts</th>
+                  <th>Work_Done</th>
+                  <th>Quantity</th>
+                  <th>Total_Cost</th>
+                  <th>Status</th>
+                  <th>Repair_Status</th>
+                  <th>Payment_Status</th>
+                </tr>
+              </thead>
+              <tbody id="saved-records-body">
+                <tr><td colspan="11" class="empty">Click Refresh Records to load saved repair records.</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
