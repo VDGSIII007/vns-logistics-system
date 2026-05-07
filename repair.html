@@ -36,65 +36,205 @@
           <p>Paste messy Viber repair messages, parse request details, and generate finance-ready payment messages.</p>
         </div>
 
+        <div class="garage-monitoring">
+          <div class="table-actions">
+            <div>
+              <h2>Garage / For Repair Monitoring</h2>
+              <p>Garage truck list is pulled from existing dispatch/geofence Apps Script.</p>
+              <p class="garage-placeholder-note">Data source: VNS BOTTLE DISPATCH, VNS SUGAR DISPATCH, VNS CAPSCROWN DISPATCH, and VNS PREFORMRESIN DISPATCH.</p>
+            </div>
+          </div>
+
+          <div class="garage-dashboard-row">
+            <div class="garage-stat">
+              <span>Majada Garage</span>
+              <strong id="majada-garage-count">0</strong>
+            </div>
+            <div class="garage-stat">
+              <span>Valenzuela Garage</span>
+              <strong id="valenzuela-garage-count">0</strong>
+            </div>
+            <div class="garage-stat">
+              <span>Total Shown</span>
+              <strong id="garage-total-shown">0</strong>
+            </div>
+            <div class="garage-stat">
+              <span>Hidden Old GPS Records</span>
+              <strong id="garage-hidden-old-count">0</strong>
+            </div>
+          </div>
+
+          <div class="garage-toolbar">
+            <div class="garage-refresh-actions">
+              <label class="garage-filter-label">
+                <span>Timestamp</span>
+                <select id="garage-time-filter">
+                  <option value="24h">Last 24 hours</option>
+                  <option value="3d" selected>Last 3 days</option>
+                  <option value="7d">Last 7 days</option>
+                  <option value="all">All</option>
+                </select>
+              </label>
+              <button id="refresh-garage-trucks-button" class="btn btn-outline" type="button">Refresh Garage Trucks</button>
+              <span class="garage-stale-warning">Older GPS records are hidden by default.</span>
+            </div>
+            <span id="garage-trucks-status" class="garage-load-status">Loading garage trucks...</span>
+          </div>
+
+          <div class="garage-summary-grid">
+            <section class="garage-card">
+              <div class="garage-card-head">
+                <h3>Trucks at Majada Garage</h3>
+                <strong id="majada-garage-card-count">0</strong>
+              </div>
+              <div class="table-wrap garage-scroll-table">
+                <table class="module-table garage-table compact-garage-table">
+                  <thead>
+                    <tr>
+                      <th>Plate Number</th>
+                      <th>Status</th>
+                      <th>Timestamp</th>
+                      <th>Source</th>
+                      <th>Map Link</th>
+                    </tr>
+                  </thead>
+                  <tbody id="majada-garage-body">
+                    <tr><td colspan="5" class="empty">No Majada garage trucks loaded yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="garage-card">
+              <div class="garage-card-head">
+                <h3>Trucks at Valenzuela Garage</h3>
+                <strong id="valenzuela-garage-card-count">0</strong>
+              </div>
+              <div class="table-wrap garage-scroll-table">
+                <table class="module-table garage-table compact-garage-table">
+                  <thead>
+                    <tr>
+                      <th>Plate Number</th>
+                      <th>Status</th>
+                      <th>Timestamp</th>
+                      <th>Source</th>
+                      <th>Map Link</th>
+                    </tr>
+                  </thead>
+                  <tbody id="valenzuela-garage-body">
+                    <tr><td colspan="5" class="empty">No Valenzuela garage trucks loaded yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <section class="garage-card for-repair-section">
+            <div class="garage-card-head">
+              <h3>For Repair Trucks</h3>
+              <button id="add-for-repair-button" class="btn btn-primary" type="button">+ Add For Repair Unit</button>
+            </div>
+            <form id="for-repair-local-form" class="garage-form" hidden>
+              <label><span>Plate Number</span><input type="text" data-for-repair-field="plateNumber" placeholder="ABC 1234"></label>
+              <label>
+                <span>Garage Location</span>
+                <select data-for-repair-field="garageLocation">
+                  <option value="Majada Garage">Majada Garage</option>
+                  <option value="Valenzuela Garage">Valenzuela Garage</option>
+                  <option value="Other">Other</option>
+                </select>
+              </label>
+              <label class="wide-field"><span>Repair Issue</span><textarea rows="3" data-for-repair-field="repairIssue" placeholder="Describe repair issue"></textarea></label>
+              <label><span>Start Date</span><input type="date" data-for-repair-field="startDate"></label>
+              <label><span>End Date</span><input type="date" data-for-repair-field="endDate"></label>
+              <label>
+                <span>Repair Status</span>
+                <select data-for-repair-field="repairStatus">
+                  <option value="For Repair">For Repair</option>
+                  <option value="Ongoing">Ongoing</option>
+                  <option value="Done">Done</option>
+                </select>
+              </label>
+              <label class="wide-field"><span>Remarks</span><textarea rows="3" data-for-repair-field="remarks" placeholder="Optional notes"></textarea></label>
+              <div class="manual-actions">
+                <button class="btn btn-primary" type="submit">Save</button>
+                <button id="cancel-for-repair-button" class="btn btn-outline" type="button">Cancel</button>
+              </div>
+            </form>
+            <div id="for-repair-local-status" class="save-status"></div>
+            <div class="table-wrap">
+              <table class="module-table garage-table for-repair-table">
+                <thead>
+                  <tr>
+                    <th>Plate Number</th>
+                    <th>Garage Location</th>
+                    <th>Repair Issue</th>
+                    <th>Start Date</th>
+                    <th>End Date</th>
+                    <th>Repair Status</th>
+                    <th>Remarks</th>
+                  </tr>
+                </thead>
+                <tbody id="for-repair-local-body">
+                  <tr><td colspan="7" class="empty">No for repair trucks added yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div class="module-tabs" role="tablist" aria-label="Repair input modes">
+          <button class="module-tab active" type="button" id="viber-tab" data-tab-target="viber-panel" role="tab" aria-selected="true">Viber Message Parser</button>
+          <button class="module-tab" type="button" id="manual-tab" data-tab-target="manual-panel" role="tab" aria-selected="false">Manual User Input</button>
+        </div>
+
+        <div id="viber-panel" class="tab-panel active" role="tabpanel" aria-labelledby="viber-tab">
         <div class="repair-panel">
           <label class="field-label" for="request-type-select">Request Type</label>
           <select id="request-type-select" class="repair-type-select">
             <option value="Auto Detect">Auto Detect</option>
             <option value="Parts Request">Parts Request</option>
+            <option value="Labor Payment Request">Labor Payment Request</option>
             <option value="Completed Repair">Completed Repair</option>
             <option value="Repair Monitoring Update">Repair Monitoring Update</option>
             <option value="Safety Equipment Request">Safety Equipment Request</option>
           </select>
           <label class="field-label">Viber Message Input</label>
-          <textarea id="repair-input" rows="14">[ Tuesday, 5 May 2026 9:36 AM ] ⁨MayMay⁩: CAA 5021 foton flatbed
-Driver:Cogonon
-1 setTrailer Hose 1,500
-
-NEV 9787 wingvan isuzu
-Driver; Benjamin Laugo
-Headlight Isuzu 6uc1 L@R
-5,000
-
-CAC 8646 WingVan isuzu
-Driver: Lemon Morillo
-2pcs Oil Seal 3,000
-
-CAC 8646 WingVan isuzu
-Driver: Lemon Morillo
-8pcs Brake Bonding 10,400
-
-Total:19,900
-
-[ Tuesday, 5 May 2026 10:28 AM ] ⁨MayMay⁩: 6pcs Hard Hat
-CAC 4355 foton
-Driver: Larry Garibay
-Helper: Arnel Saban
-
-CAB 9837 foton
-Driver; Jebron Aspera
-Helper: Borj</textarea>
-          <button id="parse-button" class="btn btn-primary">Parse Message</button>
+          <textarea id="repair-input" rows="14" placeholder="Paste Viber repair, labor, equipment, or completed repair message here..."></textarea>
+          <div class="button-group">
+            <button id="parse-button" class="btn btn-primary">Parse Message</button>
+            <button id="example-button" class="btn btn-outline" type="button">Example</button>
+          </div>
         </div>
 
         <div class="repair-output">
           <div class="table-actions">
-            <h2>Parsed Repair Requests</h2>
-            <p>Select statuses and fill any repair details before saving.</p>
+            <div>
+              <h2>Parsed Repair Requests</h2>
+              <p>Select rows, statuses, and fill any repair details before saving.</p>
+            </div>
+            <div class="button-group">
+              <button id="select-all-rows-button" class="btn btn-outline" type="button">Select All</button>
+              <button id="unselect-all-rows-button" class="btn btn-outline" type="button">Unselect All</button>
+              <button id="remove-unchecked-rows-button" class="btn btn-outline" type="button">Remove Selected Rows</button>
+            </div>
           </div>
           <div class="table-wrap">
             <table class="module-table">
               <thead>
                 <tr>
-                  <th>Request Type</th>
+                  <th>Select</th>
+                  <th>Type</th>
                   <th>Date Requested</th>
                   <th>Date Finished</th>
                   <th>Requested By</th>
                   <th>Plate Number</th>
                   <th>Truck Type</th>
                   <th>Driver</th>
+                  <th>Payee</th>
                   <th>Helper</th>
                   <th>Work Done</th>
-                  <th>Item</th>
+                  <th>Parts / Item</th>
                   <th>Quantity</th>
                   <th>Unit Cost</th>
                   <th>Parts Cost</th>
@@ -110,7 +250,7 @@ Helper: Borj</textarea>
                 </tr>
               </thead>
               <tbody id="repair-table-body">
-                <tr><td colspan="22" class="empty">No repair records yet. Paste a Viber message and click Parse Message.</td></tr>
+                <tr><td colspan="24" class="empty">No repair records yet. Paste a Viber message and click Parse Message.</td></tr>
               </tbody>
             </table>
           </div>
@@ -126,13 +266,120 @@ Helper: Borj</textarea>
           </div>
         </div>
 
+        </div>
+
+        <div id="manual-panel" class="tab-panel" role="tabpanel" aria-labelledby="manual-tab" hidden>
+          <form id="manual-entry-form" class="manual-entry-form simple-manual-form">
+            <div class="manual-form-switch">
+              <label>
+                <span>Request Type</span>
+                <select id="manual-request-type" data-manual-field="requestType">
+                  <option value="Parts Request">Parts Request</option>
+                  <option value="Equipment Request">Equipment Request</option>
+                  <option value="Labor Payment Request">Labor Payment Request</option>
+                  <option value="Completed Repair">Completed Repair</option>
+                  <option value="Repair Monitoring Update">Repair Monitoring Update</option>
+                </select>
+              </label>
+            </div>
+
+            <section class="manual-request-card active" data-manual-form="Parts Request">
+              <div class="manual-card-header parts">
+                <h3>Parts Request</h3>
+              </div>
+              <div class="manual-fields">
+                <label><span>Date</span><input type="date" data-parts-field="date"></label>
+                <label><span>Plate Number</span><input type="text" data-parts-field="plateNumber" placeholder="CAA 5021"></label>
+                <label><span>Truck Type</span><input type="text" data-parts-field="truckType" placeholder="Foton flatbed"></label>
+                <label><span>Driver</span><input type="text" data-parts-field="driver"></label>
+                <label class="wide-field"><span>Parts Needed</span><textarea rows="4" data-parts-field="item"></textarea></label>
+                <label><span>Supplier</span><input type="text" data-parts-field="supplier"></label>
+                <label><span>Payee</span><input type="text" data-parts-field="payee"></label>
+                <label><span>Total Amount</span><input type="number" step="0.01" data-parts-field="totalCost"></label>
+                <label class="wide-field"><span>Remarks</span><textarea rows="3" data-parts-field="remarks"></textarea></label>
+              </div>
+            </section>
+
+            <section class="manual-request-card" data-manual-form="Equipment Request" hidden>
+              <div class="manual-card-header equipment">
+                <h3>Equipment Request</h3>
+              </div>
+              <div class="manual-fields">
+                <label><span>Date</span><input type="date" data-equipment-field="date"></label>
+                <label><span>Equipment Item</span><input type="text" data-equipment-field="item" placeholder="Hard hat"></label>
+                <label><span>Quantity</span><input type="text" data-equipment-field="quantity"></label>
+                <label><span>Unit Price</span><input type="number" step="0.01" data-equipment-field="unitCost"></label>
+                <label class="wide-field"><span>Units Affected</span><textarea rows="4" data-equipment-field="workDone" placeholder="List plates, drivers, helpers, or assigned units"></textarea></label>
+                <label><span>Supplier</span><input type="text" data-equipment-field="supplier"></label>
+                <label><span>Payee</span><input type="text" data-equipment-field="payee"></label>
+                <label><span>Total Amount</span><input type="number" step="0.01" data-equipment-field="totalCost"></label>
+                <label class="wide-field"><span>Remarks</span><textarea rows="3" data-equipment-field="remarks"></textarea></label>
+              </div>
+            </section>
+
+            <section class="manual-request-card" data-manual-form="Labor Payment Request" hidden>
+              <div class="manual-card-header labor">
+                <h3>Labor Payment Request</h3>
+              </div>
+              <div class="manual-fields">
+                <label><span>Date</span><input type="date" data-labor-field="date"></label>
+                <label><span>Plate Number</span><input type="text" data-labor-field="plateNumber"></label>
+                <label><span>Driver</span><input type="text" data-labor-field="driver"></label>
+                <label class="wide-field"><span>Work Done</span><textarea rows="4" data-labor-field="workDone"></textarea></label>
+                <label><span>Payee</span><input type="text" data-labor-field="payee"></label>
+                <label><span>Total Labor Amount</span><input type="number" step="0.01" data-labor-field="totalCost"></label>
+                <label class="wide-field"><span>Remarks</span><textarea rows="3" data-labor-field="remarks"></textarea></label>
+              </div>
+            </section>
+
+            <section class="manual-request-card" data-manual-form="Completed Repair" hidden>
+              <div class="manual-card-header completed">
+                <h3>Completed Repair</h3>
+              </div>
+              <div class="manual-fields">
+                <label><span>Date Finished</span><input type="date" data-completed-field="dateFinished"></label>
+                <label><span>Plate Number</span><input type="text" data-completed-field="plateNumber"></label>
+                <label><span>Driver</span><input type="text" data-completed-field="driver"></label>
+                <label class="wide-field"><span>Work Done</span><textarea rows="4" data-completed-field="workDone"></textarea></label>
+                <label class="wide-field"><span>Parts Used</span><textarea rows="4" data-completed-field="item"></textarea></label>
+                <label><span>Labor Cost</span><input type="number" step="0.01" data-completed-field="laborCost"></label>
+                <label><span>Mechanic</span><input type="text" data-completed-field="mechanic"></label>
+                <label><span>Total Cost</span><input type="number" step="0.01" data-completed-field="totalCost"></label>
+                <label class="wide-field"><span>Remarks</span><textarea rows="3" data-completed-field="remarks"></textarea></label>
+              </div>
+            </section>
+
+            <section class="manual-request-card" data-manual-form="Repair Monitoring Update" hidden>
+              <div class="manual-card-header monitoring">
+                <h3>Repair Monitoring Update</h3>
+              </div>
+              <div class="manual-fields">
+                <label><span>Date</span><input type="date" data-monitoring-field="date"></label>
+                <label><span>Plate Number</span><input type="text" data-monitoring-field="plateNumber"></label>
+                <label><span>Driver</span><input type="text" data-monitoring-field="driver"></label>
+                <label class="wide-field"><span>Update / Work Done</span><textarea rows="4" data-monitoring-field="workDone"></textarea></label>
+                <label><span>Mechanic</span><input type="text" data-monitoring-field="mechanic"></label>
+                <label class="wide-field"><span>Remarks</span><textarea rows="3" data-monitoring-field="remarks"></textarea></label>
+              </div>
+            </section>
+
+            <div class="manual-actions">
+              <button id="manual-save-button" class="btn btn-primary" type="submit">Save</button>
+              <div id="manual-save-status" class="save-status"></div>
+            </div>
+          </form>
+        </div>
+
         <div class="saved-records">
           <div class="table-actions">
             <div>
               <h2>Saved Repair Records</h2>
-              <p>Filter records saved in the Repair_Requests sheet.</p>
+              <p>Filter records saved in the VNS_Repair_Master / Repair_Requests sheet.</p>
             </div>
-            <button id="refresh-records-button" class="btn btn-outline">Refresh Records</button>
+            <div class="button-group">
+              <button id="save-status-changes-button" class="btn btn-primary" type="button">Save Status Changes</button>
+              <button id="refresh-records-button" class="btn btn-outline" type="button">Refresh Records</button>
+            </div>
           </div>
 
           <div class="records-filters">
@@ -145,6 +392,8 @@ Helper: Borj</textarea>
               <select id="records-type-filter">
                 <option value="">All Types</option>
                 <option value="Parts Request">Parts Request</option>
+                <option value="Equipment Request">Equipment Request</option>
+                <option value="Labor Payment Request">Labor Payment Request</option>
                 <option value="Completed Repair">Completed Repair</option>
                 <option value="Repair Monitoring Update">Repair Monitoring Update</option>
                 <option value="Safety Equipment Request">Safety Equipment Request</option>
@@ -166,27 +415,54 @@ Helper: Borj</textarea>
 
           <div id="records-status" class="save-status"></div>
 
+          <div class="records-summary">
+            <div>
+              <span>Total records shown</span>
+              <strong id="records-count">0</strong>
+            </div>
+            <div>
+              <span>Total cost shown</span>
+              <strong id="records-total-cost">PHP 0</strong>
+            </div>
+          </div>
+
           <div class="table-wrap">
             <table class="module-table">
               <thead>
                 <tr>
-                  <th>Request_ID</th>
-                  <th>Request_Type</th>
-                  <th>Date_Requested</th>
-                  <th>Plate_Number</th>
-                  <th>Repair_Parts</th>
-                  <th>Work_Done</th>
+                  <th>Record ID</th>
+                  <th>Type</th>
+                  <th>Date Requested</th>
+                  <th>Plate Number</th>
+                  <th>Driver</th>
+                  <th>Category</th>
+                  <th>Parts / Item</th>
+                  <th>Work Done</th>
                   <th>Quantity</th>
-                  <th>Total_Cost</th>
+                  <th>Total Cost</th>
                   <th>Status</th>
-                  <th>Repair_Status</th>
-                  <th>Payment_Status</th>
+                  <th>Repair Status</th>
+                  <th>Payment Status</th>
+                  <th>Mechanic</th>
+                  <th>Remarks</th>
+                  <th>View Details</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="saved-records-body">
-                <tr><td colspan="11" class="empty">Click Refresh Records to load saved repair records.</td></tr>
+                <tr><td colspan="17" class="empty">No saved repair records found.</td></tr>
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <div id="record-details-panel" class="record-details-panel" hidden>
+          <div class="record-details-card">
+            <div class="record-details-header">
+              <h2>Repair Record Details</h2>
+              <button id="close-record-details" class="details-close" type="button" aria-label="Close details">Close</button>
+            </div>
+            <div id="record-details-content" class="record-details-content"></div>
           </div>
         </div>
       </div>
