@@ -51,6 +51,9 @@ const recordDetailsContent = document.getElementById('record-details-content');
 const closeRecordDetails = document.getElementById('close-record-details');
 const refreshGarageTrucksButton = document.getElementById('refresh-garage-trucks-button');
 const garageTimeFilter = document.getElementById('garage-time-filter');
+const garageTruckSearch = document.getElementById('garageTruckSearch');
+const garageTruckSearchBtn = document.getElementById('garageTruckSearchBtn');
+const garageTruckClearBtn = document.getElementById('garageTruckClearBtn');
 const garageTrucksStatus = document.getElementById('garage-trucks-status');
 const majadaGarageBody = document.getElementById('majada-garage-body');
 const valenzuelaGarageBody = document.getElementById('valenzuela-garage-body');
@@ -69,6 +72,7 @@ const forRepairLocalBody = document.getElementById('for-repair-local-body');
 let savedRepairRecords = [];
 let hiddenMisalignedRecordCount = 0;
 let garageTruckRecords = [];
+let garageTruckSearchQuery = '';
 let localForRepairTrucks = [];
 
 const REPAIR_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzSxpVjoHxkXo95FIJL6MBWFsHQBaRbWU-AabblQ1e15jSJpYZTmA4rc41g3uTH2j_x5w/exec";
@@ -165,7 +169,7 @@ function stripViberPrefix(line) {
 
 function normalizePlate(plateText) {
   const plateMatch = String(plateText || '').toUpperCase().match(/\b([A-Z]{2,4})\s?(\d{3,4})\b/);
-  return plateMatch ? `${plateMatch[1]} ${plateMatch[2]}` : '';
+  return plateMatch ? `${plateMatch[1]}${plateMatch[2]}` : '';
 }
 
 function parsePrice(value) {
@@ -289,6 +293,187 @@ function findTotalMatch(line) {
   const quantityMatch = line.match(/^(\d+)\s*(?:pcs|pc|set)\b/i);
   if (matches.length === 1 && quantityMatch && matches[0].index === 0) return null;
   return matches[matches.length - 1];
+}
+
+function normalizeRequestDate(value) {
+  const text = String(value || '').trim();
+  const match = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (!match) return text;
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  const year = match[3].length === 2 ? 2000 + Number(match[3]) : Number(match[3]);
+  if (!month || !day || !year) return text;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function parseRepairLabelLine(line) {
+  const match = String(line || '').match(/^([A-Za-z][A-Za-z /\t]*?)\s*[:;]\s*(.*)$/);
+  if (!match) return null;
+  const rawLabel = match[1].replace(/\s+/g, ' ').trim().toLowerCase();
+  const value = match[2].trim();
+  const labels = {
+    date: 'date',
+    plate: 'plate',
+    truck: 'truck',
+    driver: 'driver',
+    helper: 'helper',
+    item: 'item',
+    items: 'item',
+    'parts needed': 'item',
+    'parts used': 'item',
+    'equipment item': 'item',
+    supplier: 'supplier',
+    payee: 'payee',
+    total: 'total',
+    'total cost': 'total',
+    remarks: 'remarks',
+    remark: 'remarks',
+    'work done': 'workDone',
+    done: 'workDone',
+    update: 'workDone'
+  };
+  const label = labels[rawLabel];
+  return label ? { label, value } : null;
+}
+
+function requestHasScopedContent(request) {
+  return ['item', 'supplier', 'payee', 'totalCost', 'remarks', 'workDone'].some(field => String(request[field] || '').trim());
+}
+
+function requestCanCommit(request) {
+  return Boolean(String(request.item || '').trim() || String(request.totalCost || '').trim());
+}
+
+function appendRequestField(request, field, value) {
+  const text = String(value || '').trim();
+  if (!text) return;
+  request[field] = request[field] ? `${request[field]}\n${text}` : text;
+}
+
+function extractQuantityFromItem(item) {
+  const match = String(item || '').match(/\b(\d+)\s*(pcs?|pieces?|sets?|set)\b/i);
+  if (!match) return { quantity: '', unit: '', item: String(item || '').trim() };
+  const unit = match[2].toLowerCase().replace(/^pieces?$/, 'pcs').replace(/^pc$/, 'pcs').replace(/^sets$/, 'set');
+  let cleanedItem = String(item || '').trim();
+  if (match.index === 0) {
+    cleanedItem = cleanedItem.slice(match[0].length).trim();
+  }
+  return {
+    quantity: match[1],
+    unit,
+    item: cleanedItem || String(item || '').trim()
+  };
+}
+
+function normalizePayeeName(value) {
+  const text = String(value || '').trim();
+  if (!text || text !== text.toUpperCase() || !/^[A-Z .'-]+$/.test(text)) return text;
+  return text.toLowerCase().replace(/\b[a-z]/g, char => char.toUpperCase());
+}
+
+function createRepairRowFromRequest(request, carryForward, requestTypeOverride) {
+  if (!requestCanCommit(request)) return null;
+
+  const selectedRequestType = requestTypeOverride && requestTypeOverride !== 'Auto Detect'
+    ? requestTypeOverride
+    : detectRequestType([request.item, request.workDone, request.remarks].join('\n'));
+  const requestType = selectedRequestType === 'Labor Payment Request' ? 'Parts Request' : selectedRequestType;
+  const defaultStatuses = getDefaultStatuses(requestType);
+  const totalNumber = parsePrice(String(request.totalCost || '').match(/\d[\d,]*(?:\.\d+)?/)?.[0] || '');
+  const quantityInfo = extractQuantityFromItem(request.item);
+  const quantityNumber = quantityInfo.quantity ? Number(quantityInfo.quantity) : '';
+  const unitCost = quantityNumber && totalNumber ? totalNumber / quantityNumber : '';
+  const totalCost = totalNumber !== '' ? formatCurrency(totalNumber) : '';
+  const category = getCategoryForRequest(requestType, quantityInfo.item);
+
+  return applyRequestTypeRules({
+    requestType,
+    date: normalizeRequestDate(request.date),
+    dateFinished: '',
+    requestedBy: request.requestedBy || '',
+    plateNumber: normalizePlate(request.plateNumber) || carryForward.plateNumber || '',
+    truckType: request.truckType || carryForward.truckType || '',
+    driver: request.driver || carryForward.driver || '',
+    helper: request.helper || carryForward.helper || '',
+    workDone: request.workDone || '',
+    item: quantityInfo.item,
+    quantity: quantityInfo.quantity ? `${quantityInfo.quantity} ${quantityInfo.unit}` : '',
+    unitCost: unitCost !== '' ? formatCurrency(unitCost) : '',
+    partsCost: requestType === 'Labor Payment Request' ? '' : totalCost,
+    laborCost: requestType === 'Labor Payment Request' ? totalCost : '',
+    totalCost,
+    category,
+    mechanic: '',
+    photoLink: '',
+    receiptLink: '',
+    supplier: request.supplier || '',
+    payee: normalizePayeeName(request.payee),
+    remarks: request.remarks || '',
+    status: defaultStatuses.status,
+    repairStatus: defaultStatuses.repairStatus,
+    paymentStatus: defaultStatuses.paymentStatus
+  });
+}
+
+function parseRequestBlockMessage(message, requestTypeOverride = 'Auto Detect') {
+  const rawLines = String(message || '')
+    .replace(/[\u2066-\u2069]/g, '')
+    .split(/\r?\n/)
+    .map(stripViberPrefix)
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  const rows = [];
+  const carryForward = { plateNumber: '', truckType: '', driver: '', helper: '' };
+  let current = {};
+  let activeMultilineField = '';
+
+  const commitCurrent = () => {
+    const row = createRepairRowFromRequest(current, carryForward, requestTypeOverride);
+    if (!row) return;
+    rows.push(row);
+    if (row.plateNumber) carryForward.plateNumber = row.plateNumber;
+    if (row.truckType) carryForward.truckType = row.truckType;
+    if (row.driver) carryForward.driver = row.driver;
+    if (row.helper) carryForward.helper = row.helper;
+  };
+
+  for (const line of rawLines) {
+    const labeled = parseRepairLabelLine(line);
+
+    if (labeled && (labeled.label === 'date' || labeled.label === 'plate') && requestHasScopedContent(current)) {
+      commitCurrent();
+      current = {};
+      activeMultilineField = '';
+    }
+
+    if (!labeled) {
+      if (activeMultilineField) appendRequestField(current, activeMultilineField, line);
+      continue;
+    }
+
+    const { label, value } = labeled;
+    activeMultilineField = '';
+
+    if (label === 'date') current.date = normalizeRequestDate(value);
+    if (label === 'plate') current.plateNumber = normalizePlate(value);
+    if (label === 'truck') current.truckType = value;
+    if (label === 'driver') current.driver = value;
+    if (label === 'helper') current.helper = value;
+    if (label === 'supplier') current.supplier = value;
+    if (label === 'payee') current.payee = value;
+    if (label === 'remarks') current.remarks = value;
+    if (label === 'workDone') current.workDone = value;
+    if (label === 'total') current.totalCost = value;
+    if (label === 'item') appendRequestField(current, 'item', value);
+
+    if (['item', 'remarks', 'workDone'].includes(label) && !value) {
+      activeMultilineField = label;
+    }
+  }
+
+  commitCurrent();
+  return rows;
 }
 
 function parseSegment(segment, requestTypeOverride = 'Auto Detect') {
@@ -526,6 +711,10 @@ function parseViberMessage(message, requestTypeOverride = 'Auto Detect') {
     return parseLaborPaymentMessage(message);
   }
 
+  if (selectedRequestType === 'Parts Request' || selectedRequestType === 'Safety Equipment Request') {
+    return parseRequestBlockMessage(message, requestTypeOverride);
+  }
+
   const segments = message.split(/\n\s*\n/).map(segment => segment.trim()).filter(Boolean);
   let rows = [];
   for (const segment of segments) {
@@ -600,7 +789,7 @@ function buildRepairTable(rows) {
   }
 
   tableBody.innerHTML = rows.map(row => `
-    <tr>
+    <tr data-supplier="${escapeHtml(row.supplier)}" data-remarks="${escapeHtml(row.remarks)}">
       <td><input data-field="selected" type="checkbox" checked aria-label="Select parsed row"></td>
       <td>
         <select data-field="requestType">
@@ -663,6 +852,7 @@ function collectTableRows() {
       truckType: cells[6].textContent.trim(),
       driver: cells[7].textContent.trim(),
       payee: cells[8].textContent.trim(),
+      supplier: tr.dataset.supplier || '',
       helper: cells[9].textContent.trim(),
       workDone: getInput('workDone'),
       item: cells[11].textContent.trim(),
@@ -677,7 +867,8 @@ function collectTableRows() {
       receiptLink: getInput('receiptLink'),
       status: getInput('status') || 'Draft',
       repairStatus: getInput('repairStatus'),
-      paymentStatus: getInput('paymentStatus')
+      paymentStatus: getInput('paymentStatus'),
+      remarks: tr.dataset.remarks || ''
     });
   }).filter(Boolean);
 }
@@ -860,6 +1051,20 @@ function filterGarageTrucksByTimestamp(records) {
   });
 }
 
+function normalizeGaragePlateSearch(value) {
+  return String(value || '').replace(/\s+/g, '').toUpperCase();
+}
+
+function filterGarageTrucksBySearch(records) {
+  const query = normalizeGaragePlateSearch(garageTruckSearchQuery);
+  if (!query) return records;
+
+  return records.filter(record => {
+    const plateNumber = normalizeGaragePlateSearch(getGarageTruckValue(record, 'Plate_Number'));
+    return plateNumber.includes(query);
+  });
+}
+
 function countHiddenOldGarageRecords(records) {
   const filter = garageTimeFilter?.value || '3d';
   if (filter === 'all') return 0;
@@ -867,11 +1072,22 @@ function countHiddenOldGarageRecords(records) {
 }
 
 function splitGarageTruckRecords(records) {
-  const filteredRecords = filterGarageTrucksByTimestamp(records);
+  const filteredRecords = filterGarageTrucksBySearch(filterGarageTrucksByTimestamp(records));
   return {
     majada: filteredRecords.filter(record => getGarageTruckLocation(record) === 'Majada Garage'),
     valenzuela: filteredRecords.filter(record => getGarageTruckLocation(record) === 'Valenzuela Garage')
   };
+}
+
+function applyGarageTruckSearch() {
+  garageTruckSearchQuery = garageTruckSearch?.value.trim() || '';
+  renderGarageTrucks();
+}
+
+function clearGarageTruckSearch() {
+  garageTruckSearchQuery = '';
+  if (garageTruckSearch) garageTruckSearch.value = '';
+  renderGarageTrucks();
 }
 
 function formatGarageTimestamp(value) {
@@ -968,16 +1184,19 @@ function renderGarageTrucks() {
   const garageTrucks = splitGarageTruckRecords(garageTruckRecords);
   const totalShown = garageTrucks.majada.length + garageTrucks.valenzuela.length;
   const hiddenOldRecords = countHiddenOldGarageRecords(garageTruckRecords);
+  const searchQuery = garageTruckSearchQuery.trim();
+  const emptySuffix = searchQuery ? ` matching "${searchQuery}"` : '';
 
-  renderGarageTruckRows(majadaGarageBody, garageTrucks.majada, 'No Majada garage trucks found for this time range.');
-  renderGarageTruckRows(valenzuelaGarageBody, garageTrucks.valenzuela, 'No Valenzuela garage trucks found for this time range.');
+  renderGarageTruckRows(majadaGarageBody, garageTrucks.majada, `No Majada garage trucks found for this time range${emptySuffix}.`);
+  renderGarageTruckRows(valenzuelaGarageBody, garageTrucks.valenzuela, `No Valenzuela garage trucks found for this time range${emptySuffix}.`);
   if (majadaGarageCount) majadaGarageCount.textContent = String(garageTrucks.majada.length);
   if (valenzuelaGarageCount) valenzuelaGarageCount.textContent = String(garageTrucks.valenzuela.length);
   if (majadaGarageCardCount) majadaGarageCardCount.textContent = String(garageTrucks.majada.length);
   if (valenzuelaGarageCardCount) valenzuelaGarageCardCount.textContent = String(garageTrucks.valenzuela.length);
   if (garageTotalShown) garageTotalShown.textContent = String(totalShown);
   if (garageHiddenOldCount) garageHiddenOldCount.textContent = String(hiddenOldRecords);
-  garageTrucksStatus.textContent = `Showing ${totalShown} of ${garageTruckRecords.length} garage truck${garageTruckRecords.length === 1 ? '' : 's'}.`;
+  const searchText = searchQuery ? ` matching "${searchQuery}"` : '';
+  garageTrucksStatus.textContent = `Showing ${totalShown} of ${garageTruckRecords.length} garage truck${garageTruckRecords.length === 1 ? '' : 's'}${searchText}.`;
 }
 
 function getForRepairLocalValue(field) {
@@ -1020,6 +1239,80 @@ function renderLocalForRepairTrucks() {
 function truncateRecordValue(value, maxLength = 70) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
+}
+
+function getStatusBadgeClass(type, value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return 'status-pending';
+
+  if (/(cancel|reject|declin)/.test(normalized)) return 'status-cancelled';
+  if (/unpaid/.test(normalized)) return 'status-unpaid';
+  if (/(paid|done|finished|complete)/.test(normalized)) {
+    if (/partial/.test(normalized)) return 'status-partial';
+    return type === 'payment' ? 'status-paid' : 'status-completed';
+  }
+  if (/partial/.test(normalized)) return 'status-partial';
+  if (/for deposit/.test(normalized)) return 'status-for-deposit';
+  if (/(ongoing|in progress|for repair|for payment)/.test(normalized)) return 'status-ongoing';
+  if (/(approved|review)/.test(normalized)) return 'status-approved';
+  if (/(pending|draft|n\/a|na)/.test(normalized)) return 'status-pending';
+  return 'status-pending';
+}
+
+function renderStatusBadge(type, value) {
+  const text = truncateRecordValue(value || 'Not set', 24);
+  return `<span class="status-badge ${getStatusBadgeClass(type, value)}">${escapeHtml(text)}</span>`;
+}
+
+function formatDateDisplay(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return truncateRecordValue(text, 24);
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  }).format(date);
+}
+
+function formatPeso(value) {
+  const cleaned = cleanMoney(value);
+  if (!cleaned) return '';
+  const amount = Number(cleaned);
+  if (!Number.isFinite(amount)) return '';
+  return `PHP ${formatCurrency(amount)}`;
+}
+
+function getTypeBadgeClass(value) {
+  const normalized = String(value || '').toLowerCase();
+  if (/labor/.test(normalized)) return 'type-labor';
+  if (/completed/.test(normalized)) return 'type-completed';
+  if (/monitoring/.test(normalized)) return 'type-monitoring';
+  if (/equipment|safety/.test(normalized)) return 'type-equipment';
+  return 'type-parts';
+}
+
+function getCategoryBadgeClass(value) {
+  const normalized = String(value || '').toLowerCase();
+  if (/labor/.test(normalized)) return 'category-labor';
+  if (/equipment|safety/.test(normalized)) return 'category-equipment';
+  return 'category-repair-parts';
+}
+
+function renderTypeBadge(value) {
+  const text = truncateRecordValue(value || 'Request', 34);
+  return `<span class="type-badge ${getTypeBadgeClass(value)}">${escapeHtml(text)}</span>`;
+}
+
+function renderCategoryBadge(value) {
+  const text = truncateRecordValue(value || 'Uncategorized', 28);
+  return `<span class="category-badge ${getCategoryBadgeClass(value)}">${escapeHtml(text)}</span>`;
+}
+
+function renderClampedCell(value) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return `<span class="cell-clamp" title="${escapeHtml(text)}">${escapeHtml(text)}</span>`;
 }
 
 function isPaymentStatusEditable(record) {
@@ -1115,31 +1408,31 @@ function renderSavedRecords() {
   }
 
   if (!records.length) {
-    savedRecordsBody.innerHTML = '<tr><td colspan="17" class="empty">No saved repair records found.</td></tr>';
+    savedRecordsBody.innerHTML = '<tr><td colspan="15" class="empty">No saved repair records found.</td></tr>';
     return;
   }
 
   savedRecordsBody.innerHTML = records.map(record => {
     const recordIndex = savedRepairRecords.indexOf(record);
+    const recordId = getRecordValue(record, 'Request_ID');
+    const plateNumber = truncateRecordValue(getRecordValue(record, 'Plate_Number'), 18);
     return `
     <tr>
-      <td class="record-id-cell">${escapeHtml(truncateRecordValue(getRecordValue(record, 'Request_ID'), 36))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Request_Type'), 34))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Date_Requested'), 24))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Plate_Number'), 18))}</td>
+      <td class="cell-plate">${escapeHtml(plateNumber)}</td>
+      <td>${escapeHtml(formatDateDisplay(getRecordValue(record, 'Date_Requested')))}</td>
+      <td>${renderTypeBadge(getRecordValue(record, 'Request_Type'))}</td>
       <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Driver'), 28))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Category'), 28))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Repair_Parts')))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Work_Done')))}</td>
+      <td>${renderCategoryBadge(getRecordValue(record, 'Category'))}</td>
+      <td>${renderClampedCell(getRecordValue(record, 'Repair_Parts'))}</td>
+      <td>${renderClampedCell(getRecordValue(record, 'Work_Done'))}</td>
       <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Quantity'), 18))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Total_Cost'), 18))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Status'), 24))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Repair_Status'), 24))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Payment_Status'), 24))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Mechanic'), 28))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Remarks')))}</td>
+      <td class="cell-money">${escapeHtml(formatPeso(getRecordValue(record, 'Total_Cost')))}</td>
+      <td>${renderStatusBadge('status', getRecordValue(record, 'Status'))}</td>
+      <td>${renderStatusBadge('repair', getRecordValue(record, 'Repair_Status'))}</td>
+      <td>${renderStatusBadge('payment', getRecordValue(record, 'Payment_Status'))}</td>
       <td><button class="details-button" type="button" data-record-index="${recordIndex}">View Details</button></td>
       <td class="actions-cell">${buildPaymentStatusActions(record, recordIndex)}</td>
+      <td class="record-id-cell cell-muted" title="${escapeHtml(recordId)}">${escapeHtml(truncateRecordValue(recordId, 36))}</td>
     </tr>
   `;
   }).join('');
@@ -1149,7 +1442,7 @@ async function loadSavedRepairRecords() {
   if (!savedRecordsBody || !recordsStatus) return;
   recordsStatus.textContent = 'Loading saved records...';
   updateRecordsSummary([]);
-  savedRecordsBody.innerHTML = '<tr><td colspan="17" class="empty">Loading saved repair records...</td></tr>';
+  savedRecordsBody.innerHTML = '<tr><td colspan="15" class="empty">Loading saved repair records...</td></tr>';
 
   try {
     const response = await fetch(`${REPAIR_WEB_APP_URL}?action=list`);
@@ -1162,7 +1455,7 @@ async function loadSavedRepairRecords() {
   } catch (error) {
     savedRepairRecords = [];
     updateRecordsSummary([]);
-    savedRecordsBody.innerHTML = '<tr><td colspan="17" class="empty">Unable to load saved records. Please try again.</td></tr>';
+    savedRecordsBody.innerHTML = '<tr><td colspan="15" class="empty">Unable to load saved records. Please try again.</td></tr>';
     recordsStatus.textContent = 'Error loading saved records.';
   }
 }
@@ -1528,6 +1821,24 @@ if (refreshGarageTrucksButton) {
 
 if (garageTimeFilter) {
   garageTimeFilter.addEventListener('change', renderGarageTrucks);
+}
+
+if (garageTruckSearchBtn) {
+  garageTruckSearchBtn.addEventListener('click', applyGarageTruckSearch);
+}
+
+if (garageTruckSearch) {
+  garageTruckSearch.addEventListener('input', applyGarageTruckSearch);
+  garageTruckSearch.addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      applyGarageTruckSearch();
+    }
+  });
+}
+
+if (garageTruckClearBtn) {
+  garageTruckClearBtn.addEventListener('click', clearGarageTruckSearch);
 }
 
 if (addForRepairButton && forRepairLocalForm) {

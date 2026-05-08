@@ -9,6 +9,241 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
+  <style>
+    .garage-filter-label input {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #fff;
+      font: inherit;
+      font-weight: 800;
+    }
+
+    .garage-search-label {
+      min-width: 220px;
+    }
+
+    .garage-search-button,
+    .garage-clear-button {
+      padding: 10px 16px;
+    }
+
+    .repair-entry-section {
+      margin-top: 36px;
+    }
+
+    .section-heading-block {
+      margin-bottom: 18px;
+    }
+
+    .section-heading-block h2 {
+      margin: 0 0 6px;
+      font-size: 26px;
+      font-weight: 800;
+      color: #202124;
+      letter-spacing: -0.02em;
+    }
+
+    .section-heading-block p {
+      margin: 0;
+      color: #6b7280;
+      font-weight: 600;
+    }
+
+    .saved-records-header-row {
+      margin-bottom: 18px;
+    }
+
+    .saved-records-title-block {
+      max-width: 760px;
+    }
+
+    .saved-records-title-block h2 {
+      margin-bottom: 4px;
+    }
+
+    .saved-records-kicker {
+      margin: 0;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .records-control-panel {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 18px;
+      box-shadow: 0 14px 34px rgba(0, 0, 0, .05);
+      margin-bottom: 18px;
+    }
+
+    .saved-records-actions-panel {
+      margin-top: 18px;
+      margin-bottom: 18px;
+      width: 100%;
+      padding: 18px 20px;
+      border: 1px solid #e5e7eb;
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 10px 28px rgba(15, 23, 42, .06);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    .saved-records-actions-panel p {
+      margin: 0;
+      color: #6b7280;
+      font-weight: 600;
+      line-height: 1.5;
+      max-width: 680px;
+    }
+
+    .saved-records-action-buttons {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .records-summary {
+      margin-top: 16px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      max-width: 100%;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: 12px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .status-pending { background: #f3f4f6; color: #374151; }
+    .status-approved, .status-partial { background: #dbeafe; color: #1d4ed8; }
+    .status-paid, .status-completed { background: #dcfce7; color: #166534; }
+    .status-cancelled { background: #fee2e2; color: #b91c1c; }
+    .status-ongoing, .status-for-deposit { background: #ffedd5; color: #c2410c; }
+    .status-unpaid { background: #fee2e2; color: #b91c1c; }
+
+    .saved-records .saved-records-table-wrap {
+      max-height: 640px;
+      overflow: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 18px;
+      background: #fff;
+    }
+
+    .saved-records .saved-records-table {
+      width: 100%;
+      min-width: 1480px;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 14px;
+    }
+
+    .saved-records .saved-records-table th {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: #fafafa;
+      color: #111827;
+      font-weight: 800;
+      padding: 14px 12px;
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .saved-records .saved-records-table td {
+      padding: 12px 10px;
+      border-bottom: 1px solid #eef0f3;
+      vertical-align: middle;
+      color: #1f2937;
+      line-height: 1.35;
+    }
+
+    .saved-records .saved-records-table tbody tr:hover {
+      background: #fff7f7;
+    }
+
+    .saved-records .saved-records-table td.actions-cell {
+      min-width: 220px;
+      white-space: normal;
+    }
+
+    .cell-plate {
+      font-weight: 800;
+      color: #111827;
+      letter-spacing: .3px;
+      white-space: nowrap;
+    }
+
+    .cell-money {
+      font-weight: 800;
+      color: #111827;
+      white-space: nowrap;
+    }
+
+    .cell-muted {
+      color: #6b7280;
+      font-size: 12px;
+    }
+
+    .cell-clamp {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      max-width: 220px;
+      line-height: 1.4;
+      white-space: normal;
+    }
+
+    .type-badge,
+    .category-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .type-parts { background: #eef2ff; color: #3730a3; }
+    .type-labor { background: #fff7ed; color: #c2410c; }
+    .type-completed { background: #dcfce7; color: #166534; }
+    .type-monitoring { background: #f3f4f6; color: #374151; }
+    .type-equipment { background: #ecfeff; color: #0e7490; }
+    .category-repair-parts { background: #fee2e2; color: #b91c1c; }
+    .category-labor { background: #f3f4f6; color: #374151; }
+    .category-equipment { background: #ecfeff; color: #0e7490; }
+
+    @media (max-width: 768px) {
+      .saved-records-actions-panel {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .saved-records-action-buttons {
+        width: 100%;
+      }
+
+      .saved-records-action-buttons button {
+        width: 100%;
+      }
+
+      .record-id-cell {
+        display: none;
+      }
+    }
+  </style>
 </head>
 <body>
   <header class="site-header" id="top">
@@ -21,7 +256,8 @@
       <div class="nav-links" id="main-nav">
         <a href="index.html">Home</a>
         <a href="portal.html">System Portal</a>
-        <a href="repair.html" class="active-link">Repair Module</a>
+        <a href="repair.html" class="active-link">Repair & Maintenance</a>
+        <a href="parts-inventory.html">Parts Inventory</a>
         <a href="index.html#contact" class="nav-cta">Request Quote</a>
       </div>
     </nav>
@@ -75,6 +311,12 @@
                   <option value="all">All</option>
                 </select>
               </label>
+              <label class="garage-filter-label garage-search-label">
+                <span>Plate Search</span>
+                <input id="garageTruckSearch" type="text" placeholder="Search plate number...">
+              </label>
+              <button id="garageTruckSearchBtn" class="btn btn-outline garage-search-button" type="button">Search</button>
+              <button id="garageTruckClearBtn" class="btn btn-outline garage-clear-button" type="button">Clear</button>
               <button id="refresh-garage-trucks-button" class="btn btn-outline" type="button">Refresh Garage Trucks</button>
               <span class="garage-stale-warning">Older GPS records are hidden by default.</span>
             </div>
@@ -183,12 +425,18 @@
           </section>
         </div>
 
-        <div class="module-tabs" role="tablist" aria-label="Repair input modes">
-          <button class="module-tab active" type="button" id="viber-tab" data-tab-target="viber-panel" role="tab" aria-selected="true">Viber Message Parser</button>
-          <button class="module-tab" type="button" id="manual-tab" data-tab-target="manual-panel" role="tab" aria-selected="false">Manual User Input</button>
-        </div>
+        <section class="repair-entry-section">
+          <div class="section-heading-block">
+            <h2>Inventory & Repair Request Entry</h2>
+            <p>Create repair, labor, equipment, and parts requests from Viber messages or manual input.</p>
+          </div>
 
-        <div id="viber-panel" class="tab-panel active" role="tabpanel" aria-labelledby="viber-tab">
+          <div class="module-tabs" role="tablist" aria-label="Repair input modes">
+            <button class="module-tab active" type="button" id="viber-tab" data-tab-target="viber-panel" role="tab" aria-selected="true">Viber Message Parser</button>
+            <button class="module-tab" type="button" id="manual-tab" data-tab-target="manual-panel" role="tab" aria-selected="false">Manual User Input</button>
+          </div>
+
+          <div id="viber-panel" class="tab-panel active" role="tabpanel" aria-labelledby="viber-tab">
         <div class="repair-panel">
           <label class="field-label" for="request-type-select">Request Type</label>
           <select id="request-type-select" class="repair-type-select">
@@ -268,7 +516,7 @@
 
         </div>
 
-        <div id="manual-panel" class="tab-panel" role="tabpanel" aria-labelledby="manual-tab" hidden>
+          <div id="manual-panel" class="tab-panel" role="tabpanel" aria-labelledby="manual-tab" hidden>
           <form id="manual-entry-form" class="manual-entry-form simple-manual-form">
             <div class="manual-form-switch">
               <label>
@@ -368,52 +616,51 @@
               <div id="manual-save-status" class="save-status"></div>
             </div>
           </form>
-        </div>
+          </div>
+        </section>
 
         <div class="saved-records">
-          <div class="table-actions">
-            <div>
+          <div class="saved-records-header-row">
+            <div class="saved-records-title-block">
               <h2>Saved Repair Records</h2>
-              <p>Filter records saved in the VNS_Repair_Master / Repair_Requests sheet.</p>
-            </div>
-            <div class="button-group">
-              <button id="save-status-changes-button" class="btn btn-primary" type="button">Save Status Changes</button>
-              <button id="refresh-records-button" class="btn btn-outline" type="button">Refresh Records</button>
+              <p class="saved-records-kicker">View and manage saved repair requests using the filters below.</p>
             </div>
           </div>
 
-          <div class="records-filters">
-            <label>
-              <span>Plate Number</span>
-              <input id="records-plate-filter" type="text" placeholder="Search plate">
-            </label>
-            <label>
-              <span>Request Type</span>
-              <select id="records-type-filter">
-                <option value="">All Types</option>
-                <option value="Parts Request">Parts Request</option>
-                <option value="Equipment Request">Equipment Request</option>
-                <option value="Labor Payment Request">Labor Payment Request</option>
-                <option value="Completed Repair">Completed Repair</option>
-                <option value="Repair Monitoring Update">Repair Monitoring Update</option>
-                <option value="Safety Equipment Request">Safety Equipment Request</option>
-              </select>
-            </label>
-            <label>
-              <span>Status</span>
-              <select id="records-status-filter">
-                <option value="">All Statuses</option>
-                <option value="Draft">Draft</option>
-                <option value="For Review">For Review</option>
-                <option value="Approved">Approved</option>
-                <option value="For Payment">For Payment</option>
-                <option value="Paid">Paid</option>
-                <option value="Completed">Completed</option>
-              </select>
-            </label>
-          </div>
+          <div class="records-control-panel">
+            <div class="records-filters">
+              <label>
+                <span>Plate Number</span>
+                <input id="records-plate-filter" type="text" placeholder="Search plate">
+              </label>
+              <label>
+                <span>Request Type</span>
+                <select id="records-type-filter">
+                  <option value="">All Types</option>
+                  <option value="Parts Request">Parts Request</option>
+                  <option value="Equipment Request">Equipment Request</option>
+                  <option value="Labor Payment Request">Labor Payment Request</option>
+                  <option value="Completed Repair">Completed Repair</option>
+                  <option value="Repair Monitoring Update">Repair Monitoring Update</option>
+                  <option value="Safety Equipment Request">Safety Equipment Request</option>
+                </select>
+              </label>
+              <label>
+                <span>Status</span>
+                <select id="records-status-filter">
+                  <option value="">All Statuses</option>
+                  <option value="Draft">Draft</option>
+                  <option value="For Review">For Review</option>
+                  <option value="Approved">Approved</option>
+                  <option value="For Payment">For Payment</option>
+                  <option value="Paid">Paid</option>
+                  <option value="Completed">Completed</option>
+                </select>
+              </label>
+            </div>
 
-          <div id="records-status" class="save-status"></div>
+            <div id="records-status" class="save-status"></div>
+          </div>
 
           <div class="records-summary">
             <div>
@@ -426,14 +673,21 @@
             </div>
           </div>
 
-          <div class="table-wrap">
-            <table class="module-table">
+          <aside class="saved-records-actions-panel">
+            <p>Use the filters to quickly find repair requests by plate number, request type, and status. You can also update statuses and save changes.</p>
+            <div class="saved-records-action-buttons">
+              <button id="save-status-changes-button" class="btn btn-primary" type="button">Save Status Changes</button>
+              <button id="refresh-records-button" class="btn btn-outline" type="button">Refresh Records</button>
+            </div>
+          </aside>
+
+          <div class="table-wrap saved-records-table-wrap">
+            <table class="saved-records-table">
               <thead>
                 <tr>
-                  <th>Record ID</th>
-                  <th>Type</th>
-                  <th>Date Requested</th>
                   <th>Plate Number</th>
+                  <th>Date Requested</th>
+                  <th>Type</th>
                   <th>Driver</th>
                   <th>Category</th>
                   <th>Parts / Item</th>
@@ -443,14 +697,13 @@
                   <th>Status</th>
                   <th>Repair Status</th>
                   <th>Payment Status</th>
-                  <th>Mechanic</th>
-                  <th>Remarks</th>
                   <th>View Details</th>
                   <th>Actions</th>
+                  <th>Record ID</th>
                 </tr>
               </thead>
               <tbody id="saved-records-body">
-                <tr><td colspan="17" class="empty">No saved repair records found.</td></tr>
+                <tr><td colspan="15" class="empty">No saved repair records found.</td></tr>
               </tbody>
             </table>
           </div>

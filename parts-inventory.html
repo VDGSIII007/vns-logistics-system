@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Parts Inventory | VNS Logistics</title>
+  <meta name="description" content="VNS Logistics local parts inventory tracker for stock in, stock out, and item balances." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .inventory-page { background: #fafafa; }
+    .inventory-header { padding-bottom: 36px; }
+    .inventory-header h1 { margin: 0; font-size: clamp(2.5rem, 5vw, 5rem); line-height: .98; letter-spacing: -0.05em; }
+    .inventory-header p { color: #5e6470; font-size: 1.08rem; max-width: 760px; margin: 18px 0 0; }
+    .inventory-summary { display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 14px; margin: 0 0 24px; }
+    .inventory-stat { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px; box-shadow: 0 12px 30px rgba(0,0,0,.05); }
+    .inventory-stat span { display: block; color: var(--muted); font-size: .76rem; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; }
+    .inventory-stat strong { display: block; margin-top: 8px; color: #111827; font-size: 1.7rem; line-height: 1; }
+    .inventory-tabs { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0 20px; }
+    .inventory-tab { border: 1px solid var(--line); background: #fff; color: #222; border-radius: 999px; padding: 12px 18px; font: inherit; font-weight: 900; cursor: pointer; }
+    .inventory-tab.active { background: var(--red); border-color: var(--red); color: #fff; box-shadow: 0 12px 28px rgba(215,25,32,.22); }
+    .inventory-panel { display: none; }
+    .inventory-panel.active { display: block; }
+    .inventory-card { background: #fff; border: 1px solid var(--line); border-radius: 24px; padding: 22px; box-shadow: 0 16px 40px rgba(0,0,0,.05); margin-bottom: 22px; }
+    .inventory-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+    .inventory-card h2 { margin: 0; font-size: 1.35rem; }
+    .inventory-card p { margin: 6px 0 0; color: var(--muted); font-weight: 700; }
+    .inventory-filters, .inventory-form { display: grid; grid-template-columns: repeat(4, minmax(170px, 1fr)); gap: 14px; }
+    .inventory-form label, .inventory-filters label { display: grid; gap: 8px; color: #222; font-size: .84rem; font-weight: 900; }
+    .inventory-form input, .inventory-form select, .inventory-form textarea, .inventory-filters input, .inventory-filters select {
+      width: 100%; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; background: #f8f8f8; font: inherit;
+    }
+    .inventory-form textarea { min-height: 88px; resize: vertical; }
+    .inventory-form .wide-field { grid-column: span 2; }
+    .inventory-form .full-field { grid-column: 1 / -1; }
+    .inventory-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .inventory-status-line { color: var(--red); font-weight: 800; }
+    .parts-in-form, .parts-out-form { display: grid; grid-template-columns: 1fr; gap: 18px; }
+    .parts-form-header { border: 1px solid rgba(215,25,32,.16); border-radius: 20px; background: linear-gradient(135deg, rgba(215,25,32,.07), #fff); padding: 18px 20px; }
+    .parts-form-header h2 { margin: 0; font-size: 1.45rem; }
+    .parts-form-header p { margin: 6px 0 0; color: #4b5563; font-weight: 700; }
+    .parts-form-header .form-helper-text { margin-top: 8px; }
+    .parts-form-section { border: 1px solid #e5e7eb; border-radius: 20px; background: #fff; padding: 18px; }
+    .parts-form-section-title { margin: 0 0 14px; color: #111827; font-size: .92rem; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; }
+    .parts-form-grid { display: grid; gap: 14px; }
+    .parts-form-grid.two-col { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+    .parts-form-grid.four-col { grid-template-columns: repeat(4, minmax(130px, 1fr)); }
+    .parts-form-grid.cost-row { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
+    .form-helper-text { display: block; color: #6b7280; font-size: .76rem; font-weight: 700; line-height: 1.35; }
+    .parts-in-actions { border: 0; background: transparent; padding: 0; }
+    .inventory-table-wrap { max-height: 620px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 18px; background: #fff; }
+    .inventory-table { width: 100%; min-width: 1500px; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+    .inventory-table th { position: sticky; top: 0; z-index: 4; background: #fafafa; color: #111827; padding: 13px 11px; border-bottom: 1px solid #e5e7eb; text-align: left; white-space: nowrap; font-weight: 900; }
+    .inventory-table td { padding: 11px; border-bottom: 1px solid #eef0f3; color: #1f2937; vertical-align: middle; }
+    .inventory-table tbody tr:hover { background: #fff7f7; }
+    .item-name-cell { font-weight: 900; color: #111827; }
+    .money-cell, .stock-cell { font-weight: 900; color: #111827; white-space: nowrap; }
+    .muted-cell { color: #6b7280; font-size: 12px; }
+    .text-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 230px; line-height: 1.35; }
+    .stock-badge, .movement-badge, .type-chip, .category-chip { display: inline-flex; align-items: center; border-radius: 999px; padding: 5px 9px; font-size: 12px; font-weight: 900; white-space: nowrap; }
+    .stock-in { background: #dcfce7; color: #166534; }
+    .stock-low { background: #ffedd5; color: #c2410c; }
+    .stock-out { background: #fee2e2; color: #b91c1c; }
+    .movement-in { background: #dcfce7; color: #166534; }
+    .movement-out { background: #fee2e2; color: #b91c1c; }
+    .type-chip { background: #eef2ff; color: #3730a3; }
+    .category-chip { background: #f3f4f6; color: #374151; }
+    .empty-table { text-align: center; color: var(--muted); padding: 34px; }
+    @media (max-width: 1040px) {
+      .inventory-summary { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+      .inventory-filters, .inventory-form { grid-template-columns: repeat(2, minmax(160px, 1fr)); }
+      .parts-form-grid.four-col { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+      .parts-form-grid.cost-row { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
+    }
+    @media (max-width: 640px) {
+      .inventory-summary, .inventory-filters, .inventory-form { grid-template-columns: 1fr; }
+      .inventory-form .wide-field { grid-column: 1; }
+      .inventory-actions .btn { width: 100%; }
+      .parts-form-grid.two-col, .parts-form-grid.four-col, .parts-form-grid.cost-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header" id="top">
+    <nav class="nav-shell">
+      <a href="index.html" class="brand" aria-label="VNS Logistics home">
+        <span class="brand-mark">VNS</span>
+        <span class="brand-text">Logistics</span>
+      </a>
+      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav">Menu</button>
+      <div class="nav-links" id="main-nav">
+        <a href="index.html">Home</a>
+        <a href="portal.html">System Portal</a>
+        <a href="repair.html">Repair Module</a>
+        <a href="parts-inventory.html" class="active-link">Parts Inventory</a>
+        <a href="portal.html" class="nav-cta">Back to Portal</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="inventory-page">
+    <section class="section-pad">
+      <div class="container">
+        <div class="inventory-header">
+          <p class="eyebrow">Inventory Module</p>
+          <h1>Parts Inventory</h1>
+          <p>Track spare parts, safety equipment, oil, tires, repaired parts, and stock movements.</p>
+        </div>
+
+        <div class="inventory-summary">
+          <div class="inventory-stat"><span>Total Item Types</span><strong id="summary-total-types">0</strong></div>
+          <div class="inventory-stat"><span>Low Stock Items</span><strong id="summary-low-stock">0</strong></div>
+          <div class="inventory-stat"><span>Out of Stock Items</span><strong id="summary-out-stock">0</strong></div>
+          <div class="inventory-stat"><span>Total Inventory Value</span><strong id="summary-stock-value">PHP 0</strong></div>
+          <div class="inventory-stat"><span>Parts Out This Month</span><strong id="summary-out-month">0</strong></div>
+        </div>
+
+        <div class="inventory-tabs" role="tablist" aria-label="Parts inventory sections">
+          <button class="inventory-tab active" type="button" data-inventory-tab="inventory-panel">Inventory</button>
+          <button class="inventory-tab" type="button" data-inventory-tab="parts-in-panel">Parts In</button>
+          <button class="inventory-tab" type="button" data-inventory-tab="parts-out-panel">Parts Out</button>
+          <button class="inventory-tab" type="button" data-inventory-tab="movement-panel">Movement History</button>
+        </div>
+
+        <section id="inventory-panel" class="inventory-panel active">
+          <div class="inventory-card">
+            <div class="inventory-card-head">
+              <div>
+                <h2>Inventory Master</h2>
+                <p>Search stock balances by item, type, category, make, brand, and stock status.</p>
+              </div>
+            </div>
+            <div class="inventory-filters">
+              <label><span>Search Item</span><input id="filter-search" type="text" placeholder="Item name, part no., brand"></label>
+              <label><span>Item Type</span><select id="filter-item-type"></select></label>
+              <label><span>Category</span><select id="filter-category"></select></label>
+              <label><span>Make</span><input id="filter-make" type="text" placeholder="Isuzu, Foton, Universal"></label>
+              <label><span>Brand</span><input id="filter-brand" type="text" placeholder="Brand"></label>
+              <label><span>Stock Status</span><select id="filter-stock-status">
+                <option value="">All Statuses</option>
+                <option value="In Stock">In Stock</option>
+                <option value="Low Stock">Low Stock</option>
+                <option value="Out of Stock">Out of Stock</option>
+              </select></label>
+            </div>
+          </div>
+
+          <div class="inventory-table-wrap">
+            <table class="inventory-table">
+              <thead>
+                <tr>
+                  <th>Item Name</th>
+                  <th>Item Type</th>
+                  <th>Category</th>
+                  <th>Make</th>
+                  <th>Brand</th>
+                  <th>Part Number</th>
+                  <th>Current Stock</th>
+                  <th>Minimum Stock</th>
+                  <th>Average Unit Cost</th>
+                  <th>Stock Value</th>
+                  <th>Storage Location</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="inventory-table-body">
+                <tr><td colspan="12" class="empty-table">No inventory items yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="parts-in-panel" class="inventory-panel">
+          <div class="inventory-card">
+            <form id="parts-in-form" class="inventory-form parts-in-form">
+              <div class="parts-form-header">
+                <h2>Parts In</h2>
+                <p>Record stock received, purchased, returned, recycled, or repaired.</p>
+                <span class="form-helper-text">Leave Plate Number blank for brand-new stock.</span>
+              </div>
+
+              <section class="parts-form-section">
+                <h3 class="parts-form-section-title">Basic Information</h3>
+                <div class="parts-form-grid two-col">
+                  <label><span>Date Received</span><input name="date" type="date" required></label>
+                  <label><span>Plate Number (Optional)</span><input name="plateNumber" type="text" placeholder="Blank for brand-new stock"><small class="form-helper-text">Leave blank for brand-new stock.</small></label>
+                  <label><span>Item Name</span><input name="itemName" type="text" required></label>
+                  <label><span>Item Type</span><select name="itemType" required></select></label>
+                  <label><span>Category</span><select name="category" required></select></label>
+                </div>
+              </section>
+
+              <section class="parts-form-section">
+                <h3 class="parts-form-section-title">Item Details</h3>
+                <div class="parts-form-grid two-col">
+                  <label><span>Make</span><input name="make" type="text" placeholder="Universal"></label>
+                  <label><span>Brand</span><input name="brand" type="text"></label>
+                  <label><span>Model</span><input name="model" type="text"></label>
+                  <label><span>Part Number</span><input name="partNumber" type="text"></label>
+                  <label><span>Serial Number (Optional)</span><input name="serialNumber" type="text"></label>
+                  <label><span>Engine Number (Optional)</span><input name="engineNumber" type="text"></label>
+                  <label><span>Chassis Number (Optional)</span><input name="chassisNumber" type="text"></label>
+                </div>
+              </section>
+
+              <section class="parts-form-section">
+                <h3 class="parts-form-section-title">Stock & Cost</h3>
+                <div class="parts-form-grid four-col">
+                  <label><span>Unit</span><input name="unit" type="text" placeholder="pcs, liters, set" required></label>
+                  <label><span>Quantity In</span><input name="quantity" type="number" min="0.01" step="0.01" required></label>
+                  <label><span>Unit Cost</span><input name="unitCost" type="number" min="0" step="0.01" required></label>
+                  <label><span>Total Cost</span><input name="totalCost" type="number" min="0" step="0.01" readonly><small class="form-helper-text">Auto-calculated from Quantity In x Unit Cost.</small></label>
+                </div>
+              </section>
+
+              <section class="parts-form-section">
+                <h3 class="parts-form-section-title">Receiving Details</h3>
+                <div class="parts-form-grid two-col">
+                  <label><span>Supplier</span><input name="supplier" type="text"></label>
+                  <label><span>Storage Location</span><input name="storageLocation" type="text"></label>
+                  <label><span>Receipt No. (Optional)</span><input name="receiptNo" type="text"></label>
+                  <label><span>Received By</span><input name="receivedBy" type="text"></label>
+                </div>
+              </section>
+
+              <section class="parts-form-section">
+                <h3 class="parts-form-section-title">Notes</h3>
+                <div class="parts-form-grid">
+                  <label><span>Remarks</span><textarea name="remarks"></textarea></label>
+                </div>
+              </section>
+
+              <div class="inventory-actions parts-in-actions">
+                <button class="btn btn-primary" type="submit">Save Parts In</button>
+                <button class="btn btn-outline" type="reset">Clear</button>
+                <span id="parts-in-status" class="inventory-status-line"></span>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section id="parts-out-panel" class="inventory-panel">
+          <div class="inventory-card">
+            <form id="parts-out-form" class="inventory-form parts-out-form">
+              <div class="parts-form-header">
+                <h2>Parts Out</h2>
+                <p>Record stock released or used for a truck/unit.</p>
+                <span class="form-helper-text">Plate Number is required when releasing parts, oil, tires, or safety equipment to a truck.</span>
+              </div>
+
+              <section class="parts-form-section">
+                <h3 class="parts-form-section-title">Release Information</h3>
+                <div class="parts-form-grid two-col">
+                  <label><span>Date Released</span><input name="date" type="date" required></label>
+                  <label><span>Plate Number</span><input name="plateNumber" type="text" placeholder="ABC1234" required><small class="form-helper-text">Required for every Parts Out transaction.</small></label>
+                  <label><span>Driver</span><input name="driver" type="text"></label>
+                  <label><span>Helper</span><input name="helper" type="text"></label>
+                </div>
+              </section>
+
+              <section class="parts-form-section">
+                <h3 class="parts-form-section-title">Item Released</h3>
+                <div class="parts-form-grid two-col">
+                  <label><span>Item Name</span><input name="itemName" list="inventory-item-list" type="text" required></label>
+                  <label><span>Item Type</span><select name="itemType" required></select></label>
+                  <label><span>Category</span><select name="category" required></select></label>
+                  <label><span>Make</span><input name="make" type="text"></label>
+                  <label><span>Brand</span><input name="brand" type="text"></label>
+                  <label><span>Model</span><input name="model" type="text"></label>
+                  <label><span>Part Number</span><input name="partNumber" type="text"></label>
+                </div>
+              </section>
+
+              <section class="parts-form-section">
+                <h3 class="parts-form-section-title">Quantity & Cost</h3>
+                <div class="parts-form-grid cost-row">
+                  <label><span>Quantity Out</span><input name="quantity" type="number" min="0.01" step="0.01" required></label>
+                  <label><span>Unit Cost</span><input name="unitCost" type="number" min="0" step="0.01"></label>
+                  <label><span>Total Cost</span><input name="totalCost" type="number" min="0" step="0.01" readonly><small class="form-helper-text">Auto-calculated from Quantity Out x Unit Cost.</small></label>
+                </div>
+              </section>
+
+              <section class="parts-form-section">
+                <h3 class="parts-form-section-title">Request / Usage Details</h3>
+                <div class="parts-form-grid two-col">
+                  <label><span>Released To</span><input name="releasedTo" type="text"></label>
+                  <label><span>Requested By</span><input name="requestedBy" type="text"></label>
+                  <label><span>Repair Request ID</span><input name="repairRequestId" type="text"></label>
+                  <label><span>Odometer</span><input name="odometer" type="text"></label>
+                  <label class="wide-field"><span>Work Done / Purpose</span><textarea name="workDone"></textarea></label>
+                </div>
+              </section>
+
+              <section class="parts-form-section">
+                <h3 class="parts-form-section-title">Notes</h3>
+                <div class="parts-form-grid">
+                  <label><span>Remarks</span><textarea name="remarks"></textarea></label>
+                </div>
+              </section>
+
+              <div class="inventory-actions parts-in-actions">
+                <button class="btn btn-primary" type="submit">Save Parts Out</button>
+                <button class="btn btn-outline" type="reset">Clear</button>
+                <span id="parts-out-status" class="inventory-status-line"></span>
+              </div>
+            </form>
+            <datalist id="inventory-item-list"></datalist>
+          </div>
+        </section>
+
+        <section id="movement-panel" class="inventory-panel">
+          <div class="inventory-card">
+            <div class="inventory-card-head">
+              <div>
+                <h2>Recent Movements</h2>
+                <p>Review local Parts In and Parts Out movement history.</p>
+              </div>
+            </div>
+          </div>
+          <div class="inventory-table-wrap">
+            <table class="inventory-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Movement Type</th>
+                  <th>Item Name</th>
+                  <th>Item Type</th>
+                  <th>Category</th>
+                  <th>Make</th>
+                  <th>Brand</th>
+                  <th>Part Number</th>
+                  <th>Quantity</th>
+                  <th>Unit Cost</th>
+                  <th>Total Cost</th>
+                  <th>Plate Number</th>
+                  <th>Supplier</th>
+                  <th>Storage Location</th>
+                  <th>Reference ID</th>
+                  <th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody id="movements-table-body">
+                <tr><td colspan="16" class="empty-table">No stock movements yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-grid">
+      <div>
+        <strong>VNS Logistics</strong>
+        <p>Moving Business Forward</p>
+      </div>
+      <a href="portal.html">← Back to Portal</a>
+    </div>
+  </footer>
+
+  <script src="parts-inventory.js"></script>
+</body>
+</html>
