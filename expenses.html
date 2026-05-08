@@ -11,16 +11,30 @@
   <link rel="stylesheet" href="styles.css" />
   <style>
     .expenses-page .repair-panel{margin-bottom:28px}
-    .expenses-filters{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:14px}
+    .expenses-filters{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:14px}
     .expenses-filters label{display:grid;gap:8px;font-weight:900;font-size:.86rem}
-    .expenses-filters select{width:100%;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:#fff;font:inherit}
+    .expenses-filters input,.expenses-filters select{width:100%;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:#fff;font:inherit}
     .summary-grid{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:14px;margin:0 0 28px}
     .summary-card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:20px;box-shadow:0 14px 34px rgba(0,0,0,.05)}
     .summary-card span{display:block;color:var(--muted);font-size:.82rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
     .summary-card strong{display:block;font-size:1.55rem;line-height:1.1;margin-top:10px}
+    .breakdown-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px;margin:0 0 28px}
+    .breakdown-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px}
+    .breakdown-card span{display:block;color:var(--muted);font-size:.78rem;font-weight:800}
+    .breakdown-card strong{display:block;margin-top:6px;font-size:1.08rem}
     .expenses-status{color:var(--muted);font-weight:700;margin:0 0 16px}
+    .expenses-page .module-table th,.expenses-page .module-table td{padding:11px 12px;white-space:nowrap}
+    .expenses-page .module-table th{font-size:.82rem}
+    .details-button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 12px;font:inherit;font-weight:800;cursor:pointer}
+    .details-button:hover{border-color:var(--red);color:var(--red)}
+    .expense-details-row[hidden]{display:none}
+    .expense-details{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:10px;background:#fafafa;padding:18px;border:1px solid var(--line)}
+    .expense-details div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:6px 0}
+    .expense-details span{color:var(--muted);font-weight:700}
+    .expense-details strong{font-weight:900}
     @media(max-width:940px){.expenses-filters,.summary-grid{grid-template-columns:repeat(2,minmax(160px,1fr))}}
-    @media(max-width:620px){.expenses-filters,.summary-grid{grid-template-columns:1fr}}
+    @media(max-width:940px){.breakdown-grid,.expense-details{grid-template-columns:repeat(2,minmax(160px,1fr))}}
+    @media(max-width:620px){.expenses-filters,.summary-grid,.breakdown-grid,.expense-details{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -53,7 +67,7 @@
         <div class="repair-panel">
           <div class="expenses-filters">
             <label>
-              <span>Plate Number</span>
+              <span>Plate</span>
               <select id="plate-filter">
                 <option value="">All Plates</option>
               </select>
@@ -62,12 +76,6 @@
               <span>Month</span>
               <select id="month-filter">
                 <option value="">All Months</option>
-              </select>
-            </label>
-            <label>
-              <span>Year</span>
-              <select id="year-filter">
-                <option value="">All Years</option>
               </select>
             </label>
             <label>
@@ -82,30 +90,65 @@
                 <option value="">All Destinations</option>
               </select>
             </label>
+            <label>
+              <span>Search</span>
+              <input id="search-filter" type="search" placeholder="Search expenses..." />
+            </label>
           </div>
         </div>
 
         <div class="summary-grid" aria-label="Expense summary">
           <div class="summary-card">
-            <span>Total Trips</span>
+            <span>Total Records Shown</span>
             <strong id="total-trips">0</strong>
           </div>
           <div class="summary-card">
-            <span>Total Diesel</span>
-            <strong id="total-diesel">₱0</strong>
+            <span>Total Diesel Cost</span>
+            <strong id="total-diesel">PHP 0</strong>
+          </div>
+          <div class="summary-card">
+            <span>Total Diesel Liters</span>
+            <strong id="total-diesel-liters">-</strong>
+          </div>
+          <div class="summary-card">
+            <span>Average Diesel Price/Liter</span>
+            <strong id="avg-diesel-price">-</strong>
+          </div>
+          <div class="summary-card">
+            <span>Driver Salary</span>
+            <strong id="total-driver">PHP 0</strong>
+          </div>
+          <div class="summary-card">
+            <span>Helper Salary</span>
+            <strong id="total-helper">PHP 0</strong>
           </div>
           <div class="summary-card">
             <span>Total Toll Fee</span>
-            <strong id="total-toll">₱0</strong>
+            <strong id="total-toll">PHP 0</strong>
           </div>
           <div class="summary-card">
             <span>Total Other Expenses</span>
-            <strong id="total-other">₱0</strong>
+            <strong id="total-other">PHP 0</strong>
           </div>
           <div class="summary-card">
-            <span>Total Expense</span>
-            <strong id="total-expense">₱0</strong>
+            <span>Total Expenses</span>
+            <strong id="total-expense">PHP 0</strong>
           </div>
+        </div>
+
+        <div class="breakdown-grid" aria-label="Expense breakdown">
+          <div class="breakdown-card"><span>Pass Way</span><strong id="total-passway">PHP 0</strong></div>
+          <div class="breakdown-card"><span>Parking</span><strong id="total-parking">PHP 0</strong></div>
+          <div class="breakdown-card"><span>Lagay Loaded</span><strong id="total-lagay-loaded">PHP 0</strong></div>
+          <div class="breakdown-card"><span>Lagay Empty</span><strong id="total-lagay-empty">PHP 0</strong></div>
+          <div class="breakdown-card"><span>Luna</span><strong id="total-luna">PHP 0</strong></div>
+          <div class="breakdown-card"><span>Mano</span><strong id="total-mano">PHP 0</strong></div>
+          <div class="breakdown-card"><span>Vulcanize</span><strong id="total-vulcanize">PHP 0</strong></div>
+          <div class="breakdown-card"><span>Allowance Driver</span><strong id="total-allowance-driver">PHP 0</strong></div>
+          <div class="breakdown-card"><span>Allowance Helper</span><strong id="total-allowance-helper">PHP 0</strong></div>
+          <div class="breakdown-card"><span>Hugas Truck</span><strong id="total-hugas-truck">PHP 0</strong></div>
+          <div class="breakdown-card"><span>Checkpoint</span><strong id="total-checkpoint">PHP 0</strong></div>
+          <div class="breakdown-card"><span>Other Expenses</span><strong id="breakdown-other">PHP 0</strong></div>
         </div>
 
         <p id="expenses-status" class="expenses-status">Loading expenses...</p>
@@ -114,18 +157,26 @@
           <table class="module-table">
             <thead>
               <tr>
-                <th>Truck</th>
-                <th>Trip_Date</th>
+                <th>Plate</th>
+                <th>Date</th>
+                <th>Month</th>
                 <th>Source</th>
                 <th>Destination</th>
                 <th>Diesel</th>
-                <th>Toll_Fee</th>
-                <th>Other_Expenses</th>
-                <th>Total_Expense</th>
+                <th>Diesel Liters</th>
+                <th>Diesel Price/Liter</th>
+                <th>Driver Salary</th>
+                <th>Helper Salary</th>
+                <th>Toll Fee</th>
+                <th>Pass Way</th>
+                <th>Parking</th>
+                <th>Other Expenses</th>
+                <th>Total Expense</th>
+                <th>Details</th>
               </tr>
             </thead>
             <tbody id="expenses-table-body">
-              <tr><td colspan="8" class="empty">Loading expense records...</td></tr>
+              <tr><td colspan="16" class="empty">Loading expense records...</td></tr>
             </tbody>
           </table>
         </div>
