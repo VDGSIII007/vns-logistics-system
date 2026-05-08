@@ -172,9 +172,96 @@
       background: #fff7f7;
     }
 
+    .saved-records .saved-records-table tbody tr.has-unsaved-status {
+      background: #fff7ed;
+    }
+
     .saved-records .saved-records-table td.actions-cell {
       min-width: 220px;
       white-space: normal;
+    }
+
+    .saved-records .saved-records-table th.selection-cell,
+    .saved-records .saved-records-table td.selection-cell {
+      width: 46px;
+      min-width: 46px;
+      text-align: center;
+      position: sticky;
+      left: 0;
+      z-index: 4;
+      background: #fff;
+    }
+
+    .saved-records .saved-records-table th.selection-cell {
+      background: #fafafa;
+      z-index: 6;
+    }
+
+    .saved-records-action-buttons .btn {
+      padding: 11px 16px;
+    }
+
+    .viber-followup-panel {
+      display: grid;
+      gap: 14px;
+      margin: 18px 0;
+      padding: 20px;
+      border: 1px solid #e5e7eb;
+      border-radius: 20px;
+      background: #fff;
+      box-shadow: 0 10px 28px rgba(15, 23, 42, .06);
+    }
+
+    .viber-followup-panel[hidden] {
+      display: none;
+    }
+
+    .viber-followup-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .viber-followup-header h3 {
+      margin: 0;
+      font-size: 1.08rem;
+    }
+
+    .viber-followup-header p {
+      margin: 5px 0 0;
+      color: #6b7280;
+      font-weight: 700;
+    }
+
+    .viber-followup-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .viber-followup-panel textarea {
+      width: 100%;
+      min-height: 300px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      background: #fbfbfb;
+      font: inherit;
+      line-height: 1.5;
+      resize: vertical;
+      outline: none;
+    }
+
+    .viber-followup-panel textarea:focus {
+      border-color: rgba(215, 25, 32, .65);
+      box-shadow: 0 0 0 4px rgba(215, 25, 32, .08);
+    }
+
+    .copy-status {
+      color: #166534;
+      font-weight: 800;
     }
 
     .cell-plate {
@@ -676,15 +763,39 @@
           <aside class="saved-records-actions-panel">
             <p>Use the filters to quickly find repair requests by plate number, request type, and status. You can also update statuses and save changes.</p>
             <div class="saved-records-action-buttons">
+              <button id="selectAllSavedRecordsBtn" class="btn btn-outline" type="button">Select All</button>
+              <button id="unselectAllSavedRecordsBtn" class="btn btn-outline" type="button">Unselect All</button>
+              <button id="generateViberFollowupBtn" class="btn btn-outline" type="button">Generate Viber Follow-up Message</button>
               <button id="save-status-changes-button" class="btn btn-primary" type="button">Save Status Changes</button>
               <button id="refresh-records-button" class="btn btn-outline" type="button">Refresh Records</button>
             </div>
           </aside>
 
+          <div id="viberFollowupPanel" class="viber-followup-panel" hidden>
+            <div class="viber-followup-header">
+              <div>
+                <h3>Viber Follow-up Message</h3>
+                <p>Edit if needed, then copy and send to the Viber group.</p>
+              </div>
+              <div class="viber-followup-actions">
+                <button id="editViberFollowupBtn" class="btn btn-outline" type="button">Edit Message</button>
+                <button id="closeViberFollowupBtn" class="btn btn-outline" type="button">Close</button>
+              </div>
+            </div>
+            <textarea id="viberFollowupOutput"></textarea>
+            <div class="viber-followup-actions">
+              <button id="copyViberFollowupBtn" class="btn btn-primary" type="button">Copy Message</button>
+              <button id="clearViberFollowupBtn" class="btn btn-outline" type="button">Clear Message</button>
+              <button id="closeViberFollowupBottomBtn" class="btn btn-outline" type="button">Close</button>
+            </div>
+            <p id="copyViberFollowupStatus" class="copy-status"></p>
+          </div>
+
           <div class="table-wrap saved-records-table-wrap">
             <table class="saved-records-table">
               <thead>
                 <tr>
+                  <th class="selection-cell"><input id="savedRecordsSelectAll" type="checkbox" aria-label="Select all visible saved records"></th>
                   <th>Plate Number</th>
                   <th>Date Requested</th>
                   <th>Type</th>
@@ -694,7 +805,6 @@
                   <th>Work Done</th>
                   <th>Quantity</th>
                   <th>Total Cost</th>
-                  <th>Status</th>
                   <th>Repair Status</th>
                   <th>Payment Status</th>
                   <th>View Details</th>

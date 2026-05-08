@@ -39,6 +39,18 @@ const manualRequestCards = document.querySelectorAll('.manual-request-card');
 const manualSaveStatus = document.getElementById('manual-save-status');
 const saveStatusChangesButton = document.getElementById('save-status-changes-button');
 const refreshRecordsButton = document.getElementById('refresh-records-button');
+const savedRecordsSelectAll = document.getElementById('savedRecordsSelectAll');
+const selectAllSavedRecordsBtn = document.getElementById('selectAllSavedRecordsBtn');
+const unselectAllSavedRecordsBtn = document.getElementById('unselectAllSavedRecordsBtn');
+const generateViberFollowupBtn = document.getElementById('generateViberFollowupBtn');
+const viberFollowupPanel = document.getElementById('viberFollowupPanel');
+const viberFollowupOutput = document.getElementById('viberFollowupOutput');
+const copyViberFollowupBtn = document.getElementById('copyViberFollowupBtn');
+const editViberFollowupBtn = document.getElementById('editViberFollowupBtn');
+const clearViberFollowupBtn = document.getElementById('clearViberFollowupBtn');
+const closeViberFollowupBtn = document.getElementById('closeViberFollowupBtn');
+const closeViberFollowupBottomBtn = document.getElementById('closeViberFollowupBottomBtn');
+const copyViberFollowupStatus = document.getElementById('copyViberFollowupStatus');
 const recordsPlateFilter = document.getElementById('records-plate-filter');
 const recordsTypeFilter = document.getElementById('records-type-filter');
 const recordsStatusFilter = document.getElementById('records-status-filter');
@@ -1284,6 +1296,10 @@ function formatPeso(value) {
   return `PHP ${formatCurrency(amount)}`;
 }
 
+function formatFollowupAmount(value) {
+  return formatPeso(value) || 'PHP 0';
+}
+
 function getTypeBadgeClass(value) {
   const normalized = String(value || '').toLowerCase();
   if (/labor/.test(normalized)) return 'type-labor';
@@ -1315,29 +1331,126 @@ function renderClampedCell(value) {
   return `<span class="cell-clamp" title="${escapeHtml(text)}">${escapeHtml(text)}</span>`;
 }
 
+function getVisibleSavedRecordCheckboxes() {
+  if (!savedRecordsBody) return [];
+  return Array.from(savedRecordsBody.querySelectorAll('.savedRecordCheckbox'));
+}
+
+function setVisibleSavedRecordSelection(checked) {
+  getVisibleSavedRecordCheckboxes().forEach(checkbox => {
+    checkbox.checked = checked;
+  });
+  if (savedRecordsSelectAll) savedRecordsSelectAll.checked = checked && getVisibleSavedRecordCheckboxes().length > 0;
+}
+
+function getSelectedSavedRecords() {
+  return getVisibleSavedRecordCheckboxes()
+    .filter(checkbox => checkbox.checked)
+    .map(checkbox => savedRepairRecords[Number(checkbox.dataset.recordIndex)])
+    .filter(Boolean);
+}
+
+function getFollowupItemText(record) {
+  const item = String(getRecordValue(record, 'Repair_Parts') || '').trim();
+  const workDone = String(getRecordValue(record, 'Work_Done') || '').trim();
+  return item || workDone || '-';
+}
+
+function buildViberFollowupMessage(records) {
+  const lines = ['Good day po.', '', 'For follow-up po ng repair/parts request:', ''];
+  records.forEach((record, index) => {
+    lines.push(`${index + 1}. Plate: ${getRecordValue(record, 'Plate_Number') || '-'}`);
+    lines.push(`Driver: ${getRecordValue(record, 'Driver') || '-'}`);
+    lines.push(`Request Type: ${getRecordValue(record, 'Request_Type') || '-'}`);
+    lines.push(`Item/Work Done: ${getFollowupItemText(record)}`);
+    lines.push(`Amount: ${formatFollowupAmount(getRecordValue(record, 'Total_Cost'))}`);
+    lines.push(`Repair Status: ${getRecordValue(record, 'Repair_Status') || '-'}`);
+    lines.push(`Payment Status: ${getRecordValue(record, 'Payment_Status') || '-'}`);
+    lines.push(`Remarks: ${getRecordValue(record, 'Remarks') || '-'}`);
+    lines.push('');
+  });
+  lines.push('Kindly update po if done, pending, paid, or for deposit. Thank you.');
+  return lines.join('\n');
+}
+
+function generateViberFollowupMessage() {
+  const selectedRecords = getSelectedSavedRecords();
+  if (!selectedRecords.length) {
+    alert('Please select at least one repair record.');
+    return;
+  }
+  if (!viberFollowupPanel || !viberFollowupOutput) return;
+  viberFollowupOutput.value = buildViberFollowupMessage(selectedRecords);
+  viberFollowupOutput.readOnly = false;
+  viberFollowupPanel.hidden = false;
+  if (editViberFollowupBtn) editViberFollowupBtn.textContent = 'Done Editing';
+  if (copyViberFollowupStatus) copyViberFollowupStatus.textContent = '';
+}
+
+function closeViberFollowupPanel() {
+  if (viberFollowupPanel) viberFollowupPanel.hidden = true;
+  if (copyViberFollowupStatus) copyViberFollowupStatus.textContent = '';
+}
+
+function clearViberFollowupMessage() {
+  if (viberFollowupOutput) viberFollowupOutput.value = '';
+  if (copyViberFollowupStatus) copyViberFollowupStatus.textContent = '';
+}
+
+function toggleViberFollowupEditing() {
+  if (!viberFollowupOutput || !editViberFollowupBtn) return;
+  viberFollowupOutput.readOnly = !viberFollowupOutput.readOnly;
+  editViberFollowupBtn.textContent = viberFollowupOutput.readOnly ? 'Edit Message' : 'Done Editing';
+  if (!viberFollowupOutput.readOnly) viberFollowupOutput.focus();
+}
+
+async function copyViberFollowupMessage() {
+  if (!viberFollowupOutput) return;
+  const text = viberFollowupOutput.value;
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (error) {
+    viberFollowupOutput.select();
+    document.execCommand('copy');
+  }
+  if (copyViberFollowupStatus) copyViberFollowupStatus.textContent = 'Message copied.';
+}
+
 function isPaymentStatusEditable(record) {
   return ['Parts Request', 'Equipment Request', 'Labor Payment Request'].includes(String(getRecordValue(record, 'Request_Type')));
 }
 
-function buildPaymentStatusActions(record, recordIndex) {
-  if (!isPaymentStatusEditable(record)) return '';
-  const currentPaymentStatus = String(getRecordValue(record, 'Payment_Status') || 'Unpaid');
-  const remarks = String(getRecordValue(record, 'Remarks') || '');
-  const options = ['Unpaid', 'For Deposit', 'Paid', 'Cancelled'].map(status =>
-    `<option value="${escapeHtml(status)}"${currentPaymentStatus === status ? ' selected' : ''}>${escapeHtml(status)}</option>`
+function buildStatusOptions(options, currentValue) {
+  return options.map(option =>
+    `<option value="${escapeHtml(option)}"${String(currentValue) === option ? ' selected' : ''}>${escapeHtml(option)}</option>`
   ).join('');
+}
+
+function buildPaymentStatusActions(record, recordIndex) {
+  const currentPaymentStatus = String(getRecordValue(record, 'Payment_Status') || 'Unpaid');
+  const currentRepairStatus = String(getRecordValue(record, 'Repair_Status') || 'Pending');
+  const remarks = String(getRecordValue(record, 'Remarks') || '');
+  const repairStatusOptions = buildStatusOptions(['Pending', 'For Repair', 'Ongoing', 'Done', 'Completed', 'Cancelled'], currentRepairStatus);
+  const paymentStatusOptions = buildStatusOptions(['Unpaid', 'For Deposit', 'Paid', 'Partially Paid'], currentPaymentStatus);
 
   return `
     <div class="status-actions">
       <label>
+        <span>Repair Status</span>
+        <select data-status-field="repairStatus" data-record-index="${recordIndex}">
+          ${repairStatusOptions}
+        </select>
+      </label>
+      <label>
         <span>Payment Status</span>
-      <select data-status-field="paymentStatus" data-record-index="${recordIndex}">
-        ${options}
-      </select>
+        <select data-status-field="paymentStatus" data-record-index="${recordIndex}">
+          ${paymentStatusOptions}
+        </select>
       </label>
       <label>
         <span>Remarks</span>
-      <input data-status-field="remarks" data-record-index="${recordIndex}" type="text" value="${escapeHtml(remarks)}" placeholder="Payment remarks">
+        <input data-status-field="remarks" data-record-index="${recordIndex}" type="text" value="${escapeHtml(remarks)}" placeholder="Status remarks">
       </label>
       <button class="save-status-button" type="button" data-record-index="${recordIndex}">Save Status</button>
       <span class="row-status-message" data-row-status="${recordIndex}"></span>
@@ -1403,6 +1516,7 @@ function renderSavedRecords() {
   if (!savedRecordsBody) return;
   const records = filterSavedRecords(savedRepairRecords);
   updateRecordsSummary(records);
+  if (savedRecordsSelectAll) savedRecordsSelectAll.checked = false;
   if (recordsStatus && hiddenMisalignedRecordCount > 0) {
     recordsStatus.textContent = 'Some old test rows may be hidden because they do not match the current VNS_Repair_Master format.';
   }
@@ -1418,6 +1532,7 @@ function renderSavedRecords() {
     const plateNumber = truncateRecordValue(getRecordValue(record, 'Plate_Number'), 18);
     return `
     <tr>
+      <td class="selection-cell"><input class="savedRecordCheckbox" type="checkbox" data-record-index="${recordIndex}" aria-label="Select saved repair record"></td>
       <td class="cell-plate">${escapeHtml(plateNumber)}</td>
       <td>${escapeHtml(formatDateDisplay(getRecordValue(record, 'Date_Requested')))}</td>
       <td>${renderTypeBadge(getRecordValue(record, 'Request_Type'))}</td>
@@ -1427,7 +1542,6 @@ function renderSavedRecords() {
       <td>${renderClampedCell(getRecordValue(record, 'Work_Done'))}</td>
       <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Quantity'), 18))}</td>
       <td class="cell-money">${escapeHtml(formatPeso(getRecordValue(record, 'Total_Cost')))}</td>
-      <td>${renderStatusBadge('status', getRecordValue(record, 'Status'))}</td>
       <td>${renderStatusBadge('repair', getRecordValue(record, 'Repair_Status'))}</td>
       <td>${renderStatusBadge('payment', getRecordValue(record, 'Payment_Status'))}</td>
       <td><button class="details-button" type="button" data-record-index="${recordIndex}">View Details</button></td>
@@ -1465,34 +1579,71 @@ async function updateSavedRecordStatus(recordIndex, button) {
   if (!record || !recordsStatus) return;
 
   const row = button.closest('tr');
-  const selectedPaymentStatus = row?.querySelector('[data-status-field="paymentStatus"]')?.value || 'Unpaid';
-  const remarks = row?.querySelector('[data-status-field="remarks"]')?.value.trim() || '';
+  const values = getStatusActionValues(row);
   const rowStatus = row?.querySelector(`[data-row-status="${recordIndex}"]`);
-  const payload = buildStatusUpdatePayload(record, selectedPaymentStatus, remarks);
+  const payload = buildStatusUpdatePayload(record, values);
 
   button.disabled = true;
-  recordsStatus.textContent = 'Updating payment status...';
+  recordsStatus.textContent = 'Updating status...';
   if (rowStatus) rowStatus.textContent = 'Saving...';
 
   try {
     await postStatusUpdate(payload);
-    await loadSavedRepairRecords();
+    applyStatusUpdateLocally(record, values);
+    renderSavedRecords();
     recordsStatus.textContent = 'Status updated';
   } catch (error) {
-    recordsStatus.textContent = 'Error updating payment status. Please try again.';
+    recordsStatus.textContent = 'Error updating status. Please try again.';
     if (rowStatus) rowStatus.textContent = 'Update failed';
   } finally {
     button.disabled = false;
   }
 }
 
-function buildStatusUpdatePayload(record, selectedPaymentStatus, remarks) {
+function getStatusActionValues(row) {
+  return {
+    repairStatus: row?.querySelector('[data-status-field="repairStatus"]')?.value || 'Pending',
+    paymentStatus: row?.querySelector('[data-status-field="paymentStatus"]')?.value || 'Unpaid',
+    remarks: row?.querySelector('[data-status-field="remarks"]')?.value.trim() || ''
+  };
+}
+
+function hasStatusActionChanges(record, values) {
+  return values.repairStatus !== String(getRecordValue(record, 'Repair_Status') || 'Pending') ||
+    values.paymentStatus !== String(getRecordValue(record, 'Payment_Status') || 'Unpaid') ||
+    values.remarks !== String(getRecordValue(record, 'Remarks') || '');
+}
+
+function applyStatusUpdateLocally(record, values) {
+  record.Repair_Status = values.repairStatus;
+  record.Payment_Status = values.paymentStatus;
+  record.Remarks = values.remarks;
+}
+
+function updateStatusActionDirtyState(actions) {
+  if (!actions) return;
+  const recordIndex = Number(actions.querySelector('[data-record-index]')?.dataset.recordIndex);
+  const record = savedRepairRecords[recordIndex];
+  if (!record) return;
+  const row = actions.closest('tr');
+  const rowStatus = actions.querySelector(`[data-row-status="${recordIndex}"]`);
+  const isDirty = hasStatusActionChanges(record, getStatusActionValues(row));
+  row?.classList.toggle('has-unsaved-status', isDirty);
+  if (rowStatus) rowStatus.textContent = isDirty ? 'Unsaved changes' : '';
+}
+
+function buildStatusUpdatePayload(record, values) {
   return {
     action: 'updateStatus',
     Request_ID: getRecordValue(record, 'Request_ID'),
-    Status: selectedPaymentStatus === 'Paid' ? 'Paid' : getRecordValue(record, 'Status'),
-    Payment_Status: selectedPaymentStatus,
-    Remarks: remarks,
+    Status: getRecordValue(record, 'Status'),
+    Repair_Status: values.repairStatus,
+    Payment_Status: values.paymentStatus,
+    status: getRecordValue(record, 'Status'),
+    repairStatus: values.repairStatus,
+    paymentStatus: values.paymentStatus,
+    Remarks: values.remarks,
+    remarks: values.remarks,
     Updated_By: 'Web User'
   };
 }
@@ -1512,18 +1663,15 @@ async function saveChangedPaymentStatuses() {
   if (!savedRecordsBody || !recordsStatus) return;
   const changedUpdates = [];
 
-  savedRecordsBody.querySelectorAll('[data-status-field="paymentStatus"]').forEach(select => {
-    const recordIndex = Number(select.dataset.recordIndex);
+  savedRecordsBody.querySelectorAll('.status-actions').forEach(actions => {
+    const recordIndex = Number(actions.querySelector('[data-record-index]')?.dataset.recordIndex);
     const record = savedRepairRecords[recordIndex];
     if (!record) return;
 
-    const selectedPaymentStatus = select.value;
-    const originalPaymentStatus = String(getRecordValue(record, 'Payment_Status') || 'Unpaid');
-    if (selectedPaymentStatus === originalPaymentStatus) return;
-
-    const row = select.closest('tr');
-    const remarks = row?.querySelector('[data-status-field="remarks"]')?.value.trim() || '';
-    changedUpdates.push(buildStatusUpdatePayload(record, selectedPaymentStatus, remarks));
+    const row = actions.closest('tr');
+    const values = getStatusActionValues(row);
+    if (!hasStatusActionChanges(record, values)) return;
+    changedUpdates.push({ record, values, payload: buildStatusUpdatePayload(record, values) });
   });
 
   if (!changedUpdates.length) {
@@ -1535,8 +1683,9 @@ async function saveChangedPaymentStatuses() {
   recordsStatus.textContent = 'Saving status changes...';
 
   try {
-    await Promise.all(changedUpdates.map(postStatusUpdate));
-    await loadSavedRepairRecords();
+    await Promise.all(changedUpdates.map(update => postStatusUpdate(update.payload)));
+    changedUpdates.forEach(update => applyStatusUpdateLocally(update.record, update.values));
+    renderSavedRecords();
     recordsStatus.textContent = 'Status changes saved.';
   } catch (error) {
     recordsStatus.textContent = 'Error saving status changes. Please try again.';
@@ -1890,6 +2039,38 @@ if (saveStatusChangesButton) {
   saveStatusChangesButton.addEventListener('click', saveChangedPaymentStatuses);
 }
 
+if (selectAllSavedRecordsBtn) {
+  selectAllSavedRecordsBtn.addEventListener('click', () => setVisibleSavedRecordSelection(true));
+}
+
+if (unselectAllSavedRecordsBtn) {
+  unselectAllSavedRecordsBtn.addEventListener('click', () => setVisibleSavedRecordSelection(false));
+}
+
+if (savedRecordsSelectAll) {
+  savedRecordsSelectAll.addEventListener('change', () => setVisibleSavedRecordSelection(savedRecordsSelectAll.checked));
+}
+
+if (generateViberFollowupBtn) {
+  generateViberFollowupBtn.addEventListener('click', generateViberFollowupMessage);
+}
+
+if (copyViberFollowupBtn) {
+  copyViberFollowupBtn.addEventListener('click', copyViberFollowupMessage);
+}
+
+if (editViberFollowupBtn) {
+  editViberFollowupBtn.addEventListener('click', toggleViberFollowupEditing);
+}
+
+if (clearViberFollowupBtn) {
+  clearViberFollowupBtn.addEventListener('click', clearViberFollowupMessage);
+}
+
+[closeViberFollowupBtn, closeViberFollowupBottomBtn].forEach(button => {
+  if (button) button.addEventListener('click', closeViberFollowupPanel);
+});
+
 [recordsPlateFilter, recordsTypeFilter, recordsStatusFilter].forEach(filter => {
   if (filter) {
     filter.addEventListener('input', renderSavedRecords);
@@ -1898,6 +2079,22 @@ if (saveStatusChangesButton) {
 });
 
 if (savedRecordsBody) {
+  savedRecordsBody.addEventListener('input', event => {
+    const statusField = event.target.closest('[data-status-field]');
+    if (statusField) updateStatusActionDirtyState(statusField.closest('.status-actions'));
+  });
+
+  savedRecordsBody.addEventListener('change', event => {
+    const statusField = event.target.closest('[data-status-field]');
+    if (statusField) updateStatusActionDirtyState(statusField.closest('.status-actions'));
+
+    const savedRecordCheckbox = event.target.closest('.savedRecordCheckbox');
+    if (savedRecordCheckbox && savedRecordsSelectAll) {
+      const checkboxes = getVisibleSavedRecordCheckboxes();
+      savedRecordsSelectAll.checked = checkboxes.length > 0 && checkboxes.every(checkbox => checkbox.checked);
+    }
+  });
+
   savedRecordsBody.addEventListener('click', event => {
     const detailsButton = event.target.closest('.details-button');
     if (detailsButton) {
