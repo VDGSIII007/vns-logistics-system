@@ -1,4 +1,4 @@
-const SPREADSHEET_ID = "1a1nwEPLb0RdG-ttwsOVSWhplVuQWImHcRdiRsE5etvc";
+const SPREADSHEET_ID = "1S7d97syJj1bBBtCdaj0kSKhmSd7XMQVHbykZEJuoAWM";
 const DETAIL_SHEET_NAME = "2026_Expense_Details";
 const SUMMARY_SHEET_NAME = "2026_Monthly_Summary";
 
@@ -22,10 +22,14 @@ const ALIASES = {
     "No of Liters"
   ],
   dieselPricePerLiter: [
+    "Diesel Price/Liter",
     "Diesel Price Per Liter",
     "Diesel_Price_Per_Liter",
+    "Diesel Price_Liter",
     "Price Per Liter",
     "Price/Liter",
+    "PER LITER",
+    "Per Liter",
     "PHP/Liter",
     "Fuel Price"
   ],
@@ -44,7 +48,11 @@ const ALIASES = {
   hugasTruck: ["Hugas Truck", "Hugas_Truck"],
   checkpoint: ["Checkpoint"],
   other: ["Other Expenses", "Other_Expenses", "Others", "other_expenses"],
-  total: ["Total Expense", "Total_Expense", "Total", "Grand Total", "total_expense"]
+  total: ["Total Expense", "Total_Expense", "Total", "Grand Total", "total_expense"],
+  poNumber: ["PO Number", "PO_Number", "PO No", "PO_No"],
+  referenceNo: ["Reference No", "Reference_No", "Reference Number", "Ref No", "Ref_No"],
+  shipment: ["Shipment", "Shipment No", "Shipment_No"],
+  fileUrl: ["File URL", "File_URL", "File Link", "Attachment", "URL"]
 };
 
 const EXPENSE_FIELDS = [
@@ -85,7 +93,11 @@ const DETAIL_FIELDS = [
   { key: 'hugasTruck', label: 'Hugas Truck', formatter: formatMoney },
   { key: 'checkpoint', label: 'Checkpoint', formatter: formatMoney },
   { key: 'other', label: 'Other Expenses', formatter: formatMoney },
-  { key: 'total', label: 'Total Expense', formatter: formatMoney }
+  { key: 'total', label: 'Total Expense', formatter: formatMoney },
+  { key: 'poNumber', label: 'PO Number', formatter: value => value || '-' },
+  { key: 'referenceNo', label: 'Reference No', formatter: value => value || '-' },
+  { key: 'shipment', label: 'Shipment', formatter: value => value || '-' },
+  { key: 'fileUrl', label: 'File URL', formatter: value => value || '-' }
 ];
 
 const state = {
@@ -250,6 +262,10 @@ function normalizeDate(value) {
   return raw;
 }
 
+function getDisplayValue(row, aliases) {
+  return String(getValue(row, aliases) || '').trim();
+}
+
 function normalizeMonth(value, dateValue) {
   const raw = String(value || '').trim();
   if (raw) {
@@ -290,8 +306,10 @@ function normalizeRecord(row, index) {
     return values;
   }, {});
 
-  const dieselLiters = getNumber(row, ALIASES.dieselLiters);
+  const encodedDieselLiters = getNumber(row, ALIASES.dieselLiters);
   const explicitPricePerLiter = getNumber(row, ALIASES.dieselPricePerLiter);
+  const calculatedDieselLiters = !encodedDieselLiters && explicitPricePerLiter > 0 && expenses.diesel > 0 ? expenses.diesel / explicitPricePerLiter : 0;
+  const dieselLiters = encodedDieselLiters || calculatedDieselLiters;
   const dieselPricePerLiter = explicitPricePerLiter || (dieselLiters > 0 && expenses.diesel > 0 ? expenses.diesel / dieselLiters : 0);
   const explicitTotal = getNumber(row, ALIASES.total);
   const calculatedTotal = calculateExpenseTotal(expenses);
@@ -307,6 +325,10 @@ function normalizeRecord(row, index) {
     dieselLiters,
     dieselPricePerLiter,
     total,
+    poNumber: getDisplayValue(row, ALIASES.poNumber),
+    referenceNo: getDisplayValue(row, ALIASES.referenceNo),
+    shipment: getDisplayValue(row, ALIASES.shipment),
+    fileUrl: getDisplayValue(row, ALIASES.fileUrl),
     raw: row,
     ...expenses
   };
@@ -422,7 +444,9 @@ function buildDetails(record) {
   return DETAIL_FIELDS.map(field => `
     <div>
       <span>${escapeHtml(field.label)}</span>
-      <strong>${escapeHtml(field.formatter(record[field.key]))}</strong>
+      <strong>${field.key === 'fileUrl' && record[field.key]
+        ? `<a href="${escapeHtml(record[field.key])}" target="_blank" rel="noopener">Open file</a>`
+        : escapeHtml(field.formatter(record[field.key]))}</strong>
     </div>
   `).join('');
 }
@@ -430,7 +454,7 @@ function buildDetails(record) {
 function renderTable(records) {
   if (!elements.tableBody) return;
   if (!records.length) {
-    elements.tableBody.innerHTML = '<tr><td colspan="16" class="empty">No 2026 expense records match the current filters.</td></tr>';
+    elements.tableBody.innerHTML = '<tr><td colspan="13" class="empty">No 2026 expense records match the current filters.</td></tr>';
     return;
   }
 
@@ -447,14 +471,11 @@ function renderTable(records) {
       <td>${formatMoney(record.driver)}</td>
       <td>${formatMoney(record.helper)}</td>
       <td>${formatMoney(record.toll)}</td>
-      <td>${formatMoney(record.passway)}</td>
-      <td>${formatMoney(record.parking)}</td>
-      <td>${formatMoney(record.other)}</td>
       <td>${formatMoney(record.total)}</td>
       <td><button class="details-button" type="button" data-detail-id="${escapeHtml(record.id)}">View Details</button></td>
     </tr>
     <tr class="expense-details-row" id="${escapeHtml(record.id)}" hidden>
-      <td colspan="16">
+      <td colspan="13">
         <div class="expense-details">${buildDetails(record)}</div>
       </td>
     </tr>
