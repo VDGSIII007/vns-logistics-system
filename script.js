@@ -885,7 +885,8 @@ function collectTableRows() {
       status: getInput('status') || 'Draft',
       repairStatus: getInput('repairStatus'),
       paymentStatus: getInput('paymentStatus'),
-      remarks: tr.dataset.remarks || ''
+      remarks: tr.dataset.remarks || '',
+      payee: cells[8].textContent.trim()
     });
   }).filter(Boolean);
 }
@@ -918,6 +919,21 @@ function buildFinanceMessage(rows) {
 function buildFinanceMessage(rows) {
   if (!rows.length) {
     return 'No repair records available. Parse a Viber message first.';
+  }
+
+  if (rows.some(row => row.finalCost || row.payee)) {
+    const lines = ['Good day po.', '', 'For payment/deposit po:', ''];
+    rows.forEach(row => {
+      if (row.plateNumber) lines.push(`Plate: ${row.plateNumber}`);
+      if (row.driver) lines.push(`Driver: ${row.driver}`);
+      if (row.requestType) lines.push(`Request Type: ${row.requestType}`);
+      if (row.item || row.workDone) lines.push(`Item/Work Done: ${row.item || row.workDone}`);
+      lines.push(`Amount: ${formatFollowupAmount(row.finalCost || row.totalCost)}`);
+      if (row.payee) lines.push(`Payee: ${row.payee}`);
+      lines.push('');
+    });
+    lines.push('Thank you.');
+    return lines.join('\n');
   }
 
   const isRepairSummary = rows.every(row => row.requestType === 'Completed Repair' || row.requestType === 'Repair Monitoring Update');
@@ -1356,9 +1372,7 @@ function buildSavingsLabel(originalValue, finalValue) {
   const final = getMoneyNumber(finalValue);
   if (original === null || final === null || original === final) return '';
   const difference = Math.abs(original - final);
-  const label = final < original ? 'Saved' : 'Added';
-  const className = final < original ? 'cost-delta-label' : 'cost-delta-label added';
-  return `<span class="${className}">${label}: PHP ${escapeHtml(formatCurrency(difference))}</span>`;
+  return `<span class="cost-delta-label">Difference: PHP ${escapeHtml(formatCurrency(difference))}</span>`;
 }
 
 function getCostDeltaDisplay(originalValue, finalValue) {
@@ -1367,9 +1381,8 @@ function getCostDeltaDisplay(originalValue, finalValue) {
   if (original === null || final === null || original === final) {
     return { text: '', added: false };
   }
-  const label = final < original ? 'Saved' : 'Added';
   return {
-    text: `${label}: PHP ${formatCurrency(Math.abs(original - final))}`,
+    text: `Difference: PHP ${formatCurrency(Math.abs(original - final))}`,
     added: final > original
   };
 }
@@ -1598,9 +1611,8 @@ function buildViberFollowupMessage(records) {
     lines.push(`Amount: ${formatFollowupAmount(finalCost)}`);
     if (originalAmount !== null && finalAmount !== null && originalAmount !== finalAmount) {
       lines.push(`Original Amount: ${formatFollowupAmount(originalCost)}`);
-      const differenceLabel = finalAmount < originalAmount ? 'Savings' : 'Added';
-      lines.push(`${differenceLabel}: PHP ${formatCurrency(Math.abs(originalAmount - finalAmount))}`);
     }
+    if (getRecordValue(record, 'Payee')) lines.push(`Payee: ${getRecordValue(record, 'Payee')}`);
     lines.push(`Repair Status: ${getRecordValue(record, 'Repair_Status') || '-'}`);
     lines.push(`Payment Status: ${getRecordValue(record, 'Payment_Status') || '-'}`);
     lines.push(`Remarks: ${getRecordValue(record, 'Remarks') || '-'}`);
@@ -1672,6 +1684,7 @@ function buildPaymentStatusActions(record, recordIndex) {
   const finalCost = getFinalCost(record) || originalCost;
   const costRemarks = String(getCostRemarks(record) || '');
   const costDelta = getCostDeltaDisplay(originalCost, finalCost);
+  const payee = String(getRecordValue(record, 'Payee') || '');
   const repairStatusOptions = buildStatusOptions(['Pending', 'For Repair', 'Ongoing', 'Done', 'Completed', 'Cancelled'], currentRepairStatus);
   const paymentStatusOptions = buildStatusOptions(['Unpaid', 'For Deposit', 'Paid', 'Partially Paid'], currentPaymentStatus);
 
@@ -1702,6 +1715,10 @@ function buildPaymentStatusActions(record, recordIndex) {
         <input data-status-field="costRemarks" data-record-index="${recordIndex}" type="text" value="${escapeHtml(costRemarks)}" placeholder="Discount, tawad, supplier note">
       </label>
       <span class="cost-delta-label${costDelta.added ? ' added' : ''}" data-cost-delta="${recordIndex}"${costDelta.text ? '' : ' hidden'}>${escapeHtml(costDelta.text)}</span>
+      <label>
+        <span>Payee</span>
+        <input data-status-field="payee" data-record-index="${recordIndex}" type="text" value="${escapeHtml(payee)}" placeholder="Supplier, mechanic, payee">
+      </label>
       <button class="save-status-button" type="button" data-record-index="${recordIndex}">Save Status</button>
       <span class="row-status-message" data-row-status="${recordIndex}"></span>
     </div>
@@ -1833,7 +1850,7 @@ function renderSavedRecords() {
   }
 
   if (!records.length) {
-    savedRecordsBody.innerHTML = '<tr><td colspan="16" class="empty">No saved repair records found.</td></tr>';
+    savedRecordsBody.innerHTML = '<tr><td colspan="17" class="empty">No saved repair records found.</td></tr>';
     return;
   }
 
@@ -1850,12 +1867,13 @@ function renderSavedRecords() {
       <td>${escapeHtml(formatDateDisplay(getRecordValue(record, 'Date_Requested')))}</td>
       <td>${renderTypeBadge(getRecordValue(record, 'Request_Type'))}</td>
       <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Driver'), 28))}</td>
+      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Payee'), 28))}</td>
       <td>${renderCategoryBadge(getRecordValue(record, 'Category'))}</td>
       <td>${renderClampedCell(getRecordValue(record, 'Repair_Parts'))}</td>
       <td>${renderClampedCell(getRecordValue(record, 'Work_Done'))}</td>
       <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Quantity'), 18))}</td>
       <td class="cell-money">${escapeHtml(formatPeso(originalCost))}</td>
-      <td class="cell-money">${escapeHtml(formatPeso(finalCost))}${buildSavingsLabel(originalCost, finalCost)}</td>
+      <td class="cell-money">${escapeHtml(formatPeso(finalCost))}</td>
       <td>${renderStatusBadge('repair', getRecordValue(record, 'Repair_Status'))}</td>
       <td>${renderStatusBadge('payment', getRecordValue(record, 'Payment_Status'))}</td>
       <td><button class="details-button" type="button" data-record-index="${recordIndex}">View Details</button></td>
@@ -1870,7 +1888,7 @@ async function loadSavedRepairRecords() {
   if (!savedRecordsBody || !recordsStatus) return;
   recordsStatus.textContent = 'Loading saved records...';
   updateRecordsSummary([]);
-  savedRecordsBody.innerHTML = '<tr><td colspan="16" class="empty">Loading saved repair records...</td></tr>';
+  savedRecordsBody.innerHTML = '<tr><td colspan="17" class="empty">Loading saved repair records...</td></tr>';
 
   try {
     const response = await fetch(`${REPAIR_WEB_APP_URL}?action=list`);
@@ -1883,7 +1901,7 @@ async function loadSavedRepairRecords() {
   } catch (error) {
     savedRepairRecords = [];
     updateRecordsSummary([]);
-    savedRecordsBody.innerHTML = '<tr><td colspan="16" class="empty">Unable to load saved records. Please try again.</td></tr>';
+    savedRecordsBody.innerHTML = '<tr><td colspan="17" class="empty">Unable to load saved records. Please try again.</td></tr>';
     recordsStatus.textContent = 'Error loading saved records.';
   }
 }
@@ -1920,7 +1938,8 @@ function getStatusActionValues(row) {
     paymentStatus: row?.querySelector('[data-status-field="paymentStatus"]')?.value || 'Unpaid',
     remarks: row?.querySelector('[data-status-field="remarks"]')?.value.trim() || '',
     finalCost: row?.querySelector('[data-status-field="finalCost"]')?.value.trim() || '',
-    costRemarks: row?.querySelector('[data-status-field="costRemarks"]')?.value.trim() || ''
+    costRemarks: row?.querySelector('[data-status-field="costRemarks"]')?.value.trim() || '',
+    payee: row?.querySelector('[data-status-field="payee"]')?.value.trim() || ''
   };
 }
 
@@ -1931,7 +1950,8 @@ function hasStatusActionChanges(record, values) {
     values.paymentStatus !== String(getRecordValue(record, 'Payment_Status') || 'Unpaid') ||
     values.remarks !== String(getRecordValue(record, 'Remarks') || '') ||
     nextFinalCost !== currentFinalCost ||
-    values.costRemarks !== String(getCostRemarks(record) || '');
+    values.costRemarks !== String(getCostRemarks(record) || '') ||
+    values.payee !== String(getRecordValue(record, 'Payee') || '');
 }
 
 function applyStatusUpdateLocally(record, values) {
@@ -1943,6 +1963,7 @@ function applyStatusUpdateLocally(record, values) {
   record.Payment_Status = values.paymentStatus;
   record.Remarks = values.remarks;
   record.Cost_Remarks = values.costRemarks;
+  record.Payee = values.payee;
 }
 
 function updateStatusActionDirtyState(actions) {
@@ -1987,6 +2008,8 @@ function buildStatusUpdatePayload(record, values) {
     remarks: values.remarks,
     Cost_Remarks: values.costRemarks,
     costRemarks: values.costRemarks,
+    Payee: values.payee,
+    payee: values.payee,
     Updated_By: 'Web User'
   };
 }
@@ -2051,6 +2074,7 @@ function buildDetailBlock(label, value) {
 function showRecordDetails(record) {
   if (!recordDetailsPanel || !recordDetailsContent) return;
   recordDetailsContent.innerHTML = [
+    buildDetailBlock('Payee', getRecordValue(record, 'Payee')),
     buildDetailBlock('Original Message', getRecordValue(record, 'Source_Message')),
     buildDetailBlock('Payment Message', getRecordValue(record, 'Payment_Message')),
     buildDetailBlock('Receipt Link', getRecordValue(record, 'Receipt_Link')),

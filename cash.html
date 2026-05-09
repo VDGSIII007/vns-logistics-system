@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cash / PO / Bali Log | VNS Logistics</title>
+  <meta name="description" content="VNS Logistics Cash, PO, Bali, budget, and payroll balance Viber parser." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .cash-page { background: #fafafa; }
+    .cash-header { padding-bottom: 34px; }
+    .cash-header h1 { margin: 0; font-size: clamp(2.45rem, 5vw, 5rem); line-height: .98; letter-spacing: -0.05em; }
+    .cash-header p { max-width: 880px; margin: 18px 0 0; color: #5e6470; font-size: 1.08rem; font-weight: 650; line-height: 1.6; }
+    .cash-panel, .cash-table-card, .cash-saved-card { background: #fff; border: 1px solid var(--line); border-radius: 24px; padding: 22px; box-shadow: 0 16px 40px rgba(0,0,0,.05); margin-bottom: 22px; }
+    .cash-panel label { display: block; margin-bottom: 10px; color: #111827; font-weight: 900; }
+    .cash-panel textarea { width: 100%; min-height: 220px; border: 1px solid var(--line); border-radius: 18px; padding: 16px; background: #f8f8f8; font: inherit; resize: vertical; }
+    .cash-actions, .cash-table-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+    .cash-summary { display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 14px; margin: 0 0 22px; }
+    .cash-stat { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px; box-shadow: 0 12px 30px rgba(0,0,0,.05); }
+    .cash-stat span { display: block; color: var(--muted); font-size: .75rem; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; }
+    .cash-stat strong { display: block; margin-top: 8px; color: #111827; font-size: 1.5rem; line-height: 1; }
+    .cash-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+    .cash-card-header h2 { margin: 0; font-size: 1.35rem; }
+    .cash-card-header p { margin: 5px 0 0; color: var(--muted); font-weight: 700; }
+    .cash-table-wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 18px; background: #fff; }
+    .cash-table { width: 100%; min-width: 2100px; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+    .cash-table th { position: sticky; top: 0; z-index: 4; background: #fafafa; padding: 12px 10px; border-bottom: 1px solid #e5e7eb; text-align: left; white-space: nowrap; font-weight: 900; color: #111827; }
+    .cash-table td { padding: 10px; border-bottom: 1px solid #eef0f3; color: #1f2937; vertical-align: middle; }
+    .cash-table input, .cash-table select { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 8px; background: #fff; font: inherit; font-size: 12px; }
+    .cash-table .select-cell { width: 48px; min-width: 48px; text-align: center; }
+    .cash-table .empty { text-align: center; color: var(--muted); padding: 34px; }
+    .cash-row-needs-correction td { background: #fff7ed; }
+    .cash-status { min-height: 24px; margin: 12px 0 0; color: var(--red); font-weight: 800; }
+    .cash-status.success { color: #15803d; }
+    .cash-status.warning { color: #c2410c; }
+    .cash-status.info { color: #2563eb; }
+    .cash-status.error { color: #dc2626; }
+    .cash-saved-list { display: grid; gap: 8px; max-height: 220px; overflow: auto; }
+    .cash-saved-item { border: 1px solid #e5e7eb; border-radius: 14px; padding: 10px 12px; color: #374151; font-size: 13px; font-weight: 700; background: #fff; }
+    .danger-outline { border-color: #ef4444; color: #dc2626; background: #fff; }
+    .danger-outline:hover { background: #fee2e2; }
+    @media (max-width: 1040px) {
+      .cash-summary { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+      .cash-card-header { flex-direction: column; }
+      .cash-table-actions { justify-content: flex-start; }
+    }
+    @media (max-width: 640px) {
+      .cash-summary { grid-template-columns: 1fr; }
+      .cash-actions .btn, .cash-table-actions .btn { width: 100%; }
+    }
+  </style>
+</head>
+<body class="cash-page">
+  <header class="site-header" id="top">
+    <nav class="nav-shell">
+      <a href="index.html" class="brand" aria-label="VNS Logistics home">
+        <span class="brand-mark">VNS</span>
+        <span class="brand-text">Logistics</span>
+      </a>
+      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav">Menu</button>
+      <div class="nav-links" id="main-nav">
+        <a href="index.html">Home</a>
+        <a href="portal.html">System Portal</a>
+        <a href="repair.html">Repair Module</a>
+        <a href="parts-inventory.html">Parts Inventory</a>
+        <a href="cash.html" class="active-link">Cash / PO / Bali</a>
+        <a href="portal.html" class="nav-cta">Back to Portal</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="section-pad cash-header">
+      <div class="container">
+        <p class="eyebrow">Operations Log</p>
+        <h1>Cash / PO / Bali Log</h1>
+        <p>Paste Viber messages from plate-number groups, parse deposits, diesel PO, budget, Bali, and salary balance records.</p>
+      </div>
+    </section>
+
+    <section class="container">
+      <div class="cash-panel">
+        <label for="cash-input">Viber Message Input</label>
+        <textarea id="cash-input" placeholder="Paste Viber messages here..."></textarea>
+        <div class="cash-actions">
+          <button id="cash-parse-button" class="btn btn-primary" type="button">Parse Message</button>
+          <button id="cash-clear-input-button" class="btn btn-outline" type="button">Clear Input</button>
+        </div>
+      </div>
+
+      <div class="cash-summary" aria-label="Parsed cash log summary">
+        <div class="cash-stat"><span>Parsed Records</span><strong id="cash-summary-count">0</strong></div>
+        <div class="cash-stat"><span>Total Budget</span><strong id="cash-summary-budget">PHP 0</strong></div>
+        <div class="cash-stat"><span>Total Bali</span><strong id="cash-summary-bali">PHP 0</strong></div>
+        <div class="cash-stat"><span>Diesel PO Count</span><strong id="cash-summary-po">0</strong></div>
+        <div class="cash-stat"><span>Total Liters</span><strong id="cash-summary-liters">0</strong></div>
+      </div>
+
+      <div class="cash-table-card">
+        <div class="cash-card-header">
+          <div>
+            <h2>Parsed Records</h2>
+            <p>Review and edit parsed rows before saving.</p>
+          </div>
+          <div class="cash-table-actions">
+            <button id="cash-select-all-button" class="btn btn-outline" type="button">Select All</button>
+            <button id="cash-unselect-all-button" class="btn btn-outline" type="button">Unselect All</button>
+            <button id="cash-remove-selected-button" class="btn btn-outline danger-outline" type="button">Remove Selected Rows</button>
+            <button id="cash-save-button" class="btn btn-primary" type="button">Save</button>
+          </div>
+        </div>
+        <div class="cash-table-wrap">
+          <table class="cash-table">
+            <thead>
+              <tr>
+                <th class="select-cell">Select</th>
+                <th>Message Date</th>
+                <th>Message Time</th>
+                <th>Sender</th>
+                <th>Plate Number</th>
+                <th>Type</th>
+                <th>Person Name</th>
+                <th>Role</th>
+                <th>GCash Number</th>
+                <th>Amount</th>
+                <th>PO Number</th>
+                <th>Liters</th>
+                <th>Fuel Station</th>
+                <th>Route / Trip</th>
+                <th>Balance After Payroll</th>
+                <th>Review Status</th>
+                <th>Remarks</th>
+              </tr>
+            </thead>
+            <tbody id="cash-table-body">
+              <tr><td colspan="17" class="empty">No parsed records yet. Paste Viber messages and click Parse Message.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="cash-status" class="cash-status"></div>
+      </div>
+
+      <div class="cash-saved-card">
+        <div class="cash-card-header">
+          <div>
+            <h2>Saved Local Records</h2>
+            <p>Temporary localStorage records until the Apps Script endpoint is connected.</p>
+          </div>
+          <button id="cash-refresh-local-button" class="btn btn-outline" type="button">Refresh Local List</button>
+        </div>
+        <div id="cash-saved-list" class="cash-saved-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-grid">
+      <div>
+        <strong>VNS Logistics</strong>
+        <p>Moving Business Forward</p>
+      </div>
+      <a href="#top">Back to top</a>
+    </div>
+  </footer>
+
+  <script src="cash.js"></script>
+</body>
+</html>
