@@ -141,7 +141,7 @@
 
     .saved-records .saved-records-table {
       width: 100%;
-      min-width: 1480px;
+      min-width: 1580px;
       border-collapse: separate;
       border-spacing: 0;
       font-size: 14px;
@@ -177,8 +177,25 @@
     }
 
     .saved-records .saved-records-table td.actions-cell {
-      min-width: 220px;
+      min-width: 260px;
       white-space: normal;
+    }
+
+    .saved-records .saved-records-table .cell-money {
+      white-space: nowrap;
+    }
+
+    .cost-delta-label {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      font-weight: 800;
+      color: #166534;
+      white-space: nowrap;
+    }
+
+    .cost-delta-label.added {
+      color: #b91c1c;
     }
 
     .saved-records .saved-records-table th.selection-cell,
@@ -543,15 +560,15 @@
         </div>
 
         <div class="repair-output">
-          <div class="table-actions">
-            <div>
+          <div class="parsed-section-header">
+            <div class="parsed-section-title">
               <h2>Parsed Repair Requests</h2>
               <p>Select rows, statuses, and fill any repair details before saving.</p>
             </div>
-            <div class="button-group">
+            <div class="parsed-section-actions">
               <button id="select-all-rows-button" class="btn btn-outline" type="button">Select All</button>
               <button id="unselect-all-rows-button" class="btn btn-outline" type="button">Unselect All</button>
-              <button id="remove-unchecked-rows-button" class="btn btn-outline" type="button">Remove Selected Rows</button>
+              <button id="remove-unchecked-rows-button" class="btn btn-outline danger-outline" type="button">Remove Selected Rows</button>
             </div>
           </div>
           <div class="table-wrap">
@@ -592,7 +609,7 @@
 
           <div class="message-panel">
             <div class="button-group">
-              <button id="save-button" class="btn btn-primary">Save to Google Sheet</button>
+              <button id="save-button" class="btn btn-primary">Save</button>
               <button id="generate-button" class="btn btn-outline">Generate Payment Message</button>
             </div>
             <div id="save-status" class="save-status"></div>
@@ -733,17 +750,34 @@
                 </select>
               </label>
               <label>
-                <span>Status</span>
-                <select id="records-status-filter">
-                  <option value="">All Statuses</option>
-                  <option value="Draft">Draft</option>
-                  <option value="For Review">For Review</option>
-                  <option value="Approved">Approved</option>
-                  <option value="For Payment">For Payment</option>
-                  <option value="Paid">Paid</option>
+                <span>Repair Status</span>
+                <select id="records-repair-status-filter">
+                  <option value="">All Repair Statuses</option>
+                  <option value="Pending">Pending</option>
+                  <option value="For Repair">For Repair</option>
+                  <option value="Ongoing">Ongoing</option>
+                  <option value="Done">Done</option>
                   <option value="Completed">Completed</option>
+                  <option value="Cancelled">Cancelled</option>
                 </select>
               </label>
+              <label>
+                <span>Payment Status</span>
+                <select id="records-payment-status-filter">
+                  <option value="">All Payment Statuses</option>
+                  <option value="Unpaid">Unpaid</option>
+                  <option value="For Deposit">For Deposit</option>
+                  <option value="Partially Paid">Partially Paid</option>
+                  <option value="Paid">Paid</option>
+                </select>
+              </label>
+            </div>
+            <div class="records-quick-filters" aria-label="Quick saved repair filters">
+              <button class="btn btn-outline" type="button" data-records-quick-filter="unpaid">Unpaid</button>
+              <button class="btn btn-outline" type="button" data-records-quick-filter="notFinished">Not Finished</button>
+              <button class="btn btn-outline" type="button" data-records-quick-filter="forDeposit">For Deposit</button>
+              <button class="btn btn-outline" type="button" data-records-quick-filter="completed">Completed</button>
+              <button class="btn btn-outline" type="button" data-records-quick-filter="clear">Clear Filters</button>
             </div>
 
             <div id="records-status" class="save-status"></div>
@@ -761,7 +795,7 @@
           </div>
 
           <aside class="saved-records-actions-panel">
-            <p>Use the filters to quickly find repair requests by plate number, request type, and status. You can also update statuses and save changes.</p>
+            <p>Use the filters to quickly find repair requests by plate number, request type, repair status, and payment status. You can also update statuses and save changes.</p>
             <div class="saved-records-action-buttons">
               <button id="selectAllSavedRecordsBtn" class="btn btn-outline" type="button">Select All</button>
               <button id="unselectAllSavedRecordsBtn" class="btn btn-outline" type="button">Unselect All</button>
@@ -804,7 +838,8 @@
                   <th>Parts / Item</th>
                   <th>Work Done</th>
                   <th>Quantity</th>
-                  <th>Total Cost</th>
+                  <th>Original Cost</th>
+                  <th>Final Cost</th>
                   <th>Repair Status</th>
                   <th>Payment Status</th>
                   <th>View Details</th>
@@ -813,7 +848,7 @@
                 </tr>
               </thead>
               <tbody id="saved-records-body">
-                <tr><td colspan="15" class="empty">No saved repair records found.</td></tr>
+                <tr><td colspan="16" class="empty">No saved repair records found.</td></tr>
               </tbody>
             </table>
           </div>
