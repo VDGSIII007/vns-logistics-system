@@ -6,10 +6,6 @@
 *.avi
 *.mkv
 
-# ── Extracted canvas frames ───────────────────────────────────────────────────
-# The /frames/ folder contains 90+ .webp images extracted from the video.
-# These are large binary assets — ignore them too.
-frames/
 
 # ── OS / Editor noise ─────────────────────────────────────────────────────────
 .DS_Store
