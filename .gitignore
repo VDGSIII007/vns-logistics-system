@@ -1,0 +1,22 @@
+# ── Large source video files ──────────────────────────────────────────────────
+# The MP4 is the source file used to extract canvas frames.
+# It's too large for git — keep it locally or in cloud storage.
+*.mp4
+*.mov
+*.avi
+*.mkv
+
+# ── Extracted canvas frames ───────────────────────────────────────────────────
+# The /frames/ folder contains 90+ .webp images extracted from the video.
+# These are large binary assets — ignore them too.
+frames/
+
+# ── OS / Editor noise ─────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+
+# ── Node (if ever added) ──────────────────────────────────────────────────────
+node_modules/
