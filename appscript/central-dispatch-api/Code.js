@@ -66,6 +66,18 @@ const HEADER_ALIASES = {
   remarks:      ["Remarks", "Notes"],
 };
 
+const GEOFENCE_SHEET_NAME = "Geofences Area";
+
+const GEOFENCE_HEADER_ALIASES = {
+  name:        ["Name", "Geofence Name", "Location", "Area Name"],
+  category:    ["Category", "Type", "Group", "Geofence Type"],
+  sourceFile:  ["Source File", "File", "KMZ", "KML", "Source"],
+  coordinates: ["Coordinates", "Polygon", "Path", "LatLng", "Lat/Lng", "Points"],
+  latitude:    ["Latitude", "Lat"],
+  longitude:   ["Longitude", "Lng", "Long"],
+  radius:      ["Radius", "Radius Meters", "Radius (m)"],
+};
+
 // ============================================================
 // doGet — main entry point
 // ============================================================
@@ -271,6 +283,17 @@ function readSourceRows_(source) {
   warnings.push(...mapped.warnings);
   rows.push(...mapped.rows);
 
+  const geofenceResult = readGeofencesForSource_(source);
+  warnings.push(...geofenceResult.warnings);
+
+  for (const row of rows) {
+    const match = findMatchingGeofence_(row, geofenceResult.geofences);
+    row.isInsideGeofence = !!match;
+    row.geofenceName = match ? match.name : null;
+    row.geofenceCategory = match ? match.category : null;
+    row.friendlyLocation = match ? match.name : getFriendlyLocationFromTruck_(row);
+  }
+
   return { rows, warnings };
 }
 
@@ -331,6 +354,10 @@ function mapRowsByHeaders_(values, source) {
       dateAssigned:  null,
       deliveredAt:   null,
       remarks:       null,
+      geofenceName:  null,
+      geofenceCategory: null,
+      isInsideGeofence: false,
+      friendlyLocation: "Location unavailable",
     };
 
     for (const field in fieldColumnIndex) {
@@ -360,6 +387,321 @@ function mapRowsByHeaders_(values, source) {
 // ============================================================
 // findColumnIndex_ — returns first matching alias index
 // ============================================================
+
+function readGeofencesForSource_(source) {
+  const geofences = [];
+  const warnings  = [];
+
+  let spreadsheet;
+  try {
+    spreadsheet = SpreadsheetApp.openById(source.spreadsheetId);
+  } catch (err) {
+    warnings.push("[" + source.group + "] Could not open spreadsheet for geofences: " + err.message);
+    return { geofences, warnings };
+  }
+
+  const sheet = spreadsheet.getSheetByName(GEOFENCE_SHEET_NAME);
+  if (!sheet) {
+    warnings.push("[" + source.group + "] Geofences Area tab missing.");
+    return { geofences, warnings };
+  }
+
+  let values;
+  try {
+    values = sheet.getDataRange().getValues();
+  } catch (err) {
+    warnings.push("[" + source.group + "] Could not read Geofences Area tab: " + err.message);
+    return { geofences, warnings };
+  }
+
+  const mapped = mapGeofenceRows_(values, source);
+  geofences.push(...mapped.geofences);
+  warnings.push(...mapped.warnings);
+
+  return { geofences, warnings };
+}
+
+function mapGeofenceRows_(values, source) {
+  const geofences = [];
+  const warnings  = [];
+
+  if (!values || values.length < 2) {
+    warnings.push("[" + source.group + "] Geofences Area tab has no data rows.");
+    return { geofences, warnings };
+  }
+
+  let headerRowIdx = -1;
+  let headerIndexMap = {};
+  for (let r = 0; r < Math.min(values.length, 10); r++) {
+    const candidateMap = {};
+    values[r].forEach((h, i) => {
+      const key = (h || "").toString().trim().toLowerCase();
+      if (key) candidateMap[key] = i;
+    });
+    const hasName = findColumnIndex_(candidateMap, GEOFENCE_HEADER_ALIASES.name) !== -1;
+    const hasShape = findColumnIndex_(candidateMap, GEOFENCE_HEADER_ALIASES.coordinates) !== -1 ||
+      (findColumnIndex_(candidateMap, GEOFENCE_HEADER_ALIASES.latitude) !== -1 &&
+       findColumnIndex_(candidateMap, GEOFENCE_HEADER_ALIASES.longitude) !== -1);
+    if (hasName && hasShape) {
+      headerRowIdx = r;
+      headerIndexMap = candidateMap;
+      break;
+    }
+  }
+
+  if (headerRowIdx === -1) {
+    warnings.push("[" + source.group + "] Geofences Area headers not recognized.");
+    return { geofences, warnings };
+  }
+
+  const nameIdx = findColumnIndex_(headerIndexMap, GEOFENCE_HEADER_ALIASES.name);
+  const categoryIdx = findColumnIndex_(headerIndexMap, GEOFENCE_HEADER_ALIASES.category);
+  const sourceFileIdx = findColumnIndex_(headerIndexMap, GEOFENCE_HEADER_ALIASES.sourceFile);
+  const coordinatesIdx = findColumnIndex_(headerIndexMap, GEOFENCE_HEADER_ALIASES.coordinates);
+  const latIdx = findColumnIndex_(headerIndexMap, GEOFENCE_HEADER_ALIASES.latitude);
+  const lngIdx = findColumnIndex_(headerIndexMap, GEOFENCE_HEADER_ALIASES.longitude);
+  const radiusIdx = findColumnIndex_(headerIndexMap, GEOFENCE_HEADER_ALIASES.radius);
+  const grouped = {};
+
+  for (let i = headerRowIdx + 1; i < values.length; i++) {
+    const row = values[i];
+    if (row.every(cell => cell === "" || cell === null || cell === undefined)) continue;
+
+    const name = nameIdx !== -1 && row[nameIdx] ? row[nameIdx].toString().trim() : null;
+    if (!name) {
+      warnings.push("[" + source.group + "] Geofence row " + (i + 1) + " skipped: missing name.");
+      continue;
+    }
+
+    const sourceFile = sourceFileIdx !== -1 && row[sourceFileIdx] ? row[sourceFileIdx].toString().trim() : "";
+    const key = name.toLowerCase() + "|" + sourceFile.toLowerCase();
+    if (!grouped[key]) {
+      const explicitCategory = categoryIdx !== -1 && row[categoryIdx] ? row[categoryIdx].toString().trim() : null;
+      grouped[key] = {
+        name: name,
+        category: explicitCategory || deriveGeofenceCategory_(sourceFile),
+        sourceFile: sourceFile || null,
+        points: [],
+        radiusValues: [],
+      };
+    }
+
+    if (coordinatesIdx !== -1 && row[coordinatesIdx]) {
+      const parsedPolygon = parseGeofenceCoordinates_(row[coordinatesIdx]);
+      if (parsedPolygon) {
+        grouped[key].points.push(...parsedPolygon);
+      } else {
+        warnings.push("[" + source.group + "] Geofence '" + name + "' coordinates format not recognized.");
+      }
+    }
+
+    if (latIdx !== -1 && lngIdx !== -1) {
+      const point = normalizeLatLngPair_(row[latIdx], row[lngIdx]);
+      if (point) {
+        grouped[key].points.push(point);
+      } else {
+        warnings.push("[" + source.group + "] Geofence '" + name + "' row " + (i + 1) + " has invalid latitude/longitude.");
+      }
+    }
+
+    if (radiusIdx !== -1) {
+      const radius = normalizeNumber_(row[radiusIdx]);
+      if (radius !== null) grouped[key].radiusValues.push(radius);
+    }
+  }
+
+  for (const key in grouped) {
+    const group = grouped[key];
+    const points = dedupeGeofencePoints_(group.points);
+    if (!points.length) {
+      warnings.push("[" + source.group + "] Geofence '" + group.name + "' cannot be parsed: no valid points.");
+      continue;
+    }
+
+    const center = getGeofenceCenter_(points);
+    const radiusMeters = group.radiusValues.length ? Math.max(...group.radiusValues) : 150;
+
+    geofences.push({
+      name: group.name,
+      category: group.category,
+      sourceFile: group.sourceFile,
+      polygon: points.length >= 3 ? points : null,
+      centerLat: center.lat,
+      centerLng: center.lng,
+      radiusMeters: points.length >= 3 ? null : radiusMeters,
+    });
+  }
+
+  if (!geofences.length) {
+    warnings.push("[" + source.group + "] No geofence groups created.");
+  } else {
+    warnings.push("[" + source.group + "] Geofence groups parsed: " + geofences.length + ".");
+    warnings.push("[" + source.group + "] Sample geofences: " + geofences.slice(0, 5).map(g => g.name).join(", ") + ".");
+  }
+
+  return { geofences, warnings };
+}
+
+function deriveGeofenceCategory_(sourceFile) {
+  const file = (sourceFile || "").toString().trim();
+  const key = file.toLowerCase();
+  if (key === "garage.kmz") return "Garage";
+  if (key === "parking.kmz") return "Parking";
+  if (key === "plants.kmz") return "Plant";
+  if (key === "port.kmz") return "Port";
+  if (key === "warehouse and pick up location.kmz") return "Warehouse / Pickup";
+  return file ? file.replace(/\.kmz$/i, "").trim() : null;
+}
+
+function dedupeGeofencePoints_(points) {
+  const seen = {};
+  const deduped = [];
+  for (const point of points || []) {
+    if (!point || point.lat === null || point.lng === null) continue;
+    const key = point.lat.toFixed(7) + "," + point.lng.toFixed(7);
+    if (seen[key]) continue;
+    seen[key] = true;
+    deduped.push(point);
+  }
+  return deduped;
+}
+
+function getGeofenceCenter_(points) {
+  const total = points.reduce((acc, point) => {
+    acc.lat += point.lat;
+    acc.lng += point.lng;
+    return acc;
+  }, { lat: 0, lng: 0 });
+
+  return {
+    lat: total.lat / points.length,
+    lng: total.lng / points.length,
+  };
+}
+
+function parseGeofenceCoordinates_(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const text = value.toString().trim();
+  if (!text) return null;
+
+  try {
+    const parsed = JSON.parse(text);
+    const points = Array.isArray(parsed) ? parsed : (parsed.coordinates || parsed.points || parsed.path || null);
+    const polygon = normalizeParsedPolygon_(points);
+    if (polygon && polygon.length >= 3) return polygon;
+  } catch (err) {
+    // Continue with text parsing below.
+  }
+
+  const matches = text.match(/-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?/g);
+  if (!matches || matches.length < 3) return null;
+
+  const polygon = matches.map(pair => {
+    const parts = pair.split(",").map(p => normalizeNumber_(p));
+    if (parts.length < 2 || parts[0] === null || parts[1] === null) return null;
+    return normalizeLatLngPair_(parts[0], parts[1]);
+  }).filter(Boolean);
+
+  return polygon.length >= 3 ? polygon : null;
+}
+
+function normalizeParsedPolygon_(points) {
+  if (!Array.isArray(points)) return null;
+
+  if (points.length === 1 && Array.isArray(points[0])) {
+    return normalizeParsedPolygon_(points[0]);
+  }
+
+  const polygon = points.map(point => {
+    if (Array.isArray(point) && point.length >= 2) {
+      return normalizeLatLngPair_(point[0], point[1]);
+    }
+    if (point && typeof point === "object") {
+      const lat = normalizeNumber_(point.lat || point.latitude);
+      const lng = normalizeNumber_(point.lng || point.long || point.longitude);
+      return lat === null || lng === null ? null : { lat, lng };
+    }
+    return null;
+  }).filter(Boolean);
+
+  return polygon.length >= 3 ? polygon : null;
+}
+
+function normalizeLatLngPair_(first, second) {
+  const a = normalizeNumber_(first);
+  const b = normalizeNumber_(second);
+  if (a === null || b === null) return null;
+
+  // GeoJSON commonly stores coordinates as [lng, lat].
+  if (Math.abs(a) > 90 && Math.abs(b) <= 90) {
+    return { lat: b, lng: a };
+  }
+  return { lat: a, lng: b };
+}
+
+function pointInPolygon_(lat, lng, polygon) {
+  if (!polygon || polygon.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const yi = polygon[i].lat;
+    const xi = polygon[i].lng;
+    const yj = polygon[j].lat;
+    const xj = polygon[j].lng;
+    const intersects = ((yi > lat) !== (yj > lat)) &&
+      (lng < (xj - xi) * (lat - yi) / ((yj - yi) || 0.0000000001) + xi);
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function distanceMeters_(lat1, lng1, lat2, lng2) {
+  const toRad = deg => deg * Math.PI / 180;
+  const earthRadius = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function findMatchingGeofence_(truck, geofences) {
+  if (!truck || truck.latitude === null || truck.longitude === null) return null;
+  const lat = normalizeNumber_(truck.latitude);
+  const lng = normalizeNumber_(truck.longitude);
+  if (lat === null || lng === null) return null;
+
+  for (const geofence of geofences || []) {
+    if (geofence.polygon && pointInPolygon_(lat, lng, geofence.polygon)) return geofence;
+  }
+
+  for (const geofence of geofences || []) {
+    const centerLat = geofence.centerLat !== undefined ? geofence.centerLat : geofence.latitude;
+    const centerLng = geofence.centerLng !== undefined ? geofence.centerLng : geofence.longitude;
+    const radiusMeters = geofence.radiusMeters !== undefined ? geofence.radiusMeters : geofence.radius;
+    if (centerLat === null || centerLat === undefined ||
+        centerLng === null || centerLng === undefined ||
+        radiusMeters === null || radiusMeters === undefined) continue;
+    if (distanceMeters_(lat, lng, centerLat, centerLng) <= radiusMeters) return geofence;
+  }
+
+  return null;
+}
+
+function getFriendlyLocationFromTruck_(truck) {
+  if (!truck || truck.latitude === null || truck.longitude === null) return "Location unavailable";
+  const address = truck.fullAddress ? truck.fullAddress.toString().trim() : "";
+  if (!address) return "Unknown location";
+
+  const parts = address
+    .split(",")
+    .map(part => part.trim())
+    .filter(Boolean)
+    .filter(part => !/^\d{4,}$/.test(part));
+
+  if (!parts.length) return address;
+  return parts.slice(0, 3).join(", ");
+}
 
 function findColumnIndex_(headerIndexMap, aliases) {
   for (const alias of aliases) {
