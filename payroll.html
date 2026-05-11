@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Payroll Portal | VNS Logistics</title>
+  <meta name="description" content="VNS Logistics internal payroll portal for driver and helper payroll encoding." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="payroll-page">
+  <header class="site-header" id="top">
+    <nav class="nav-shell">
+      <a href="index.html" class="brand" aria-label="VNS Logistics home">
+        <span class="brand-mark">VNS</span>
+        <span class="brand-text">Logistics</span>
+      </a>
+      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav">Menu</button>
+      <div class="nav-links" id="main-nav">
+        <a href="index.html">Home</a>
+        <a href="portal.html">System Portal</a>
+        <a href="repair.html">Repair Module</a>
+        <a href="parts-inventory.html">Parts Inventory</a>
+        <a href="cash.html">Cash / PO / Bali</a>
+        <a href="payroll.html" class="active-link">Payroll</a>
+        <a href="portal.html" class="nav-cta">Back to Portal</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="payroll-intro">
+      <div class="payroll-shell">
+        <p class="eyebrow">Internal Module</p>
+        <h1>Payroll Portal</h1>
+        <p>One encoding workspace for Pasahod 2 trip rows, Pasahod summary, approval, and payment.</p>
+      </div>
+    </section>
+
+    <section class="payroll-shell payroll-workspace single-payroll-workspace">
+      <div class="payroll-tabs" role="tablist" aria-label="Payroll sections">
+        <button class="payroll-tab-button active" type="button" data-payroll-tab="encode-payroll-tab">Encode Payroll / Pasahod 2</button>
+        <button class="payroll-tab-button" type="button" data-payroll-tab="pasahod-summary-tab">Pasahod Summary</button>
+        <button class="payroll-tab-button" type="button" data-payroll-tab="approval-payment-tab">Approval / Payment</button>
+        <button class="payroll-tab-button" type="button" data-payroll-tab="saved-records-tab">Saved Records</button>
+      </div>
+
+      <section id="encode-payroll-tab" class="payroll-tab-panel active">
+      <section class="payroll-section-card payroll-compact-card payroll-header-card">
+        <div class="payroll-card-head">
+          <div>
+            <p class="payroll-eyebrow">Pasahod 2</p>
+            <h2>Payroll Header</h2>
+            <p>Basic cutoff and truck details.</p>
+          </div>
+          <span id="header-status-badge" class="status-badge status-draft">Draft</span>
+        </div>
+
+        <form id="payroll-header-form" class="payroll-form-grid payroll-header-grid">
+          <label><span>Payroll ID</span><input id="payroll-number" type="text" readonly></label>
+          <label><span>Payroll Date</span><input id="payroll-date" type="date"></label>
+          <label><span>Cutoff Start</span><input id="cutoff-start" type="date"></label>
+          <label><span>Cutoff End</span><input id="cutoff-end" type="date"></label>
+          <label><span>Group / Category</span><select id="group-category">
+            <option value="">Select group</option>
+            <option>Sugar</option>
+            <option>Bottle</option>
+            <option>Preform</option>
+            <option>Resin</option>
+            <option>Caps</option>
+            <option>Crowns</option>
+          </select></label>
+          <label><span>Plate Number</span><input id="plate-number" type="text" placeholder="ABC1234"></label>
+          <label><span>Driver Name</span><input id="driver-name" type="text"></label>
+          <label><span>Helper Name</span><input id="helper-name" type="text"></label>
+          <label><span>Encoder Name</span><input id="encoder-name" type="text"></label>
+          <label><span>Status</span><select id="payroll-status">
+            <option>Draft</option>
+            <option>Submitted</option>
+            <option>Returned</option>
+            <option>Approved</option>
+            <option>Rejected</option>
+            <option>Paid</option>
+          </select></label>
+          <label class="wide-field"><span>General Remarks</span><textarea id="general-remarks" rows="2"></textarea></label>
+        </form>
+
+        <div class="payroll-actions payroll-header-actions payroll-toolbar">
+          <button id="new-payroll-button" class="btn btn-outline" type="button">New Payroll</button>
+          <button id="save-draft-button" class="btn btn-primary" type="button">Save Draft</button>
+          <button id="submit-payroll-button" class="btn btn-outline" type="button">Submit for Approval</button>
+          <button id="calculate-payroll-button" class="btn btn-outline" type="button">Calculate Payroll</button>
+          <button id="clear-form-button" class="btn btn-outline danger-outline" type="button">Clear Form</button>
+          <span id="payroll-save-status" class="payroll-status-line"></span>
+        </div>
+      </section>
+
+      <section class="payroll-section-card payroll-table-card payroll-table-shell">
+        <div class="payroll-card-head payroll-sheet-head">
+          <div>
+            <h2>Trip & Expense Encoding</h2>
+            <p>Encode trips, PO, shipment, van/container, route, salary, allowance, expenses, and released budget.</p>
+          </div>
+          <div class="payroll-table-actions payroll-toolbar">
+            <button id="add-line-button" class="btn btn-primary" type="button">Add Row</button>
+            <button id="add-10-lines-button" class="btn btn-outline" type="button">Add 10 Rows</button>
+            <button id="duplicate-line-button" class="btn btn-outline" type="button">Duplicate Selected Row</button>
+            <button id="delete-line-button" class="btn btn-outline danger-outline" type="button">Delete Selected Row</button>
+            <button id="clear-blank-lines-button" class="btn btn-outline" type="button">Clear Blank Rows</button>
+            <button id="apply-rule-button" class="btn btn-outline" type="button">Apply Matching Rule</button>
+          </div>
+        </div>
+
+        <div class="payroll-table-scroll">
+          <table class="payroll-table payroll-encoding-table">
+            <thead>
+              <tr>
+                <th class="sticky-col sticky-col-1">Select</th>
+                <th class="sticky-col sticky-col-2">Trip Date</th>
+                <th>Diesel / PO</th>
+                <th class="sticky-col sticky-col-3">PO No.</th>
+                <th>Shipment / DR No.</th>
+                <th class="sticky-col sticky-col-4">Van No.</th>
+                <th>Container Type</th>
+                <th>Source</th>
+                <th>Destination</th>
+                <th>Commodity</th>
+                <th>Driver Salary</th>
+                <th>Helper Salary</th>
+                <th>Driver Allowance</th>
+                <th>Helper Allowance</th>
+                <th>Toll Fee</th>
+                <th>Passway</th>
+                <th>Parking</th>
+                <th>Vulcanize</th>
+                <th>Other Expenses</th>
+                <th>Lagay Tao</th>
+                <th>Lagay Planta</th>
+                <th>Budget Released</th>
+                <th>Remarks</th>
+                <th>Warnings</th>
+              </tr>
+            </thead>
+            <tbody id="payroll-lines-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="payroll-section-card payroll-budget-card encode-totals-card">
+        <div id="calculation-summary" class="payroll-summary-grid"></div>
+        <aside id="payroll-warning-panel" class="payroll-warning-panel" hidden>
+          <div class="payroll-card-head">
+            <div>
+              <h2>Payroll Warnings</h2>
+              <p>Shown after Calculate or Submit.</p>
+            </div>
+          </div>
+          <div id="payroll-warning-list" class="payroll-alerts"></div>
+        </aside>
+      </section>
+      </section>
+
+      <section id="pasahod-summary-tab" class="payroll-tab-panel">
+      <div class="payroll-tab-heading">
+        <h2>Pasahod Summary</h2>
+        <p>Salary, allowance, deductions, and net pay for driver and helper.</p>
+      </div>
+      <section class="pasahod-summary-section">
+        <div class="payroll-section-card payroll-paper-card">
+          <div class="payroll-card-head">
+            <div>
+              <p class="eyebrow">Pasahod</p>
+              <h2>Driver Payroll Summary</h2>
+            </div>
+          </div>
+          <div class="person-payroll-grid">
+            <div class="paper-block">
+              <h3>Earnings</h3>
+              <div class="paper-row"><span>Total Salary</span><strong id="driver-total-salary">₱0.00</strong></div>
+              <div class="paper-row"><span>Total Allowance</span><strong id="driver-total-allowance">₱0.00</strong></div>
+              <div class="paper-row total"><span>Gross Pay</span><strong id="driver-gross-pay">₱0.00</strong></div>
+            </div>
+            <div class="paper-block">
+              <h3>Deductions</h3>
+              <label><span>Cash Advance / CA</span><input id="driver-deduction-ca" class="driver-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>SSS</span><input id="driver-deduction-sss" class="driver-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>Pag-IBIG</span><input id="driver-deduction-pagibig" class="driver-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>PhilHealth</span><input id="driver-deduction-philhealth" class="driver-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>ATM Card</span><input id="driver-deduction-atm" class="driver-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>Short / Shortage</span><input id="driver-deduction-short" class="driver-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>Other Deduction 1</span><input id="driver-deduction-other1" class="driver-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>Other Deduction 2</span><input id="driver-deduction-other2" class="driver-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>Other Deduction 3</span><input id="driver-deduction-other3" class="driver-deduction-input" type="number" min="0" step="0.01"></label>
+            </div>
+            <div class="paper-block result-block">
+              <h3>Result</h3>
+              <div class="paper-row"><span>Suggested Balance Deduction</span><strong id="driver-suggested-deduction">₱0.00</strong></div>
+              <div class="paper-row"><span>Total Deductions</span><strong id="driver-total-deductions">₱0.00</strong></div>
+              <div class="paper-row net"><span>Net Pay / Salary to Deposit</span><strong id="driver-net-pay">₱0.00</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="payroll-section-card payroll-paper-card">
+          <div class="payroll-card-head">
+            <div>
+              <p class="eyebrow">Pasahod</p>
+              <h2>Helper Payroll Summary</h2>
+            </div>
+          </div>
+          <div class="person-payroll-grid">
+            <div class="paper-block">
+              <h3>Earnings</h3>
+              <div class="paper-row"><span>Total Salary</span><strong id="helper-total-salary">₱0.00</strong></div>
+              <div class="paper-row"><span>Total Allowance</span><strong id="helper-total-allowance">₱0.00</strong></div>
+              <div class="paper-row total"><span>Gross Pay</span><strong id="helper-gross-pay">₱0.00</strong></div>
+            </div>
+            <div class="paper-block">
+              <h3>Deductions</h3>
+              <label><span>Cash Advance / CA</span><input id="helper-deduction-ca" class="helper-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>SSS</span><input id="helper-deduction-sss" class="helper-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>Pag-IBIG</span><input id="helper-deduction-pagibig" class="helper-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>PhilHealth</span><input id="helper-deduction-philhealth" class="helper-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>ATM Card</span><input id="helper-deduction-atm" class="helper-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>Short / Shortage</span><input id="helper-deduction-short" class="helper-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>Other Deduction 1</span><input id="helper-deduction-other1" class="helper-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>Other Deduction 2</span><input id="helper-deduction-other2" class="helper-deduction-input" type="number" min="0" step="0.01"></label>
+              <label><span>Other Deduction 3</span><input id="helper-deduction-other3" class="helper-deduction-input" type="number" min="0" step="0.01"></label>
+            </div>
+            <div class="paper-block result-block">
+              <h3>Result</h3>
+              <div class="paper-row"><span>Suggested Balance Deduction</span><strong id="helper-suggested-deduction">₱0.00</strong></div>
+              <div class="paper-row"><span>Total Deductions</span><strong id="helper-total-deductions">₱0.00</strong></div>
+              <div class="paper-row net"><span>Net Pay / Salary to Deposit</span><strong id="helper-net-pay">₱0.00</strong></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="payroll-section-card payroll-budget-card pasahod-shared-totals">
+        <div class="payroll-card-head">
+          <div>
+            <h2>Shared Payroll Totals</h2>
+            <p>Budget, expenses, remaining balance, suggested deduction, and notes.</p>
+          </div>
+        </div>
+        <div id="pasahod-budget-summary" class="payroll-summary-grid"></div>
+      </section>
+      </section>
+
+      <section id="approval-payment-tab" class="payroll-tab-panel">
+      <div class="payroll-tab-heading">
+        <h2>Approval / Payment</h2>
+        <p>Office review, overrides, payment details, and Viber-ready message.</p>
+      </div>
+      <section class="payroll-section-card payroll-review-card">
+        <div class="payroll-card-head">
+          <div>
+            <h2>Approval / Office Review</h2>
+            <p>Final checks, overrides, payment reference, and Viber-ready message.</p>
+          </div>
+        </div>
+        <div class="payroll-form-grid">
+          <label><span>Approver Name</span><input id="approver-name" type="text"></label>
+          <label><span>Override Driver Deduction</span><input id="override-driver-deduction" type="number" min="0" step="0.01"></label>
+          <label><span>Override Helper Deduction</span><input id="override-helper-deduction" type="number" min="0" step="0.01"></label>
+          <label><span>Final Driver Net Pay</span><input id="final-driver-net-pay" type="text" readonly></label>
+          <label><span>Final Helper Net Pay</span><input id="final-helper-net-pay" type="text" readonly></label>
+          <label><span>Payment Reference</span><input id="payment-reference" type="text"></label>
+          <label><span>Payment Date</span><input id="payment-date" type="date"></label>
+          <label class="wide-field"><span>Approval Notes</span><textarea id="approval-notes" rows="3"></textarea></label>
+          <label class="wide-field"><span>Rejection / Revision Reason</span><textarea id="revision-reason" rows="3"></textarea></label>
+          <div class="payroll-actions payroll-toolbar">
+            <button id="approve-payroll-button" class="btn btn-primary" type="button">Approve Payroll</button>
+            <button id="return-payroll-button" class="btn btn-outline" type="button">Return for Revision</button>
+            <button id="reject-payroll-button" class="btn btn-outline danger-outline" type="button">Reject Payroll</button>
+            <button id="mark-paid-button" class="btn btn-outline" type="button">Mark as Paid</button>
+            <button id="generate-viber-button" class="btn btn-outline" type="button">Generate Viber Message</button>
+          </div>
+        </div>
+        <div class="viber-box">
+          <div class="payroll-card-head">
+            <div>
+              <h2>Viber Message</h2>
+              <p>Copy after approval or payment.</p>
+            </div>
+            <button id="copy-viber-button" class="btn btn-primary" type="button">Copy Message</button>
+          </div>
+          <textarea id="viber-message" class="viber-message" rows="13" readonly></textarea>
+          <div id="copy-viber-status" class="payroll-status-line"></div>
+        </div>
+      </section>
+      </section>
+
+      <section id="saved-records-tab" class="payroll-tab-panel">
+      <section class="payroll-section-card payroll-records-card">
+        <div class="payroll-card-head">
+          <div>
+            <h2>Saved Payroll Records</h2>
+            <p>Local records saved in this browser.</p>
+          </div>
+        </div>
+        <div class="payroll-filters">
+          <label><span>Status</span><select id="filter-status"><option value="">All</option><option>Draft</option><option>Submitted</option><option>Returned</option><option>Approved</option><option>Rejected</option><option>Paid</option></select></label>
+          <label><span>Group</span><select id="filter-group"><option value="">All</option><option>Sugar</option><option>Bottle</option><option>Preform</option><option>Resin</option><option>Caps</option><option>Crowns</option></select></label>
+          <label><span>Plate Number</span><input id="filter-plate" type="text"></label>
+          <label><span>Driver</span><input id="filter-driver" type="text"></label>
+          <label><span>Payroll Date</span><input id="filter-payroll-date" type="date"></label>
+        </div>
+        <div class="payroll-table-wrap">
+          <table class="payroll-table payroll-records-table">
+            <thead>
+              <tr>
+                <th>Payroll Date</th><th>Plate</th><th>Driver</th><th>Helper</th><th>Status</th><th>Total Expenses</th><th>Driver Net Pay</th><th>Helper Net Pay</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="records-body"></tbody>
+          </table>
+        </div>
+      </section>
+      </section>
+
+      <div hidden>
+        <button id="add-rule-button" type="button"></button>
+        <button id="save-rules-button" type="button"></button>
+        <button id="delete-rule-button" type="button"></button>
+        <button id="load-sample-rules-button" type="button"></button>
+        <div id="balance-summary"></div>
+        <table><tbody id="rules-body"></tbody></table>
+        <table><tbody id="ledger-body"></tbody></table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-grid">
+      <div>
+        <strong>VNS Logistics</strong>
+        <p>Moving Business Forward</p>
+      </div>
+      <a href="portal.html">Back to Portal</a>
+    </div>
+  </footer>
+
+  <script src="payroll.js"></script>
+</body>
+</html>
