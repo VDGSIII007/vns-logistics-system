@@ -57,6 +57,7 @@ const recordsPlateFilter = document.getElementById('records-plate-filter');
 const recordsTypeFilter = document.getElementById('records-type-filter');
 const recordsRepairStatusFilter = document.getElementById('records-repair-status-filter');
 const recordsPaymentStatusFilter = document.getElementById('records-payment-status-filter');
+const recordsApprovalStatusFilter = document.getElementById('records-approval-status-filter');
 const recordsDateTypeFilter = document.getElementById('records-date-type-filter');
 const recordsDateFromFilter = document.getElementById('records-date-from-filter');
 const recordsDateToFilter = document.getElementById('records-date-to-filter');
@@ -69,6 +70,20 @@ const savedRecordsBody = document.getElementById('saved-records-body');
 const recordDetailsPanel = document.getElementById('record-details-panel');
 const recordDetailsContent = document.getElementById('record-details-content');
 const closeRecordDetails = document.getElementById('close-record-details');
+const paymentUpdatePanel = document.getElementById('payment-update-panel');
+const paymentUpdateForm = document.getElementById('payment-update-form');
+const closePaymentUpdate = document.getElementById('close-payment-update');
+const cancelPaymentUpdateButton = document.getElementById('cancel-payment-update-button');
+const paymentRecordIndex = document.getElementById('payment-record-index');
+const paymentPlateNumber = document.getElementById('payment-plate-number');
+const paymentItemWork = document.getElementById('payment-item-work');
+const paymentOriginalTotal = document.getElementById('payment-original-total');
+const paymentFinalCost = document.getElementById('payment-final-cost');
+const paymentStatusField = document.getElementById('payment-status-field');
+const paymentDateField = document.getElementById('payment-date-field');
+const paymentReferenceField = document.getElementById('payment-reference-field');
+const paymentNotesField = document.getElementById('payment-notes-field');
+const paymentUpdateStatus = document.getElementById('payment-update-status');
 const refreshGarageTrucksButton = document.getElementById('refresh-garage-trucks-button');
 const garageTimeFilter = document.getElementById('garage-time-filter');
 const garageTruckSearch = document.getElementById('garageTruckSearch');
@@ -97,6 +112,8 @@ let localForRepairTrucks = [];
 let savedRecordsQuickFilter = '';
 let savedParsedRequestSignature = '';
 let savedParsedRowKeys = new Set();
+const REPAIR_CHANGE_REQUESTS_KEY = 'vnsRepairChangeRequests';
+const REPAIR_PAYMENT_UPDATES_KEY = 'vnsRepairPaymentUpdates';
 
 function initRepairTabs() {
   const buttons = document.querySelectorAll('.repair-tab-button');
@@ -1467,6 +1484,20 @@ function formatDateDisplay(value) {
   }).format(date);
 }
 
+function formatDateTimeDisplay(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return truncateRecordValue(text, 32);
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  }).format(date);
+}
+
 function formatPeso(value) {
   const cleaned = cleanMoney(value);
   if (!cleaned) return '';
@@ -1821,57 +1852,129 @@ function buildStatusOptions(options, currentValue) {
 }
 
 function buildPaymentStatusActions(record, recordIndex) {
-  const currentPaymentStatus = String(getRecordValue(record, 'Payment_Status') || 'Unpaid');
-  const currentRepairStatus = String(getRecordValue(record, 'Repair_Status') || 'Pending');
-  const remarks = String(getRecordValue(record, 'Remarks') || '');
-  const originalCost = getOriginalTotalCost(record);
-  const finalCost = getFinalCost(record) || originalCost;
-  const costRemarks = String(getCostRemarks(record) || '');
-  const costDelta = getCostDeltaDisplay(originalCost, finalCost);
-  const payee = String(getRecordValue(record, 'Payee') || '');
-    const repairStatusOptions = buildStatusOptions(['Pending', 'For Repair', 'Ongoing Repair', 'Waiting Parts', 'Done', 'Released', 'Completed', 'Cancelled'], currentRepairStatus);
-  const paymentStatusOptions = buildStatusOptions(['Unpaid', 'For Deposit', 'Paid', 'Partially Paid'], currentPaymentStatus);
-
+  const hasPaymentUpdate = getRepairPaymentValue(record, 'hasPaymentUpdate');
+  const updatedAt = getRepairPaymentValue(record, 'updatedAt');
+  const updatedTitle = updatedAt ? `Payment / final cost updated: ${formatDateTimeDisplay(updatedAt)}` : 'Payment / final cost updated';
   return `
-    <div class="status-actions">
-      <label>
-        <span>Repair Status</span>
-        <select data-status-field="repairStatus" data-record-index="${recordIndex}">
-          ${repairStatusOptions}
-        </select>
-      </label>
-      <label>
-        <span>Payment Status</span>
-        <select data-status-field="paymentStatus" data-record-index="${recordIndex}">
-          ${paymentStatusOptions}
-        </select>
-      </label>
-      <label>
-        <span>Remarks</span>
-        <input data-status-field="remarks" data-record-index="${recordIndex}" type="text" value="${escapeHtml(remarks)}" placeholder="Status remarks">
-      </label>
-      <label>
-        <span>Approved / Final Cost</span>
-        <input data-status-field="finalCost" data-record-index="${recordIndex}" type="number" min="0" step="0.01" value="${escapeHtml(formatMoneyInput(finalCost))}" placeholder="0">
-      </label>
-      <label>
-        <span>Cost Remarks</span>
-        <input data-status-field="costRemarks" data-record-index="${recordIndex}" type="text" value="${escapeHtml(costRemarks)}" placeholder="Discount, tawad, supplier note">
-      </label>
-      <span class="cost-delta-label${costDelta.added ? ' added' : ''}" data-cost-delta="${recordIndex}"${costDelta.text ? '' : ' hidden'}>${escapeHtml(costDelta.text)}</span>
-      <label>
-        <span>Payee</span>
-        <input data-status-field="payee" data-record-index="${recordIndex}" type="text" value="${escapeHtml(payee)}" placeholder="Supplier, mechanic, payee">
-      </label>
-      <button class="save-status-button" type="button" data-record-index="${recordIndex}">Save Status</button>
+    <div class="change-request-actions">
+      <button class="details-button action-mini-button" type="button" data-record-index="${recordIndex}">View</button>
+      <button class="payment-cost-button action-mini-button" type="button" data-payment-cost="${recordIndex}">Payment</button>
+      <div class="more-actions-wrap">
+        <button class="more-actions-button action-mini-button" type="button" data-more-actions="${recordIndex}" aria-expanded="false">More</button>
+        <div class="more-actions-menu" data-more-menu="${recordIndex}" hidden>
+          <button class="request-edit-button" type="button" data-change-request="edit" data-record-index="${recordIndex}">Request Edit</button>
+          <button class="request-delete-button" type="button" data-change-request="delete" data-record-index="${recordIndex}">Request Delete</button>
+        </div>
+      </div>
+      ${hasPaymentUpdate ? `<span class="payment-updated-indicator" title="${escapeHtml(updatedTitle)}">Updated</span>` : ''}
       <span class="row-status-message" data-row-status="${recordIndex}"></span>
     </div>
   `;
 }
 
+function readRepairChangeRequests() {
+  try {
+    const raw = localStorage.getItem(REPAIR_CHANGE_REQUESTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function readRepairPaymentUpdates() {
+  try {
+    const raw = localStorage.getItem(REPAIR_PAYMENT_UPDATES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function writeRepairPaymentUpdates(updates) {
+  localStorage.setItem(REPAIR_PAYMENT_UPDATES_KEY, JSON.stringify(updates));
+}
+
+function getRepairRecordId(record) {
+  return String(getRecordValue(record, 'Request_ID') || getSavedRepairDuplicateKey(record) || '').trim();
+}
+
+function getRepairPaymentPatch(record) {
+  const recordId = getRepairRecordId(record);
+  const updates = readRepairPaymentUpdates();
+  return recordId ? updates[recordId] || {} : {};
+}
+
+function getRepairPaymentValue(record, field) {
+  const patch = getRepairPaymentPatch(record);
+  const fieldMap = {
+    finalCost: ['Final_Cost', 'Final Cost', 'Approved_Cost', 'Approved Cost', 'Total_Cost', 'Total Cost'],
+    paymentStatus: ['Payment_Status', 'paymentStatus'],
+    paymentDate: ['Payment_Date', 'paymentDate', 'Paid_At', 'paidAt'],
+    paymentReference: ['Payment_Reference', 'paymentReference', 'Proof_Of_Payment', 'proofOfPayment'],
+    paymentNotes: ['Payment_Notes', 'paymentNotes'],
+    updatedAt: ['Updated_At', 'updatedAt'],
+    updatedBy: ['Updated_By', 'updatedBy'],
+    hasPaymentUpdate: ['hasPaymentUpdate']
+  };
+  if (field === 'hasPaymentUpdate') return Boolean(patch.hasPaymentUpdate || record?.hasPaymentUpdate);
+  if (patch[field] !== undefined && patch[field] !== null && String(patch[field]).trim() !== '') return patch[field];
+  const keys = fieldMap[field] || [];
+  for (const key of keys) {
+    const value = getRecordValue(record, key);
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+  if (field === 'paymentStatus') return 'Unpaid';
+  if (field === 'finalCost') return getOriginalTotalCost(record) || getRecordValue(record, 'Total_Cost');
+  return '';
+}
+
+function applyRepairPaymentPatchToRecord(record, patch) {
+  record.Final_Cost = cleanMoney(patch.finalCost) || cleanMoney(getOriginalTotalCost(record) || getRecordValue(record, 'Total_Cost'));
+  record.Payment_Status = patch.paymentStatus || 'Unpaid';
+  record.Payment_Date = patch.paymentDate || '';
+  record.Payment_Reference = patch.paymentReference || '';
+  record.Payment_Notes = patch.paymentNotes || '';
+  record.Updated_At = patch.updatedAt || new Date().toISOString();
+  record.Updated_By = patch.updatedBy || 'Local User';
+  record.hasPaymentUpdate = Boolean(patch.hasPaymentUpdate);
+}
+
+function saveRepairChangeRequest(record, requestType, reason) {
+  const requests = readRepairChangeRequests();
+  const now = new Date().toISOString();
+  const normalizedType = requestType === 'delete' ? 'Delete' : 'Edit';
+  const request = {
+    id: `repair_change_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    repairRecordId: getRepairRecordId(record),
+    requestType: normalizedType,
+    reason: String(reason || '').trim(),
+    requestedAt: now,
+    requestedBy: 'Web User',
+    approvalStatus: 'Pending Owner Approval',
+    approvedBy: '',
+    approvedAt: '',
+    remarks: '',
+    requestSnapshot: { ...record }
+  };
+  localStorage.setItem(REPAIR_CHANGE_REQUESTS_KEY, JSON.stringify([request].concat(requests)));
+  return request;
+}
+
+function requestSavedRepairChange(recordIndex, requestType, button) {
+  const record = savedRepairRecords[recordIndex];
+  if (!record || !recordsStatus) return;
+  const label = requestType === 'delete' ? 'delete' : 'edit';
+  const reason = window.prompt(`Reason for ${label} request? This will not change the saved repair record.`);
+  if (reason === null) return;
+  saveRepairChangeRequest(record, requestType, reason);
+  const rowStatus = button?.closest('.change-request-actions')?.querySelector(`[data-row-status="${recordIndex}"]`);
+  if (rowStatus) rowStatus.textContent = `${label === 'delete' ? 'Delete' : 'Edit'} request saved`;
+  recordsStatus.textContent = `${label === 'delete' ? 'Delete' : 'Edit'} request saved to ${REPAIR_CHANGE_REQUESTS_KEY}. Saved record was not changed.`;
+}
+
 function updateRecordsSummary(records) {
   const totalCost = records.reduce((sum, record) => {
-    const value = Number(cleanMoney(getFinalCost(record)));
+    const value = Number(cleanMoney(getRepairPaymentValue(record, 'finalCost')));
     return sum + (Number.isFinite(value) ? value : 0);
   }, 0);
 
@@ -1943,6 +2046,7 @@ function filterSavedRecords(records) {
   const requestType = recordsTypeFilter?.value || '';
   const repairStatus = normalizeStatusFilterValue(recordsRepairStatusFilter?.value || '');
   const paymentStatus = normalizeStatusFilterValue(recordsPaymentStatusFilter?.value || '');
+  const approvalStatus = normalizeStatusFilterValue(recordsApprovalStatusFilter?.value || '');
   const dateType = recordsDateTypeFilter?.value || 'dateRequested';
   const dateFrom = normalizeDateForFilter(recordsDateFromFilter?.value || '');
   const dateTo = normalizeDateForFilter(recordsDateToFilter?.value || '');
@@ -1955,9 +2059,11 @@ function filterSavedRecords(records) {
     const recordPlate = String(getRecordValue(record, 'Plate_Number')).toLowerCase();
     const recordType = String(getRecordValue(record, 'Request_Type'));
     const recordRepairStatus = String(getRecordValue(record, 'Repair_Status'));
-    const recordPaymentStatus = String(getRecordValue(record, 'Payment_Status'));
+    const recordPaymentStatus = String(getRepairPaymentValue(record, 'paymentStatus'));
+    const recordApprovalStatus = String(getRecordValue(record, 'Approval_Status') || getRecordValue(record, 'approvalStatus') || getRecordValue(record, 'Status'));
     const normalizedRepairStatus = normalizeStatusFilterValue(recordRepairStatus);
     const normalizedPaymentStatus = normalizeStatusFilterValue(recordPaymentStatus);
+    const normalizedApprovalStatus = normalizeStatusFilterValue(recordApprovalStatus);
     const recordDate = getRepairRecordDateByType(record, dateType);
     const matchesQuickFilter =
       !savedRecordsQuickFilter ||
@@ -1970,6 +2076,7 @@ function filterSavedRecords(records) {
       (!requestType || recordType === requestType) &&
       (!repairStatus || normalizedRepairStatus === repairStatus) &&
       (!paymentStatus || normalizedPaymentStatus === paymentStatus) &&
+      (!approvalStatus || normalizedApprovalStatus === approvalStatus) &&
       (!dateFilterActive || (recordDate && (!dateFrom || recordDate >= dateFrom) && (!dateTo || recordDate <= dateTo))) &&
       matchesQuickFilter;
   });
@@ -1987,6 +2094,7 @@ function clearSavedRecordFilters() {
   if (recordsTypeFilter) recordsTypeFilter.value = '';
   if (recordsRepairStatusFilter) recordsRepairStatusFilter.value = '';
   if (recordsPaymentStatusFilter) recordsPaymentStatusFilter.value = '';
+  if (recordsApprovalStatusFilter) recordsApprovalStatusFilter.value = '';
   if (recordsDateTypeFilter) recordsDateTypeFilter.value = '';
   if (recordsDateFromFilter) recordsDateFromFilter.value = '';
   if (recordsDateToFilter) recordsDateToFilter.value = '';
@@ -2032,7 +2140,7 @@ function renderSavedRecords() {
   }
 
   if (!records.length) {
-    savedRecordsBody.innerHTML = '<tr><td colspan="17" class="empty">No saved repair records found.</td></tr>';
+    savedRecordsBody.innerHTML = '<tr><td colspan="22" class="empty">No saved repair records found.</td></tr>';
     return;
   }
 
@@ -2040,13 +2148,22 @@ function renderSavedRecords() {
     const recordIndex = savedRepairRecords.indexOf(record);
     const recordId = getRecordValue(record, 'Request_ID');
     const plateNumber = truncateRecordValue(getRecordValue(record, 'Plate_Number'), 18);
+    const truckType = getRecordValue(record, 'Truck_Type') || getRecordValue(record, 'Truck Type') || getRecordValue(record, 'Body_Type');
     const originalCost = getOriginalTotalCost(record);
-    const finalCost = getFinalCost(record) || originalCost;
+    const finalCost = getRepairPaymentValue(record, 'finalCost') || originalCost;
+    const unitCost = getRecordValue(record, 'Unit_Cost') || getRecordValue(record, 'unitCost');
+    const approvalStatus = getRecordValue(record, 'Approval_Status') || getRecordValue(record, 'approvalStatus') || getRecordValue(record, 'Status');
+    const paymentStatus = getRepairPaymentValue(record, 'paymentStatus');
+    const paymentDate = getRepairPaymentValue(record, 'paymentDate');
+    const paymentReference = getRepairPaymentValue(record, 'paymentReference');
+    const hasPaymentUpdate = getRepairPaymentValue(record, 'hasPaymentUpdate');
     return `
-    <tr>
+    <tr class="${hasPaymentUpdate ? 'has-payment-update' : ''}">
       <td class="selection-cell"><input class="savedRecordCheckbox" type="checkbox" data-record-index="${recordIndex}" aria-label="Select saved repair record"></td>
-      <td class="cell-plate">${escapeHtml(plateNumber)}</td>
+      <td class="record-id-cell cell-muted" title="${escapeHtml(recordId)}">${escapeHtml(truncateRecordValue(recordId, 30))}</td>
       <td>${escapeHtml(formatDateDisplay(getRecordValue(record, 'Date_Requested')))}</td>
+      <td class="cell-plate">${escapeHtml(plateNumber)}</td>
+      <td>${escapeHtml(truncateRecordValue(truckType, 24))}</td>
       <td>${renderTypeBadge(getRecordValue(record, 'Request_Type'))}</td>
       <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Driver'), 28))}</td>
       <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Payee'), 28))}</td>
@@ -2054,13 +2171,16 @@ function renderSavedRecords() {
       <td>${renderClampedCell(getRecordValue(record, 'Repair_Parts'))}</td>
       <td>${renderClampedCell(getRecordValue(record, 'Work_Done'))}</td>
       <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Quantity'), 18))}</td>
+      <td class="cell-money">${escapeHtml(formatPeso(unitCost))}</td>
       <td class="cell-money">${escapeHtml(formatPeso(originalCost))}</td>
       <td class="cell-money">${escapeHtml(formatPeso(finalCost))}</td>
+      <td>${renderStatusBadge('payment', paymentStatus)}</td>
+      <td>${escapeHtml(formatDateDisplay(paymentDate))}</td>
+      <td>${escapeHtml(truncateRecordValue(paymentReference, 32))}</td>
       <td>${renderStatusBadge('repair', getRecordValue(record, 'Repair_Status'))}</td>
-      <td>${renderStatusBadge('payment', getRecordValue(record, 'Payment_Status'))}</td>
-      <td><button class="details-button" type="button" data-record-index="${recordIndex}">View Details</button></td>
+      <td>${renderStatusBadge('approval', approvalStatus)}</td>
+      <td>${renderClampedCell(getRecordValue(record, 'Remarks'))}</td>
       <td class="actions-cell">${buildPaymentStatusActions(record, recordIndex)}</td>
-      <td class="record-id-cell cell-muted" title="${escapeHtml(recordId)}">${escapeHtml(truncateRecordValue(recordId, 36))}</td>
     </tr>
   `;
   }).join('');
@@ -2070,7 +2190,7 @@ async function loadSavedRepairRecords() {
   if (!savedRecordsBody || !recordsStatus) return;
   recordsStatus.textContent = 'Loading saved records...';
   updateRecordsSummary([]);
-  savedRecordsBody.innerHTML = '<tr><td colspan="17" class="empty">Loading saved repair records...</td></tr>';
+  savedRecordsBody.innerHTML = '<tr><td colspan="22" class="empty">Loading saved repair records...</td></tr>';
 
   try {
     const response = await fetch(`${REPAIR_WEB_APP_URL}?action=list`);
@@ -2083,7 +2203,7 @@ async function loadSavedRepairRecords() {
   } catch (error) {
     savedRepairRecords = [];
     updateRecordsSummary([]);
-    savedRecordsBody.innerHTML = '<tr><td colspan="17" class="empty">Unable to load saved records. Please try again.</td></tr>';
+    savedRecordsBody.innerHTML = '<tr><td colspan="22" class="empty">Unable to load saved records. Please try again.</td></tr>';
     recordsStatus.textContent = 'Error loading saved records.';
   }
 }
@@ -2255,15 +2375,94 @@ function buildDetailBlock(label, value) {
 
 function showRecordDetails(record) {
   if (!recordDetailsPanel || !recordDetailsContent) return;
-  recordDetailsContent.innerHTML = [
+  const updatedAt = getRepairPaymentValue(record, 'updatedAt');
+  const updatedBy = getRepairPaymentValue(record, 'updatedBy');
+  const detailBlocks = [
+    buildDetailBlock('Original Cost', formatPeso(getOriginalTotalCost(record) || getRecordValue(record, 'Total_Cost'))),
+    buildDetailBlock('Final Cost', formatPeso(getRepairPaymentValue(record, 'finalCost'))),
+    buildDetailBlock('Payment Status', getRepairPaymentValue(record, 'paymentStatus')),
+    buildDetailBlock('Payment Date', formatDateDisplay(getRepairPaymentValue(record, 'paymentDate'))),
+    buildDetailBlock('Payment Reference', getRepairPaymentValue(record, 'paymentReference')),
     buildDetailBlock('Payee', getRecordValue(record, 'Payee')),
     buildDetailBlock('Original Message', getRecordValue(record, 'Source_Message')),
     buildDetailBlock('Payment Message', getRecordValue(record, 'Payment_Message')),
     buildDetailBlock('Receipt Link', getRecordValue(record, 'Receipt_Link')),
     buildDetailBlock('Photo Link', getRecordValue(record, 'Photo_Link')),
     buildDetailBlock('Proof Of Payment', getRecordValue(record, 'Proof_Of_Payment'))
-  ].join('');
+  ];
+  if (updatedAt) detailBlocks.push(buildDetailBlock('Updated At', formatDateTimeDisplay(updatedAt)));
+  if (updatedBy) detailBlocks.push(buildDetailBlock('Updated By', updatedBy));
+  recordDetailsContent.innerHTML = detailBlocks.join('');
   recordDetailsPanel.hidden = false;
+}
+
+function hidePaymentUpdateModal() {
+  if (paymentUpdatePanel) paymentUpdatePanel.hidden = true;
+  if (paymentUpdateStatus) paymentUpdateStatus.textContent = '';
+}
+
+function showPaymentUpdateModal(recordIndex) {
+  const record = savedRepairRecords[recordIndex];
+  if (!record || !paymentUpdatePanel || !paymentUpdateForm) return;
+  const item = getRecordValue(record, 'Repair_Parts') || getRecordValue(record, 'Work_Done') || '';
+  if (paymentRecordIndex) paymentRecordIndex.value = String(recordIndex);
+  if (paymentPlateNumber) paymentPlateNumber.value = getRecordValue(record, 'Plate_Number') || '';
+  if (paymentItemWork) paymentItemWork.value = String(item || '').replace(/\s+/g, ' ').trim();
+  if (paymentOriginalTotal) paymentOriginalTotal.value = formatPeso(getOriginalTotalCost(record) || getRecordValue(record, 'Total_Cost')) || 'PHP 0';
+  if (paymentFinalCost) paymentFinalCost.value = formatMoneyInput(getRepairPaymentValue(record, 'finalCost') || getOriginalTotalCost(record));
+  if (paymentStatusField) paymentStatusField.value = getRepairPaymentValue(record, 'paymentStatus') === 'Paid' ? 'Paid' : 'Unpaid';
+  if (paymentDateField) paymentDateField.value = normalizeDateForFilter(getRepairPaymentValue(record, 'paymentDate'));
+  if (paymentReferenceField) paymentReferenceField.value = getRepairPaymentValue(record, 'paymentReference') || '';
+  if (paymentNotesField) paymentNotesField.value = getRepairPaymentValue(record, 'paymentNotes') || '';
+  if (paymentUpdateStatus) paymentUpdateStatus.textContent = '';
+  paymentUpdatePanel.hidden = false;
+}
+
+function savePaymentUpdate(event) {
+  event.preventDefault();
+  const recordIndex = Number(paymentRecordIndex?.value);
+  const record = savedRepairRecords[recordIndex];
+  if (!record || !recordsStatus) return;
+  const recordId = getRepairRecordId(record);
+  if (!recordId) {
+    if (paymentUpdateStatus) paymentUpdateStatus.textContent = 'Cannot save payment info because this record has no ID.';
+    return;
+  }
+
+  const originalCost = cleanMoney(getOriginalTotalCost(record) || getRecordValue(record, 'Total_Cost'));
+  const finalCost = cleanMoney(paymentFinalCost?.value) || originalCost;
+  const oldValues = {
+    finalCost: cleanMoney(getRepairPaymentValue(record, 'finalCost') || originalCost),
+    paymentStatus: String(getRepairPaymentValue(record, 'paymentStatus') || 'Unpaid'),
+    paymentDate: normalizeDateForFilter(getRepairPaymentValue(record, 'paymentDate') || ''),
+    paymentReference: String(getRepairPaymentValue(record, 'paymentReference') || '').trim(),
+    paymentNotes: String(getRepairPaymentValue(record, 'paymentNotes') || '').trim()
+  };
+  const newValues = {
+    finalCost,
+    paymentStatus: paymentStatusField?.value === 'Paid' ? 'Paid' : 'Unpaid',
+    paymentDate: paymentDateField?.value || '',
+    paymentReference: paymentReferenceField?.value.trim() || '',
+    paymentNotes: paymentNotesField?.value.trim() || ''
+  };
+  const changed = oldValues.finalCost !== newValues.finalCost ||
+    oldValues.paymentStatus !== newValues.paymentStatus ||
+    oldValues.paymentDate !== newValues.paymentDate ||
+    oldValues.paymentReference !== newValues.paymentReference ||
+    oldValues.paymentNotes !== newValues.paymentNotes;
+  const patch = {
+    ...newValues,
+    hasPaymentUpdate: changed || Boolean(getRepairPaymentValue(record, 'hasPaymentUpdate')),
+    updatedAt: changed ? new Date().toISOString() : getRepairPaymentValue(record, 'updatedAt'),
+    updatedBy: changed ? 'Local User' : getRepairPaymentValue(record, 'updatedBy')
+  };
+  const updates = readRepairPaymentUpdates();
+  updates[recordId] = patch;
+  writeRepairPaymentUpdates(updates);
+  applyRepairPaymentPatchToRecord(record, patch);
+  renderSavedRecords();
+  recordsStatus.textContent = 'Payment info saved locally. Original repair amounts were preserved.';
+  hidePaymentUpdateModal();
 }
 
 function hideRecordDetails() {
@@ -2858,7 +3057,7 @@ if (clearViberFollowupBtn) {
   if (button) button.addEventListener('click', closeViberFollowupPanel);
 });
 
-[recordsPlateFilter, recordsTypeFilter, recordsRepairStatusFilter, recordsPaymentStatusFilter, recordsDateTypeFilter, recordsDateFromFilter, recordsDateToFilter].forEach(filter => {
+[recordsPlateFilter, recordsTypeFilter, recordsRepairStatusFilter, recordsPaymentStatusFilter, recordsApprovalStatusFilter, recordsDateTypeFilter, recordsDateFromFilter, recordsDateToFilter].forEach(filter => {
   if (filter) {
     filter.addEventListener('input', () => {
       savedRecordsQuickFilter = '';
@@ -2906,6 +3105,40 @@ if (savedRecordsBody) {
       return;
     }
 
+    const paymentCostButton = event.target.closest('[data-payment-cost]');
+    if (paymentCostButton) {
+      showPaymentUpdateModal(Number(paymentCostButton.dataset.paymentCost));
+      return;
+    }
+
+    const moreActionsButton = event.target.closest('[data-more-actions]');
+    if (moreActionsButton) {
+      const recordIndex = moreActionsButton.dataset.moreActions;
+      const menu = savedRecordsBody.querySelector(`[data-more-menu="${recordIndex}"]`);
+      const willOpen = Boolean(menu?.hidden);
+      savedRecordsBody.querySelectorAll('.more-actions-menu').forEach(item => {
+        item.hidden = true;
+      });
+      savedRecordsBody.querySelectorAll('[data-more-actions]').forEach(button => {
+        button.setAttribute('aria-expanded', 'false');
+      });
+      if (menu) {
+        menu.hidden = !willOpen;
+        moreActionsButton.setAttribute('aria-expanded', String(willOpen));
+      }
+      return;
+    }
+
+    const changeRequestButton = event.target.closest('[data-change-request]');
+    if (changeRequestButton) {
+      requestSavedRepairChange(
+        Number(changeRequestButton.dataset.recordIndex),
+        changeRequestButton.dataset.changeRequest,
+        changeRequestButton
+      );
+      return;
+    }
+
     const statusButton = event.target.closest('.save-status-button');
     if (statusButton) {
       updateSavedRecordStatus(Number(statusButton.dataset.recordIndex), statusButton);
@@ -2920,6 +3153,20 @@ if (closeRecordDetails) {
 if (recordDetailsPanel) {
   recordDetailsPanel.addEventListener('click', event => {
     if (event.target === recordDetailsPanel) hideRecordDetails();
+  });
+}
+
+if (paymentUpdateForm) {
+  paymentUpdateForm.addEventListener('submit', savePaymentUpdate);
+}
+
+[closePaymentUpdate, cancelPaymentUpdateButton].forEach(button => {
+  if (button) button.addEventListener('click', hidePaymentUpdateModal);
+});
+
+if (paymentUpdatePanel) {
+  paymentUpdatePanel.addEventListener('click', event => {
+    if (event.target === paymentUpdatePanel) hidePaymentUpdateModal();
   });
 }
 
