@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dispatch Portal | VNS Logistics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="styles.css" />
+
+  <style>
+    /* ══════════════════════════════════════════
+       DISPATCH PAGE — scoped to .dispatch-page
+    ══════════════════════════════════════════ */
+    body.dispatch-page { background: #f1f3f5; }
+
+    /* ─── Dispatch Hero Banner ─── */
+    .dispatch-banner {
+      background: linear-gradient(135deg, #0f0f0f 0%, #1a0a0c 60%, #2d0f12 100%);
+      border-bottom: 3px solid #d71920;
+      padding: 2rem 0 1.6rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .dispatch-banner::before {
+      content: '';
+      position: absolute;
+      right: -80px; top: -80px;
+      width: 380px; height: 380px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(215,25,32,.18), transparent 70%);
+      pointer-events: none;
+    }
+    .dispatch-banner-inner {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .dispatch-banner-left {}
+    .dispatch-banner .eyebrow {
+      color: #d71920;
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-weight: 800;
+      margin: 0 0 0.3rem;
+    }
+    .dispatch-banner h1 {
+      margin: 0 0 0.25rem;
+      font-size: 1.75rem;
+      font-weight: 900;
+      color: #fff;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+    .dispatch-banner .banner-sub {
+      color: #9ca3af;
+      font-size: 0.85rem;
+      margin: 0;
+    }
+    .dispatch-banner-right {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .data-status-badge {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 5px 12px;
+      border-radius: 20px;
+      letter-spacing: 0.02em;
+    }
+    .dsb-loading { background: #374151; color: #d1d5db; }
+    .dsb-live    { background: #064e3b; color: #6ee7b7; }
+    .dsb-local   { background: #1e3a5f; color: #93c5fd; }
+    .dsb-error   { background: #450a0a; color: #fca5a5; }
+
+    /* ─── Workspace ─── */
+    .dispatch-workspace {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 1.5rem 2rem 3rem;
+    }
+
+    /* ─── Tab Nav ─── */
+    .dispatch-tabs {
+      display: flex;
+      gap: 2px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 5px;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+      width: fit-content;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .dispatch-tab-btn {
+      padding: 8px 20px;
+      border: none;
+      background: none;
+      font-weight: 700;
+      font-size: 0.85rem;
+      color: #6b7280;
+      cursor: pointer;
+      border-radius: 7px;
+      transition: all 0.15s;
+      font-family: 'Inter', sans-serif;
+      white-space: nowrap;
+    }
+    .dispatch-tab-btn:hover { background: #f3f4f6; color: #111; }
+    .dispatch-tab-btn.active { background: #111; color: #fff; }
+
+    .dispatch-tab-panel { display: none; }
+    .dispatch-tab-panel.active { display: block; }
+
+    /* ─── KPI Cards ─── */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 500px) { .kpi-row { grid-template-columns: 1fr; } }
+
+    .kpi-card {
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid #e5e7eb;
+      padding: 1.1rem 1.25rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      border-left: 4px solid transparent;
+    }
+    .kpi-card.blue   { border-left-color: #2563eb; }
+    .kpi-card.amber  { border-left-color: #d97706; }
+    .kpi-card.green  { border-left-color: #16a34a; }
+    .kpi-card.slate  { border-left-color: #475569; }
+
+    .kpi-icon {
+      font-size: 1.6rem;
+      flex-shrink: 0;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+    }
+    .kpi-card.blue  .kpi-icon { background: #eff6ff; }
+    .kpi-card.amber .kpi-icon { background: #fffbeb; }
+    .kpi-card.green .kpi-icon { background: #f0fdf4; }
+    .kpi-card.slate .kpi-icon { background: #f8fafc; }
+
+    .kpi-body { flex: 1; min-width: 0; }
+    .kpi-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #6b7280;
+      margin: 0 0 2px;
+    }
+    .kpi-value {
+      font-size: 2.1rem;
+      font-weight: 900;
+      color: #111;
+      line-height: 1;
+      margin: 0;
+    }
+    .kpi-card.blue  .kpi-value { color: #2563eb; }
+    .kpi-card.amber .kpi-value { color: #d97706; }
+    .kpi-card.green .kpi-value { color: #16a34a; }
+    .kpi-card.slate .kpi-value { color: #475569; }
+    .kpi-sub {
+      font-size: 0.73rem;
+      color: #9ca3af;
+      margin: 2px 0 0;
+    }
+
+    /* ─── Dashboard Main Grid ─── */
+    .dash-main-grid {
+      display: grid;
+      grid-template-columns: 1fr 580px;
+      gap: 1.25rem;
+      margin-bottom: 1.25rem;
+      align-items: start;
+    }
+    @media (max-width: 1100px) { .dash-main-grid { grid-template-columns: 1fr; } }
+
+    /* ─── Section Panel ─── */
+    .dash-panel {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      overflow: hidden;
+    }
+    .dash-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.85rem 1.25rem;
+      border-bottom: 1px solid #f3f4f6;
+      gap: 0.5rem;
+    }
+    .dash-panel-head h3 {
+      margin: 0;
+      font-size: 0.88rem;
+      font-weight: 800;
+      color: #111;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .dash-panel-body { padding: 1rem 1.25rem; }
+
+    /* ─── Truck Dispatch Cards ─── */
+    .truck-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 0.85rem;
+    }
+    .truck-dispatch-card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 1rem 1.1rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      transition: box-shadow 0.15s, border-color 0.15s;
+    }
+    .truck-dispatch-card:hover { border-color: #d71920; box-shadow: 0 4px 12px rgba(215,25,32,0.1); }
+
+    .tdc-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .tdc-plate-wrap { display: flex; align-items: center; gap: 6px; }
+    .tdc-truck-icon { font-size: 1.1rem; }
+    .tdc-plate { font-weight: 900; font-size: 1rem; color: #111; letter-spacing: 0.02em; }
+
+    .tdc-crew { display: flex; flex-direction: column; gap: 3px; }
+    .tdc-crew-row { display: flex; gap: 6px; font-size: 0.8rem; }
+    .tdc-crew-label { color: #9ca3af; width: 44px; flex-shrink: 0; }
+    .tdc-crew-val { color: #374151; font-weight: 600; }
+
+    .tdc-trip-info {
+      background: #f9fafb;
+      border-radius: 7px;
+      padding: 7px 9px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .tdc-route { font-size: 0.82rem; color: #374151; font-weight: 600; }
+    .tdc-route .arrow { color: #d71920; margin: 0 3px; }
+    .tdc-eta { font-size: 0.77rem; color: #6b7280; }
+    .tdc-eta strong { color: #374151; }
+    .tdc-idle { font-size: 0.8rem; color: #9ca3af; font-style: italic; }
+    .tdc-footer { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 2px; }
+    .tdc-gps-time { font-size: 0.72rem; color: #9ca3af; }
+    .no-trucks-note { font-size: 0.85rem; color: #9ca3af; padding: 1rem 0; }
+
+    /* ─── Map Panel ─── */
+    .map-panel-wrap { position: relative; }
+    #dispatch-map {
+      height: 560px;
+      width: 100%;
+      border-radius: 0 0 12px 12px;
+      background: #e5e7eb;
+      z-index: 1;
+    }
+    #map-no-data-note {
+      display: none;
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(17,17,17,0.82);
+      color: #d1d5db;
+      font-size: 0.76rem;
+      font-weight: 600;
+      padding: 7px 14px;
+      border-radius: 20px;
+      text-align: center;
+      z-index: 500;
+      pointer-events: none;
+      white-space: nowrap;
+      max-width: 90%;
+    }
+
+    /* Leaflet map popup */
+    .map-popup { font-family: 'Inter', sans-serif; font-size: 13px; min-width: 200px; }
+    .map-popup .mp-title { font-weight: 800; font-size: 14px; margin-bottom: 6px; color: #111; }
+    .map-popup .mp-row { margin: 2px 0; color: #374151; }
+    .map-popup .mp-time { margin-top: 6px; font-size: 11px; color: #9ca3af; }
+    .truck-map-pin {
+      font-size: 22px;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      border: 2px solid #d71920;
+      border-radius: 50%;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      cursor: pointer;
+    }
+
+    /* ─── Dash Bottom Grid ─── */
+    .dash-bottom-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+    @media (max-width: 900px) { .dash-bottom-grid { grid-template-columns: 1fr; } }
+
+    /* ─── Commodity Chips ─── */
+    .commodity-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.6rem;
+    }
+    .commodity-chip {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 9px;
+      padding: 0.75rem;
+      transition: border-color 0.15s;
+    }
+    .commodity-chip:hover { border-color: #d1d5db; }
+    .cc-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+    .cc-icon { font-size: 1.2rem; }
+    .cc-count { font-size: 1.5rem; font-weight: 900; line-height: 1; }
+    .commodity-chip.bottles .cc-count { color: #2563eb; }
+    .commodity-chip.sugar   .cc-count { color: #d97706; }
+    .commodity-chip.preform .cc-count { color: #7c3aed; }
+    .commodity-chip.resin   .cc-count { color: #059669; }
+    .commodity-chip.caps    .cc-count { color: #ea580c; }
+    .commodity-chip.crowns  .cc-count { color: #db2777; }
+    .cc-name { font-size: 0.73rem; font-weight: 700; color: #6b7280; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .cc-bar-wrap { height: 4px; background: #e5e7eb; border-radius: 99px; overflow: hidden; }
+    .cc-bar { height: 100%; border-radius: 99px; transition: width 0.4s ease; }
+
+    /* ─── Activity Feed ─── */
+    .activity-item {
+      display: flex;
+      gap: 0.6rem;
+      align-items: flex-start;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #f3f4f6;
+      font-size: 0.8rem;
+    }
+    .activity-item:last-child { border-bottom: none; }
+    .ai-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+    .ai-text { color: #374151; flex: 1; line-height: 1.4; }
+    .ai-time { color: #9ca3af; font-size: 0.72rem; white-space: nowrap; flex-shrink: 0; }
+    .act-empty { color: #9ca3af; font-size: 0.85rem; padding: 0.5rem 0; text-align: center; }
+
+    /* ─── Section row ─── */
+    .section-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.85rem;
+      flex-wrap: wrap;
+    }
+    .section-row h2 {
+      margin: 0;
+      font-size: 0.88rem;
+      font-weight: 800;
+      color: #111;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    /* ─── Toolbar ─── */
+    .dispatch-toolbar {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 0.65rem 1rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .dispatch-toolbar select,
+    .dispatch-toolbar input[type="text"] {
+      padding: 6px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 7px;
+      font-size: 0.82rem;
+      font-family: 'Inter', sans-serif;
+      color: #374151;
+      background: #fff;
+    }
+    .dispatch-toolbar select:focus,
+    .dispatch-toolbar input:focus { outline: 2px solid #2563eb; border-color: transparent; }
+    .toolbar-divider { width: 1px; height: 24px; background: #e5e7eb; flex-shrink: 0; }
+
+    /* ─── Buttons ─── */
+    .dbtn {
+      padding: 7px 14px;
+      border-radius: 7px;
+      border: none;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 0.82rem;
+      font-family: 'Inter', sans-serif;
+      transition: background 0.15s, transform 0.1s;
+      white-space: nowrap;
+    }
+    .dbtn:active { transform: scale(0.97); }
+    .dbtn-primary { background: #d71920; color: #fff; }
+    .dbtn-primary:hover { background: #b91519; }
+    .dbtn-success { background: #16a34a; color: #fff; }
+    .dbtn-success:hover { background: #15803d; }
+    .dbtn-danger  { background: #dc2626; color: #fff; }
+    .dbtn-danger:hover  { background: #b91c1c; }
+    .dbtn-amber   { background: #d97706; color: #fff; }
+    .dbtn-amber:hover   { background: #b45309; }
+    .dbtn-gray    { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
+    .dbtn-gray:hover    { background: #e5e7eb; }
+    .dbtn-dark    { background: #111; color: #fff; }
+    .dbtn-dark:hover    { background: #374151; }
+    .dbtn-map-btn { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-size: 0.75rem; padding: 4px 9px; }
+    .dbtn-map-btn:hover { background: #dbeafe; }
+    .dbtn-sm { padding: 4px 9px; font-size: 0.76rem; }
+
+    /* ─── Table Wrap ─── */
+    .dispatch-table-wrap {
+      background: #fff;
+      border-radius: 10px;
+      border: 1px solid #e5e7eb;
+      overflow-x: auto;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+    }
+    .dispatch-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      min-width: 1200px;
+    }
+    .dispatch-table th {
+      background: #f9fafb;
+      font-weight: 700;
+      text-align: left;
+      padding: 9px 11px;
+      border-bottom: 2px solid #e5e7eb;
+      white-space: nowrap;
+      color: #4b5563;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    .dispatch-table td {
+      padding: 8px 11px;
+      border-bottom: 1px solid #f3f4f6;
+      color: #374151;
+      white-space: nowrap;
+    }
+    .dispatch-table tbody tr:last-child td { border-bottom: none; }
+    .dispatch-table tbody tr:hover td { background: #f9fafb; }
+    .dispatch-table .actions-cell { display: flex; gap: 4px; align-items: center; }
+    .ts-cell { color: #9ca3af !important; font-size: 0.72rem !important; }
+
+    /* ─── Badges ─── */
+    .badge {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      white-space: nowrap;
+      letter-spacing: 0.02em;
+    }
+    .badge-sm { padding: 2px 7px; font-size: 0.68rem; }
+    .badge-scheduled  { background: #dbeafe; color: #1d4ed8; }
+    .badge-intransit  { background: #fef3c7; color: #92400e; }
+    .badge-loaded     { background: #ede9fe; color: #5b21b6; }
+    .badge-unloaded   { background: #d1fae5; color: #065f46; }
+    .badge-delivered  { background: #dcfce7; color: #166534; }
+    .badge-cancelled  { background: #fee2e2; color: #991b1b; }
+    .badge-onhold     { background: #f3f4f6; color: #4b5563; }
+    .badge-idle       { background: #f1f5f9; color: #64748b; }
+
+    /* ─── Commodity Pills ─── */
+    .pill-bottles { background: #dbeafe; color: #1d4ed8; }
+    .pill-sugar   { background: #fef3c7; color: #92400e; }
+    .pill-preform { background: #ede9fe; color: #5b21b6; }
+    .pill-resin   { background: #d1fae5; color: #065f46; }
+    .pill-caps    { background: #ffedd5; color: #9a3412; }
+    .pill-crowns  { background: #fce7f3; color: #9d174d; }
+
+    /* ─── Truck master input ─── */
+    .truck-field {
+      padding: 6px 9px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.82rem;
+      width: 100%;
+      min-width: 100px;
+    }
+    .truck-field:focus { outline: 2px solid #2563eb; border-color: transparent; }
+
+    /* ─── Modal ─── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      backdrop-filter: blur(3px);
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: #fff;
+      border-radius: 14px;
+      width: 100%;
+      max-width: 800px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    }
+    .modal-head {
+      padding: 1.25rem 1.5rem 1rem;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      background: #fff;
+      z-index: 1;
+    }
+    .modal-head h2 { margin: 0; font-size: 1.1rem; font-weight: 800; }
+    .modal-close { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #6b7280; padding: 4px; border-radius: 6px; }
+    .modal-close:hover { background: #f3f4f6; }
+    .modal-body { padding: 1.25rem 1.5rem; }
+    .modal-foot { padding: 1rem 1.5rem; border-top: 1px solid #e5e7eb; display: flex; gap: 0.5rem; justify-content: flex-end; background: #fafafa; border-radius: 0 0 14px 14px; }
+
+    /* ─── Form Grid ─── */
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; }
+    .form-full { grid-column: 1 / -1; }
+    @media (max-width: 580px) { .form-grid { grid-template-columns: 1fr; } }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-group label { font-size: 0.77rem; font-weight: 700; color: #374151; }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      padding: 8px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 7px;
+      font-size: 0.85rem;
+      font-family: 'Inter', sans-serif;
+      color: #111;
+      background: #fff;
+    }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus { outline: 2px solid #2563eb; border-color: transparent; }
+    .form-section-label {
+      grid-column: 1 / -1;
+      font-size: 0.7rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #9ca3af;
+      padding: 0.5rem 0 0.35rem;
+      border-bottom: 1px solid #f3f4f6;
+      margin-top: 0.25rem;
+    }
+
+    /* ─── Empty State ─── */
+    .empty-state { text-align: center; padding: 3rem 1rem; color: #9ca3af; font-size: 0.88rem; }
+    .es-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+
+    /* ─── Row selected ─── */
+    .row-selected td { background: #eff6ff !important; }
+
+    /* ─── Toast ─── */
+    #toast-container {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      z-index: 3000;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .toast-msg {
+      padding: 10px 16px;
+      border-radius: 9px;
+      color: #fff;
+      font-size: 0.83rem;
+      font-weight: 600;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+      animation: toastSlide 0.2s ease;
+      max-width: 320px;
+    }
+    @keyframes toastSlide {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ─── Truck Master info strip ─── */
+    .tm-info {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 0.65rem 1rem;
+      font-size: 0.82rem;
+      color: #6b7280;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body class="dispatch-page">
+
+  <!-- ── Site Header ── -->
+  <header class="site-header" id="top">
+    <nav class="nav-shell">
+      <a href="index.html" class="brand" aria-label="VNS Logistics home">
+        <span class="brand-mark">VNS</span>
+        <span class="brand-text">Logistics</span>
+      </a>
+      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav">Menu</button>
+      <div class="nav-links" id="main-nav">
+        <a href="index.html">Home</a>
+        <a href="portal.html">System Portal</a>
+        <a href="repair.html">Repair Module</a>
+        <a href="parts-inventory.html">Parts Inventory</a>
+        <a href="cash.html">Cash / PO / Bali</a>
+        <a href="payroll.html">Payroll</a>
+        <a href="dispatch.html" class="active-link">Dispatch</a>
+        <a href="portal.html" class="nav-cta">Portal</a>
+      </div>
+    </nav>
+  </header>
+
+  <!-- ── Dispatch Banner ── -->
+  <div class="dispatch-banner">
+    <div class="dispatch-banner-inner">
+      <div class="dispatch-banner-left">
+        <p class="eyebrow">Internal Module</p>
+        <h1>Dispatch Portal</h1>
+        <p class="banner-sub">Manage truck trips, commodities, GPS location, and delivery logs</p>
+      </div>
+      <div class="dispatch-banner-right">
+        <span class="data-status-badge dsb-loading" id="data-status-badge">Loading…</span>
+        <button class="dbtn dbtn-dark" onclick="refreshDispatchDashboard()">↻ Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <div class="dispatch-workspace">
+
+      <!-- Tabs -->
+      <div class="dispatch-tabs" role="tablist">
+        <button class="dispatch-tab-btn active" data-tab="dashboard">Dashboard</button>
+        <button class="dispatch-tab-btn" data-tab="dispatcher-sheet">Dispatcher Sheet</button>
+        <button class="dispatch-tab-btn" data-tab="logs">Logs</button>
+        <button class="dispatch-tab-btn" data-tab="trucks">Truck Master</button>
+      </div>
+
+      <!-- ════════════════════════════════════════
+           TAB 1 — DASHBOARD
+      ════════════════════════════════════════ -->
+      <div id="tab-dashboard" class="dispatch-tab-panel active">
+
+        <!-- KPI Cards -->
+        <div class="kpi-row">
+          <div class="kpi-card blue">
+            <div class="kpi-body">
+              <div class="kpi-label">Active Trips</div>
+              <div class="kpi-value" id="sc-active">0</div>
+              <div class="kpi-sub">in dispatcher sheet</div>
+            </div>
+          </div>
+          <div class="kpi-card amber">
+            <div class="kpi-body">
+              <div class="kpi-label">In Transit</div>
+              <div class="kpi-value" id="sc-intransit">0</div>
+              <div class="kpi-sub">trucks currently moving</div>
+            </div>
+          </div>
+          <div class="kpi-card green">
+            <div class="kpi-body">
+              <div class="kpi-label">Delivered Today</div>
+              <div class="kpi-value" id="sc-delivered">0</div>
+              <div class="kpi-sub">completed trips today</div>
+            </div>
+          </div>
+          <div class="kpi-card slate">
+            <div class="kpi-body">
+              <div class="kpi-label">Total Log Entries</div>
+              <div class="kpi-value" id="sc-logs">0</div>
+              <div class="kpi-sub">in delivery logs</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Main Grid: Truck Cards + Map -->
+        <div class="dash-main-grid">
+
+          <!-- Truck Cards Panel -->
+          <div class="dash-panel">
+            <div class="dash-panel-head">
+              <h3>Fleet Status</h3>
+              <button class="dbtn dbtn-gray dbtn-sm" onclick="openTruckMasterTab()">Manage Fleet</button>
+            </div>
+            <div class="dash-panel-body">
+              <div class="truck-cards-grid" id="truck-cards-row">
+                <!-- rendered by dispatch.js -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Map Panel -->
+          <div class="dash-panel map-panel-wrap">
+            <div class="dash-panel-head">
+              <h3>Live Map</h3>
+              <span style="font-size:0.72rem;color:#9ca3af;">OpenStreetMap · No API key required</span>
+            </div>
+            <div id="dispatch-map"></div>
+            <div id="map-no-data-note">
+              No live GPS data. Connect Apps Script to enable truck tracking.
+            </div>
+          </div>
+
+        </div><!-- /dash-main-grid -->
+
+        <!-- Bottom Grid: Commodity + Activity -->
+        <div class="dash-bottom-grid">
+
+          <!-- Commodity Breakdown -->
+          <div class="dash-panel">
+            <div class="dash-panel-head">
+              <h3>Commodity Breakdown</h3>
+              <span style="font-size:0.72rem;color:#9ca3af;">Active trips only</span>
+            </div>
+            <div class="dash-panel-body">
+              <div class="commodity-grid" id="commodity-grid">
+                <!-- rendered by dispatch.js -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent Activity -->
+          <div class="dash-panel">
+            <div class="dash-panel-head">
+              <h3>Recent Activity</h3>
+            </div>
+            <div class="dash-panel-body" style="max-height:300px;overflow-y:auto;">
+              <div id="activity-list">
+                <div class="act-empty">No recent activity yet.</div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /dash-bottom-grid -->
+
+      </div><!-- /tab-dashboard -->
+
+
+      <!-- ════════════════════════════════════════
+           TAB 2 — DISPATCHER SHEET
+      ════════════════════════════════════════ -->
+      <div id="tab-dispatcher-sheet" class="dispatch-tab-panel">
+
+        <div class="dispatch-toolbar">
+          <button class="dbtn dbtn-primary" onclick="openTripModal()">+ Add Trip</button>
+          <div class="toolbar-divider"></div>
+          <select id="filter-commodity" onchange="renderSheet()">
+            <option value="">All Commodities</option>
+            <option>Bottles</option><option>Sugar</option><option>Preform</option>
+            <option>Resin</option><option>Caps</option><option>Crowns</option>
+          </select>
+          <select id="filter-status" onchange="renderSheet()">
+            <option value="">All Status</option>
+            <option>Scheduled</option><option>In Transit</option><option>Loaded</option>
+            <option>Unloaded</option><option>Delivered</option><option>Cancelled</option><option>On Hold</option>
+          </select>
+          <select id="filter-truck" onchange="renderSheet()">
+            <option value="">All Trucks</option>
+          </select>
+          <input type="text" id="filter-search" placeholder="Search plate, driver, source…" oninput="renderSheet()" style="flex:1;min-width:180px;" />
+          <div class="toolbar-divider"></div>
+          <button class="dbtn dbtn-primary" onclick="markSelectedDelivered()">Mark Delivered</button>
+          <button class="dbtn dbtn-gray" onclick="addSelectedToLogs()">Add to Logs</button>
+          <button class="dbtn dbtn-gray" onclick="clearSelectedTrips()">Clear</button>
+          <button class="dbtn dbtn-gray" onclick="exportSheetCSV()">Export CSV</button>
+        </div>
+
+        <div class="dispatch-table-wrap">
+          <table class="dispatch-table">
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="sheet-select-all" onchange="toggleAllSheet(this)"></th>
+                <th>Plate</th><th>Driver</th><th>Helper</th>
+                <th>Commodity</th><th>Source</th><th>Destination</th><th>Status</th>
+                <th>Booking Date</th><th>Plan Pickup</th><th>Actual Pickup</th>
+                <th>LSP</th><th>Supplier</th><th>Packaging</th><th>Qty</th>
+                <th>Ref #</th><th>Shipment #</th><th>ATW</th><th>ETA</th>
+                <th>Remarks</th><th>Timestamp</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="sheet-body">
+              <tr>
+                <td colspan="22">
+                  <div class="empty-state">
+                    No active trips. Click <strong>+ Add Trip</strong> to begin.
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div><!-- /dispatcher-sheet -->
+
+
+      <!-- ════════════════════════════════════════
+           TAB 3 — LOGS
+      ════════════════════════════════════════ -->
+      <div id="tab-logs" class="dispatch-tab-panel">
+
+        <div class="dispatch-toolbar">
+          <select id="log-filter-commodity" onchange="renderLogs()">
+            <option value="">All Commodities</option>
+            <option>Bottles</option><option>Sugar</option><option>Preform</option>
+            <option>Resin</option><option>Caps</option><option>Crowns</option>
+          </select>
+          <select id="log-filter-status" onchange="renderLogs()">
+            <option value="">All Status</option>
+            <option>Delivered</option><option>Cancelled</option><option>On Hold</option>
+          </select>
+          <input type="text" id="log-search" placeholder="Search plate, driver, destination…" oninput="renderLogs()" style="flex:1;min-width:180px;" />
+          <div class="toolbar-divider"></div>
+          <button class="dbtn dbtn-gray" onclick="deleteSelectedLogs()">Delete Selected</button>
+          <button class="dbtn dbtn-gray" onclick="exportLogsCSV()">Export CSV</button>
+        </div>
+
+        <div class="dispatch-table-wrap">
+          <table class="dispatch-table">
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="log-select-all" onchange="toggleAllLogs(this)"></th>
+                <th>Plate</th><th>Driver</th><th>Helper</th>
+                <th>Commodity</th><th>Source</th><th>Destination</th><th>Status</th>
+                <th>Booking Date</th><th>Actual Pickup</th>
+                <th>LSP</th><th>Supplier</th><th>Qty</th>
+                <th>Ref #</th><th>Shipment #</th><th>Remarks</th><th>Logged At</th>
+              </tr>
+            </thead>
+            <tbody id="logs-body">
+              <tr>
+                <td colspan="17">
+                  <div class="empty-state">
+                    No log entries yet.
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div><!-- /logs -->
+
+
+      <!-- ════════════════════════════════════════
+           TAB 4 — TRUCK MASTER
+      ════════════════════════════════════════ -->
+      <div id="tab-trucks" class="dispatch-tab-panel">
+
+        <div class="section-row">
+          <h2>Truck Fleet</h2>
+          <button class="dbtn dbtn-primary" onclick="addTruckRow()">+ Add Truck</button>
+        </div>
+
+        <div class="tm-info">
+          ℹ️ Edit plate, driver, and helper directly in the table. Click <strong>Save</strong> on each row to apply changes. Driver and helper names auto-fill in the Add Trip form.
+        </div>
+
+        <div class="dispatch-table-wrap">
+          <table class="dispatch-table" style="min-width:700px;">
+            <thead>
+              <tr>
+                <th style="width:40px;">#</th>
+                <th>Plate Number</th>
+                <th>Driver</th>
+                <th>Helper</th>
+                <th>Truck Type</th>
+                <th>Notes</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="truck-master-body">
+              <!-- rendered by dispatch.js -->
+            </tbody>
+          </table>
+        </div>
+      </div><!-- /trucks -->
+
+    </div><!-- /dispatch-workspace -->
+  </main>
+
+
+  <!-- ════════════════════════════════════════
+       MODAL: Add / Edit Trip
+  ════════════════════════════════════════ -->
+  <div class="modal-overlay" id="trip-modal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h2 id="trip-modal-title">Add Trip</h2>
+        <button class="modal-close" onclick="closeTripModal()" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="trip-edit-id" />
+        <div class="form-grid">
+
+          <div class="form-section-label">Truck Assignment</div>
+
+          <div class="form-group">
+            <label>Plate Number *</label>
+            <select id="f-plate">
+              <option value="">— Select Truck —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Driver</label>
+            <input type="text" id="f-driver" placeholder="Driver name" />
+          </div>
+          <div class="form-group">
+            <label>Helper</label>
+            <input type="text" id="f-helper" placeholder="Helper name" />
+          </div>
+          <div class="form-group">
+            <label>Truck Type</label>
+            <input type="text" id="f-truck-type" placeholder="e.g. 10-Wheeler GO" />
+          </div>
+
+          <div class="form-section-label">Trip Details</div>
+
+          <div class="form-group">
+            <label>Commodity *</label>
+            <select id="f-commodity">
+              <option value="">— Select —</option>
+              <option>Bottles</option><option>Sugar</option><option>Preform</option>
+              <option>Resin</option><option>Caps</option><option>Crowns</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select id="f-status">
+              <option>Scheduled</option><option>In Transit</option><option>Loaded</option>
+              <option>Unloaded</option><option>Delivered</option><option>On Hold</option><option>Cancelled</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Source</label>
+            <input type="text" id="f-source" placeholder="Warehouse / pickup point" />
+          </div>
+          <div class="form-group">
+            <label>Destination</label>
+            <input type="text" id="f-destination" placeholder="Plant / delivery point" />
+          </div>
+          <div class="form-group">
+            <label>Booking Date</label>
+            <input type="date" id="f-booking-date" />
+          </div>
+          <div class="form-group">
+            <label>Plan Pickup</label>
+            <input type="date" id="f-plan-pickup" />
+          </div>
+          <div class="form-group">
+            <label>Actual Pickup</label>
+            <input type="date" id="f-actual-pickup" />
+          </div>
+          <div class="form-group">
+            <label>ETA / ATA</label>
+            <input type="text" id="f-eta" placeholder="ETA or actual arrival" />
+          </div>
+
+          <div class="form-section-label">Cargo & Reference</div>
+
+          <div class="form-group">
+            <label>LSP</label>
+            <input type="text" id="f-lsp" placeholder="Logistics Service Provider" />
+          </div>
+          <div class="form-group">
+            <label>Supplier</label>
+            <input type="text" id="f-supplier" placeholder="Supplier name" />
+          </div>
+          <div class="form-group">
+            <label>Packaging</label>
+            <input type="text" id="f-packaging" placeholder="e.g. Sacks, Bags, Crates" />
+          </div>
+          <div class="form-group">
+            <label>Qty in Packaging</label>
+            <input type="text" id="f-qty" placeholder="e.g. 600 sacks" />
+          </div>
+          <div class="form-group">
+            <label>Reference Number</label>
+            <input type="text" id="f-ref-number" placeholder="DR / PO / OR #" />
+          </div>
+          <div class="form-group">
+            <label>Shipment Number</label>
+            <input type="text" id="f-shipment-number" placeholder="Shipment or SO #" />
+          </div>
+          <div class="form-group">
+            <label>Authority to Withdraw (ATW)</label>
+            <input type="text" id="f-atw" placeholder="ATW #" />
+          </div>
+          <div class="form-group form-full">
+            <label>Remarks</label>
+            <textarea id="f-remarks" rows="2" placeholder="Notes, instructions, or issues"></textarea>
+          </div>
+
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="dbtn dbtn-gray" onclick="closeTripModal()">Cancel</button>
+        <button class="dbtn dbtn-primary" onclick="saveTrip()">Save Trip</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Dispatch module -->
+  <script src="dispatch.js"></script>
+  <!-- Shared site script -->
+  <script src="script.js"></script>
+</body>
+</html>
