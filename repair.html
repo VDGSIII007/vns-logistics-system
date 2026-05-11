@@ -376,7 +376,13 @@
           <p>Paste messy Viber repair messages, parse request details, and generate finance-ready payment messages.</p>
         </div>
 
-        <div class="garage-monitoring">
+        <div class="repair-tabs" role="tablist" aria-label="Repair module sections">
+          <button class="repair-tab-button active" type="button" data-repair-tab="repair-truck-tab">Repair Truck In/Out</button>
+          <button class="repair-tab-button" type="button" data-repair-tab="repair-entry-tab">Inventory & Repair Request Entry</button>
+          <button class="repair-tab-button" type="button" data-repair-tab="saved-repairs-tab">Saved Repairs</button>
+        </div>
+
+        <div id="repair-truck-tab" class="garage-monitoring repair-tab-panel active">
           <div class="table-actions">
             <div>
               <h2>Garage / For Repair Monitoring</h2>
@@ -497,8 +503,11 @@
                 <span>Repair Status</span>
                 <select data-for-repair-field="repairStatus">
                   <option value="For Repair">For Repair</option>
-                  <option value="Ongoing">Ongoing</option>
+                  <option value="Ongoing Repair">Ongoing Repair</option>
+                  <option value="Waiting Parts">Waiting Parts</option>
                   <option value="Done">Done</option>
+                  <option value="Released">Released</option>
+                  <option value="Cancelled">Cancelled</option>
                 </select>
               </label>
               <label class="wide-field"><span>Remarks</span><textarea rows="3" data-for-repair-field="remarks" placeholder="Optional notes"></textarea></label>
@@ -519,17 +528,18 @@
                     <th>End Date</th>
                     <th>Repair Status</th>
                     <th>Remarks</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="for-repair-local-body">
-                  <tr><td colspan="7" class="empty">No for repair trucks added yet.</td></tr>
+                  <tr><td colspan="8" class="empty">No for repair trucks added yet.</td></tr>
                 </tbody>
               </table>
             </div>
           </section>
         </div>
 
-        <section class="repair-entry-section">
+        <section id="repair-entry-tab" class="repair-entry-section repair-tab-panel">
           <div class="section-heading-block">
             <h2>Inventory & Repair Request Entry</h2>
             <p>Create repair, labor, equipment, and parts requests from Viber messages or manual input.</p>
@@ -639,16 +649,42 @@
               <div class="manual-card-header parts">
                 <h3>Parts Request</h3>
               </div>
-              <div class="manual-fields">
+                <div class="manual-fields">
                 <label><span>Date</span><input type="date" data-parts-field="date"></label>
                 <label><span>Plate Number</span><input type="text" data-parts-field="plateNumber" placeholder="CAA 5021"></label>
-                <label><span>Truck Type</span><input type="text" data-parts-field="truckType" placeholder="Foton flatbed"></label>
+                <label>
+                  <span>Truck Type</span>
+                  <select data-parts-field="truckType">
+                    <option value="">Select truck type</option>
+                    <option value="Tractor Head">Tractor Head</option>
+                    <option value="10 Wheeler">10 Wheeler</option>
+                    <option value="6 Wheeler">6 Wheeler</option>
+                    <option value="Trailer">Trailer</option>
+                    <option value="Foton">Foton</option>
+                    <option value="Wing Van">Wing Van</option>
+                    <option value="Flatbed">Flatbed</option>
+                    <option value="Chassis">Chassis</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
                 <label><span>Driver</span><input type="text" data-parts-field="driver"></label>
-                <label class="wide-field"><span>Parts Needed</span><textarea rows="4" data-parts-field="item"></textarea></label>
-                <label><span>Supplier</span><input type="text" data-parts-field="supplier"></label>
-                <label><span>Payee</span><input type="text" data-parts-field="payee"></label>
+                <label><span>Mechanic / Worker</span><input type="text" data-parts-field="mechanic"></label>
+                <label>
+                  <span>Priority</span>
+                  <select data-parts-field="priority">
+                    <option value="Medium">Medium</option>
+                    <option value="Critical">Critical</option>
+                    <option value="High">High</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </label>
+                <label class="wide-field"><span>Work Done / Repair Issue</span><textarea rows="4" data-parts-field="workDone" placeholder="Describe the repair issue or work needed"></textarea></label>
+                <label><span>Shop Name</span><input type="text" data-parts-field="shopName"></label>
+                <label><span>Parts / Item Name</span><input type="text" data-parts-field="item"></label>
+                <label><span>Quantity</span><input type="number" step="0.01" data-parts-field="quantity"></label>
+                <label><span>Unit Cost</span><input type="number" step="0.01" data-parts-field="unitCost"></label>
                 <label><span>Total Amount</span><input type="number" step="0.01" data-parts-field="totalCost"></label>
-                <label class="wide-field"><span>Remarks</span><textarea rows="3" data-parts-field="remarks"></textarea></label>
+                <label class="wide-field"><span>Remarks</span><textarea rows="4" data-parts-field="remarks"></textarea></label>
               </div>
             </section>
 
@@ -658,6 +694,22 @@
               </div>
               <div class="manual-fields">
                 <label><span>Date</span><input type="date" data-equipment-field="date"></label>
+                <label><span>Plate Number</span><input type="text" data-equipment-field="plateNumber" placeholder="Optional"></label>
+                <label>
+                  <span>Truck Type</span>
+                  <select data-equipment-field="truckType">
+                    <option value="">Select truck type</option>
+                    <option value="Tractor Head">Tractor Head</option>
+                    <option value="10 Wheeler">10 Wheeler</option>
+                    <option value="6 Wheeler">6 Wheeler</option>
+                    <option value="Trailer">Trailer</option>
+                    <option value="Foton">Foton</option>
+                    <option value="Wing Van">Wing Van</option>
+                    <option value="Flatbed">Flatbed</option>
+                    <option value="Chassis">Chassis</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
                 <label><span>Equipment Item</span><input type="text" data-equipment-field="item" placeholder="Hard hat"></label>
                 <label><span>Quantity</span><input type="text" data-equipment-field="quantity"></label>
                 <label><span>Unit Price</span><input type="number" step="0.01" data-equipment-field="unitCost"></label>
@@ -676,11 +728,31 @@
               <div class="manual-fields">
                 <label><span>Date</span><input type="date" data-labor-field="date"></label>
                 <label><span>Plate Number</span><input type="text" data-labor-field="plateNumber"></label>
+                <label>
+                  <span>Truck Type</span>
+                  <select data-labor-field="truckType">
+                    <option value="">Select truck type</option>
+                    <option value="Tractor Head">Tractor Head</option>
+                    <option value="10 Wheeler">10 Wheeler</option>
+                    <option value="6 Wheeler">6 Wheeler</option>
+                    <option value="Trailer">Trailer</option>
+                    <option value="Foton">Foton</option>
+                    <option value="Wing Van">Wing Van</option>
+                    <option value="Flatbed">Flatbed</option>
+                    <option value="Chassis">Chassis</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
                 <label><span>Driver</span><input type="text" data-labor-field="driver"></label>
-                <label class="wide-field"><span>Work Done</span><textarea rows="4" data-labor-field="workDone"></textarea></label>
-                <label><span>Payee</span><input type="text" data-labor-field="payee"></label>
-                <label><span>Total Labor Amount</span><input type="number" step="0.01" data-labor-field="totalCost"></label>
-                <label class="wide-field"><span>Remarks</span><textarea rows="3" data-labor-field="remarks"></textarea></label>
+                <label><span>Mechanic / Worker</span><input type="text" data-labor-field="mechanic"></label>
+                <label><span>Priority</span><select data-labor-field="priority"><option value="Medium">Medium</option><option value="Critical">Critical</option><option value="High">High</option><option value="Low">Low</option></select></label>
+                <label class="wide-field"><span>Work Done / Repair Issue</span><textarea rows="4" data-labor-field="workDone"></textarea></label>
+                <label><span>Shop Name</span><input type="text" data-labor-field="shopName"></label>
+                <label><span>Parts / Item Name</span><input type="text" data-labor-field="item" placeholder="Optional"></label>
+                <label><span>Quantity</span><input type="number" step="0.01" data-labor-field="quantity" placeholder="Optional"></label>
+                <label><span>Unit Cost</span><input type="number" step="0.01" data-labor-field="unitCost" placeholder="Optional"></label>
+                <label><span>Total Amount</span><input type="number" step="0.01" data-labor-field="totalCost"></label>
+                <label class="wide-field"><span>Remarks</span><textarea rows="4" data-labor-field="remarks"></textarea></label>
               </div>
             </section>
 
@@ -691,13 +763,31 @@
               <div class="manual-fields">
                 <label><span>Date Finished</span><input type="date" data-completed-field="dateFinished"></label>
                 <label><span>Plate Number</span><input type="text" data-completed-field="plateNumber"></label>
+                <label>
+                  <span>Truck Type</span>
+                  <select data-completed-field="truckType">
+                    <option value="">Select truck type</option>
+                    <option value="Tractor Head">Tractor Head</option>
+                    <option value="10 Wheeler">10 Wheeler</option>
+                    <option value="6 Wheeler">6 Wheeler</option>
+                    <option value="Trailer">Trailer</option>
+                    <option value="Foton">Foton</option>
+                    <option value="Wing Van">Wing Van</option>
+                    <option value="Flatbed">Flatbed</option>
+                    <option value="Chassis">Chassis</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
                 <label><span>Driver</span><input type="text" data-completed-field="driver"></label>
-                <label class="wide-field"><span>Work Done</span><textarea rows="4" data-completed-field="workDone"></textarea></label>
-                <label class="wide-field"><span>Parts Used</span><textarea rows="4" data-completed-field="item"></textarea></label>
-                <label><span>Labor Cost</span><input type="number" step="0.01" data-completed-field="laborCost"></label>
-                <label><span>Mechanic</span><input type="text" data-completed-field="mechanic"></label>
-                <label><span>Total Cost</span><input type="number" step="0.01" data-completed-field="totalCost"></label>
-                <label class="wide-field"><span>Remarks</span><textarea rows="3" data-completed-field="remarks"></textarea></label>
+                <label><span>Mechanic / Worker</span><input type="text" data-completed-field="mechanic"></label>
+                <label><span>Shop Name</span><input type="text" data-completed-field="shopName"></label>
+                <label class="wide-field"><span>Work Done / Repair Issue</span><textarea rows="4" data-completed-field="workDone"></textarea></label>
+                <label><span>Parts / Item Name</span><input type="text" data-completed-field="item"></label>
+                <label><span>Quantity</span><input type="number" step="0.01" data-completed-field="quantity"></label>
+                <label><span>Unit Cost</span><input type="number" step="0.01" data-completed-field="unitCost"></label>
+                <label><span>Total Amount</span><input type="number" step="0.01" data-completed-field="totalCost"></label>
+                <label><span>Approval Status</span><select data-completed-field="approvalStatus"><option value="Not required">Not required</option><option value="Pending">Pending</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select></label>
+                <label class="wide-field"><span>Remarks</span><textarea rows="4" data-completed-field="remarks"></textarea></label>
               </div>
             </section>
 
@@ -708,10 +798,32 @@
               <div class="manual-fields">
                 <label><span>Date</span><input type="date" data-monitoring-field="date"></label>
                 <label><span>Plate Number</span><input type="text" data-monitoring-field="plateNumber"></label>
+                <label>
+                  <span>Truck Type</span>
+                  <select data-monitoring-field="truckType">
+                    <option value="">Select truck type</option>
+                    <option value="Tractor Head">Tractor Head</option>
+                    <option value="10 Wheeler">10 Wheeler</option>
+                    <option value="6 Wheeler">6 Wheeler</option>
+                    <option value="Trailer">Trailer</option>
+                    <option value="Foton">Foton</option>
+                    <option value="Wing Van">Wing Van</option>
+                    <option value="Flatbed">Flatbed</option>
+                    <option value="Chassis">Chassis</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
                 <label><span>Driver</span><input type="text" data-monitoring-field="driver"></label>
-                <label class="wide-field"><span>Update / Work Done</span><textarea rows="4" data-monitoring-field="workDone"></textarea></label>
-                <label><span>Mechanic</span><input type="text" data-monitoring-field="mechanic"></label>
-                <label class="wide-field"><span>Remarks</span><textarea rows="3" data-monitoring-field="remarks"></textarea></label>
+                <label><span>Priority</span><select data-monitoring-field="priority"><option value="Medium">Medium</option><option value="Critical">Critical</option><option value="High">High</option><option value="Low">Low</option></select></label>
+                <label><span>Current Status</span><select data-monitoring-field="repairStatus"><option value="For inspection">For inspection</option><option value="Waiting for approval">Waiting for approval</option><option value="Approved">Approved</option><option value="In progress">In progress</option><option value="Waiting for parts">Waiting for parts</option><option value="For testing">For testing</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option></select></label>
+                <label class="wide-field"><span>Work Done / Repair Issue</span><textarea rows="4" data-monitoring-field="workDone"></textarea></label>
+                <label><span>Mechanic / Worker</span><input type="text" data-monitoring-field="mechanic"></label>
+                <label><span>Shop Name</span><input type="text" data-monitoring-field="shopName"></label>
+                <label><span>Parts / Item Name</span><input type="text" data-monitoring-field="item" placeholder="Optional"></label>
+                <label><span>Quantity</span><input type="number" step="0.01" data-monitoring-field="quantity" placeholder="Optional"></label>
+                <label><span>Unit Cost</span><input type="number" step="0.01" data-monitoring-field="unitCost" placeholder="Optional"></label>
+                <label><span>Total Amount</span><input type="number" step="0.01" data-monitoring-field="totalCost" placeholder="Optional"></label>
+                <label class="wide-field"><span>Remarks</span><textarea rows="4" data-monitoring-field="remarks"></textarea></label>
               </div>
             </section>
 
@@ -723,7 +835,7 @@
           </div>
         </section>
 
-        <div class="saved-records">
+        <div id="saved-repairs-tab" class="saved-records repair-tab-panel">
           <div class="saved-records-header-row">
             <div class="saved-records-title-block">
               <h2>Saved Repair Records</h2>
@@ -755,8 +867,10 @@
                   <option value="">All Repair Statuses</option>
                   <option value="Pending">Pending</option>
                   <option value="For Repair">For Repair</option>
-                  <option value="Ongoing">Ongoing</option>
+                  <option value="Ongoing Repair">Ongoing Repair</option>
+                  <option value="Waiting Parts">Waiting Parts</option>
                   <option value="Done">Done</option>
+                  <option value="Released">Released</option>
                   <option value="Completed">Completed</option>
                   <option value="Cancelled">Cancelled</option>
                 </select>
@@ -771,13 +885,34 @@
                   <option value="Paid">Paid</option>
                 </select>
               </label>
+              <label>
+                <span>Date Type</span>
+                <select id="records-date-type-filter">
+                  <option value="">Date Requested</option>
+                  <option value="dateRequested">Date Requested</option>
+                  <option value="startDate">Start Date</option>
+                  <option value="endDate">End Date</option>
+                  <option value="paymentDate">Payment Date</option>
+                  <option value="createdAt">Created Date</option>
+                </select>
+              </label>
+              <label>
+                <span>Date From</span>
+                <input id="records-date-from-filter" type="date">
+              </label>
+              <label>
+                <span>Date To</span>
+                <input id="records-date-to-filter" type="date">
+              </label>
+              <div class="records-filter-action">
+                <button id="records-clear-filters-button" class="btn btn-outline" type="button">Clear Filters</button>
+              </div>
             </div>
             <div class="records-quick-filters" aria-label="Quick saved repair filters">
               <button class="btn btn-outline" type="button" data-records-quick-filter="unpaid">Unpaid</button>
               <button class="btn btn-outline" type="button" data-records-quick-filter="notFinished">Not Finished</button>
               <button class="btn btn-outline" type="button" data-records-quick-filter="forDeposit">For Deposit</button>
               <button class="btn btn-outline" type="button" data-records-quick-filter="completed">Completed</button>
-              <button class="btn btn-outline" type="button" data-records-quick-filter="clear">Clear Filters</button>
             </div>
 
             <div id="records-status" class="save-status"></div>
