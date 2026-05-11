@@ -61,44 +61,7 @@ const STATUS_BADGE = {
 
 const DISPATCH_GROUPS = ['Bottle', 'Sugar', 'Preform / Resin', 'Caps / Crown', 'All'];
 
-const DISPATCH_GEOFENCES = [
-  {
-    name: 'Majada Garage',
-    type: 'Garage',
-    lat: 14.2019,
-    lng: 121.1546,
-    radius: 900,
-    color: '#d71920',
-    note: 'Demo garage yard zone. Replace with exact yard coordinates when available.',
-  },
-  {
-    name: 'Manila Port',
-    type: 'Pickup',
-    lat: 14.5910,
-    lng: 120.9670,
-    radius: 1300,
-    color: '#475569',
-    note: 'Demo pickup/import zone.',
-  },
-  {
-    name: 'Cabuyao Plant',
-    type: 'Delivery',
-    lat: 14.2476,
-    lng: 121.1367,
-    radius: 1100,
-    color: '#2563eb',
-    note: 'Demo plant/customer delivery zone.',
-  },
-  {
-    name: 'Bulacan Hub',
-    type: 'Delivery',
-    lat: 14.7943,
-    lng: 120.8799,
-    radius: 1200,
-    color: '#0f766e',
-    note: 'Demo north delivery zone.',
-  },
-];
+// Demo geofences removed — real geofences come from raw.geofences in the API response.
 
 /* ──────────────────────────────────────────
    DATA MODELS (used for Apps Script mapping)
@@ -126,6 +89,7 @@ let dispatchMap           = null;
 let dispatchMarkers       = [];
 let dispatchGeofenceLayer = null;
 let dispatchGeofencesVisible = localStorage.getItem(LS_GEOFENCES_VISIBLE) !== 'false';
+let dispatchLiveGeofences = [];
 let selectedDispatchGroup = 'Bottle';
 let sheetGroupBy          = 'None';
 let selectedDispatchCells = new Set();
@@ -470,6 +434,7 @@ function setDispatchGroup(group) {
     btn.classList.toggle('active', btn.dataset.group === group);
   });
   refreshDispatchDashboard();
+  renderDispatchGeofences();
   renderSheet();
 }
 
@@ -894,6 +859,7 @@ function applyDispatchDashboardData(raw, sourceLabel) {
     trucks = raw.trucks.map(normalizeLiveTruck);
     trips  = mergeLocalDispatchEdits((raw.trips || []).map(normalizeLiveTrip));
     logs   = raw.logs.map(normalizeLiveLog);
+    if (Array.isArray(raw.geofences)) dispatchLiveGeofences = raw.geofences;
     if (shouldSaveLocal) {
       saveTrucks(trucks);
       saveTrips(trips);
@@ -935,6 +901,7 @@ function applyDispatchDashboardData(raw, sourceLabel) {
     return selectedDispatchGroup === 'All' || getDispatchGroup(t) === selectedDispatchGroup;
   }));
 
+  renderDispatchGeofences();
   renderSheet();
   renderLogs();
 
@@ -1220,6 +1187,83 @@ function updateDispatchGeofenceToggle() {
   btn.textContent = dispatchGeofencesVisible ? 'Geofences' : 'Geofences Off';
 }
 
+const GEOFENCE_CATEGORY_COLOR = {
+  'Garage':    '#d97706',
+  'Plant':     '#16a34a',
+  'Port':      '#2563eb',
+  'Warehouse': '#7c3aed',
+  'Warehouse / Pickup': '#7c3aed',
+  'Pickup':    '#7c3aed',
+  'Parking':   '#6b7280',
+};
+
+function geofenceCategoryColor(category) {
+  return GEOFENCE_CATEGORY_COLOR[category] || '#64748b';
+}
+
+function getVisibleDispatchGeofences() {
+  if (!Array.isArray(dispatchLiveGeofences)) return [];
+  if (selectedDispatchGroup === 'All') return dispatchLiveGeofences;
+  const filtered = dispatchLiveGeofences.filter(g => {
+    const gc = (g.groupCategory || '').trim();
+    return gc === selectedDispatchGroup;
+  });
+  if (!filtered.length && dispatchLiveGeofences.length > 0) {
+    console.info('No group-specific geofences found; showing all geofences.');
+    return dispatchLiveGeofences;
+  }
+  return filtered;
+}
+
+function normalizeGeofencePoint(point) {
+  if (!point) return null;
+  const lat = Array.isArray(point) ? parseFloat(point[0]) : parseFloat(point.lat);
+  const lng = Array.isArray(point) ? parseFloat(point[1]) : parseFloat(point.lng);
+  if (isNaN(lat) || isNaN(lng)) return null;
+  return { lat, lng };
+}
+
+function normalizeGeofencePolygon(polygon) {
+  if (!Array.isArray(polygon)) return [];
+  return polygon.map(normalizeGeofencePoint).filter(Boolean);
+}
+
+function getPolygonCenter(points) {
+  if (!points.length) return null;
+  const total = points.reduce((sum, point) => {
+    sum.lat += point.lat;
+    sum.lng += point.lng;
+    return sum;
+  }, { lat: 0, lng: 0 });
+  return { lat: total.lat / points.length, lng: total.lng / points.length };
+}
+
+function fitDispatchMapBounds() {
+  if (!dispatchMap || typeof L === 'undefined') return;
+
+  let bounds = null;
+  const extend = layer => {
+    if (!layer) return;
+    let layerBounds = null;
+    if (typeof layer.getBounds === 'function') {
+      layerBounds = layer.getBounds();
+    } else if (typeof layer.getLatLng === 'function') {
+      layerBounds = L.latLngBounds([layer.getLatLng()]);
+    }
+    if (!layerBounds || !layerBounds.isValid()) return;
+    bounds = bounds ? bounds.extend(layerBounds) : layerBounds;
+  };
+
+  dispatchMarkers.forEach(extend);
+  if (dispatchGeofencesVisible && dispatchGeofenceLayer) {
+    dispatchGeofenceLayer.eachLayer(extend);
+  }
+
+  if (bounds && bounds.isValid()) {
+    dispatchMap.fitBounds(bounds, { padding: [70, 70], maxZoom: dispatchGeofencesVisible ? 15 : 13 });
+  }
+}
+
 function renderDispatchGeofences() {
   updateDispatchGeofenceToggle();
   if (!dispatchMap || typeof L === 'undefined') return;
@@ -1228,41 +1272,92 @@ function renderDispatchGeofences() {
     dispatchMap.removeLayer(dispatchGeofenceLayer);
     dispatchGeofenceLayer = null;
   }
-  if (!dispatchGeofencesVisible) return;
+  if (!dispatchGeofencesVisible) {
+    fitDispatchMapBounds();
+    return;
+  }
 
-  dispatchGeofenceLayer = L.layerGroup();
-  DISPATCH_GEOFENCES.forEach(zone => {
-    const circle = L.circle([zone.lat, zone.lng], {
-      radius: zone.radius,
-      color: zone.color,
-      weight: 1.5,
-      opacity: 0.58,
-      fillColor: zone.color,
-      fillOpacity: 0.08,
-      dashArray: '6 6',
-    }).bindPopup(`
-      <div class="map-popup">
-        <div class="mp-title">${esc(zone.name)}</div>
-        <div class="mp-row"><b>Type:</b> ${esc(zone.type)}</div>
-        <div class="mp-row"><b>Radius:</b> ${Math.round(zone.radius / 100) / 10} km</div>
-        <div class="mp-time">${esc(zone.note)}</div>
-      </div>
-    `);
-
-    const label = L.marker([zone.lat, zone.lng], {
-      interactive: false,
-      icon: L.divIcon({
-        className: '',
-        html: `<div class="map-zone-label">${esc(zone.name)}</div>`,
-        iconSize: [120, 22],
-        iconAnchor: [60, 11],
-      }),
+  const visible = getVisibleDispatchGeofences();
+  if (!visible.length) {
+    console.warn('[VNS Dispatch] No geofences visible for selected group.', {
+      selectedDispatchGroup,
+      dispatchLiveGeofencesLength: dispatchLiveGeofences.length,
+      filteredCount: visible.length,
     });
+    fitDispatchMapBounds();
+    return;
+  }
 
-    dispatchGeofenceLayer.addLayer(circle);
-    dispatchGeofenceLayer.addLayer(label);
+  dispatchGeofenceLayer = L.featureGroup();
+  let renderedCount = 0;
+
+  visible.forEach(zone => {
+    const color   = geofenceCategoryColor(zone.category);
+    const name    = zone.name || '';
+    const polygon = normalizeGeofencePolygon(zone.polygon);
+    const hasPoly = polygon.length >= 3;
+    const centerLat = parseFloat(zone.centerLat);
+    const centerLng = parseFloat(zone.centerLng);
+    const radiusMeters = parseFloat(zone.radiusMeters);
+    const hasCirc = !isNaN(centerLat) && !isNaN(centerLng) && !isNaN(radiusMeters) && radiusMeters > 0;
+    if (!hasPoly && !hasCirc) return;
+
+    const shapeOpts = {
+      color,
+      weight:      1.5,
+      opacity:     0.65,
+      fillColor:   color,
+      fillOpacity: 0.10,
+      dashArray:   '5 5',
+    };
+
+    const popup = `
+      <div class="map-popup">
+        <div class="mp-title">${esc(name)}</div>
+        ${zone.category     ? `<div class="mp-row"><b>Type:</b> ${esc(zone.category)}</div>`     : ''}
+        ${zone.groupCategory ? `<div class="mp-row"><b>Group:</b> ${esc(zone.groupCategory)}</div>` : ''}
+      </div>
+    `;
+
+    let shape;
+    if (hasPoly) {
+      shape = L.polygon(polygon.map(point => [point.lat, point.lng]), shapeOpts).bindPopup(popup);
+    } else {
+      shape = L.circle([centerLat, centerLng], { ...shapeOpts, radius: radiusMeters }).bindPopup(popup);
+    }
+
+    const polygonCenter = hasPoly ? getPolygonCenter(polygon) : null;
+    const labelLat = !isNaN(centerLat) ? centerLat : polygonCenter?.lat;
+    const labelLng = !isNaN(centerLng) ? centerLng : polygonCenter?.lng;
+
+    dispatchGeofenceLayer.addLayer(shape);
+    if (!isNaN(labelLat) && !isNaN(labelLng)) {
+      const label = L.marker([labelLat, labelLng], {
+        interactive: false,
+        icon: L.divIcon({
+          className: '',
+          html: `<div class="map-zone-label" style="color:${color};border-color:${color};">${esc(name)}</div>`,
+          iconSize: [110, 20],
+          iconAnchor: [55, 10],
+        }),
+      });
+      dispatchGeofenceLayer.addLayer(label);
+    }
+    renderedCount += 1;
   });
+
+  if (!renderedCount) {
+    console.warn('[VNS Dispatch] No geofence shapes rendered for selected group.', {
+      selectedDispatchGroup,
+      dispatchLiveGeofencesLength: dispatchLiveGeofences.length,
+      filteredCount: visible.length,
+    });
+    fitDispatchMapBounds();
+    return;
+  }
+
   dispatchGeofenceLayer.addTo(dispatchMap);
+  fitDispatchMapBounds();
 }
 
 function toggleDispatchGeofences() {
@@ -1282,6 +1377,7 @@ function renderTruckMarkers(locations) {
       note.textContent = 'No live GPS data. Connect Apps Script to enable truck tracking.';
       note.style.display = 'block';
     }
+    fitDispatchMapBounds();
     return;
   }
 
@@ -1342,10 +1438,7 @@ function renderTruckMarkers(locations) {
     dispatchMarkers.push(marker);
   });
 
-  if (dispatchMarkers.length && dispatchMap) {
-    const group = L.featureGroup(dispatchMarkers);
-    dispatchMap.fitBounds(group.getBounds(), { padding: [70, 70], maxZoom: 13 });
-  }
+  fitDispatchMapBounds();
 }
 
 function updateDispatchMap() {

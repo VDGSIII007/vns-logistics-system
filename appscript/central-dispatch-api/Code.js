@@ -128,20 +128,72 @@ function getDispatchDashboard_() {
   const trucks   = getDispatchTrucks_();
   const trips    = getDispatchTrips_();
   const logs     = getDispatchLogs_();
+  const geofenceResult = getDispatchGeofences_();
 
   const warnings = [
     ...(trucks.warnings  || []),
     ...(trips.warnings   || []),
     ...(logs.warnings    || []),
+    ...(geofenceResult.warnings || []),
   ];
 
   return {
-    ok:       true,
-    trucks:   trucks.trucks   || [],
-    trips:    trips.trips     || [],
-    logs:     logs.logs       || [],
-    warnings: warnings,
+    ok:        true,
+    trucks:    trucks.trucks   || [],
+    trips:     trips.trips     || [],
+    logs:      logs.logs       || [],
+    geofences: geofenceResult.geofences || [],
+    warnings:  warnings,
   };
+}
+
+// ============================================================
+// getDispatchGeofences_ — reads + deduplicates geofences
+// from all source spreadsheets for dashboard map overlays
+// ============================================================
+
+function getDispatchGeofences_() {
+  const geofences = [];
+  const warnings  = [];
+  const seen      = {};
+
+  for (const source of SOURCE_CONFIGS) {
+    const result = readGeofencesForSource_(source);
+    warnings.push(...result.warnings);
+
+    for (const geofence of result.geofences) {
+      const key = [
+        geofence.name || "",
+        geofence.sourceFile || "",
+      ].join("|").toLowerCase().trim();
+
+      if (seen[key]) continue;
+      seen[key] = true;
+
+      geofences.push({
+        id: makeGeofenceId_(source, geofence),
+        name: geofence.name || null,
+        category: geofence.category || null,
+        sourceFile: geofence.sourceFile || null,
+        groupCategory: source.group || null,
+        sourceKey: source.key || source.sheetName || source.group || null,
+        polygon: geofence.polygon || [],
+        centerLat: geofence.centerLat !== undefined ? geofence.centerLat : null,
+        centerLng: geofence.centerLng !== undefined ? geofence.centerLng : null,
+        radiusMeters: geofence.radiusMeters !== undefined ? geofence.radiusMeters : null,
+      });
+    }
+  }
+
+  return { geofences, warnings };
+}
+
+function makeGeofenceId_(source, geofence) {
+  return [
+    source.key || source.group || "source",
+    geofence.name || "geofence",
+    geofence.sourceFile || "",
+  ].join("-").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
 // ============================================================
