@@ -32,6 +32,7 @@ const LS_TRIPS    = 'vnsDispatchTrips';
 const LS_LOGS     = 'vnsDispatchLogs';
 const LS_TRUCKS   = 'vnsDispatchTruckMaster';
 const LS_ACTIVITY = 'vnsDispatchActivity';
+const LS_GEOFENCES_VISIBLE = 'vnsDispatchGeofencesVisible';
 
 /* ──────────────────────────────────────────
    CONSTANTS
@@ -55,7 +56,49 @@ const STATUS_BADGE = {
   'Delivered':  'badge-delivered',
   'Cancelled':  'badge-cancelled',
   'On Hold':    'badge-onhold',
+  'At Garage':  'badge-at-garage',
 };
+
+const DISPATCH_GROUPS = ['Bottle', 'Sugar', 'Preform / Resin', 'Caps / Crown', 'All'];
+
+const DISPATCH_GEOFENCES = [
+  {
+    name: 'Majada Garage',
+    type: 'Garage',
+    lat: 14.2019,
+    lng: 121.1546,
+    radius: 900,
+    color: '#d71920',
+    note: 'Demo garage yard zone. Replace with exact yard coordinates when available.',
+  },
+  {
+    name: 'Manila Port',
+    type: 'Pickup',
+    lat: 14.5910,
+    lng: 120.9670,
+    radius: 1300,
+    color: '#475569',
+    note: 'Demo pickup/import zone.',
+  },
+  {
+    name: 'Cabuyao Plant',
+    type: 'Delivery',
+    lat: 14.2476,
+    lng: 121.1367,
+    radius: 1100,
+    color: '#2563eb',
+    note: 'Demo plant/customer delivery zone.',
+  },
+  {
+    name: 'Bulacan Hub',
+    type: 'Delivery',
+    lat: 14.7943,
+    lng: 120.8799,
+    radius: 1200,
+    color: '#0f766e',
+    note: 'Demo north delivery zone.',
+  },
+];
 
 /* ──────────────────────────────────────────
    DATA MODELS (used for Apps Script mapping)
@@ -79,8 +122,59 @@ const STATUS_BADGE = {
 /* ──────────────────────────────────────────
    MAP STATE
 ────────────────────────────────────────── */
-let dispatchMap     = null;
-let dispatchMarkers = [];
+let dispatchMap           = null;
+let dispatchMarkers       = [];
+let dispatchGeofenceLayer = null;
+let dispatchGeofencesVisible = localStorage.getItem(LS_GEOFENCES_VISIBLE) !== 'false';
+let selectedDispatchGroup = 'Bottle';
+let sheetGroupBy          = 'None';
+let selectedDispatchCells = new Set();
+let dispatchSheetSelection = null;
+let isSelectingDispatchRange = false;
+let dispatchUndoStack = [];
+let dispatchRedoStack = [];
+let dispatchHistoryBatch = null;
+let isApplyingDispatchHistory = false;
+
+const DISPATCH_STATUS_OPTIONS = ['Scheduled','Needs Dispatch','At Garage','Inactive / No Trip','In Transit','Loaded','Unloaded','Delivered','On Hold','Cancelled'];
+const DISPATCH_EDITABLE_FIELDS = ['driver','helper','source','destination','status','bookingDate','planPickup','actualPickup','lsp','supplier','packaging','qty','refNumber','shipmentNumber','atw','eta','remarks','materialCode','materialDescription','poReference','drInvoice','sto','doNumber','palletQty','typeOfPallet','truckType'];
+
+const DISPATCH_BASE_COLUMNS = [
+  { key: 'select', label: '', kind: 'select', always: true },
+  { key: 'plate', label: 'Plate', readOnly: true, always: true },
+  { key: 'driver', label: 'Driver', editable: true, always: true },
+  { key: 'helper', label: 'Helper', editable: true, always: true },
+  { key: 'source', label: 'Source', editable: true, always: true },
+  { key: 'destination', label: 'Destination', editable: true, always: true },
+  { key: 'location', label: 'Location', readOnly: true, always: true },
+  { key: 'status', label: 'Status', editable: true, always: true },
+  { key: 'bookingDate', label: 'Booking Date', editable: true, dateLike: true, always: true },
+  { key: 'planPickup', label: 'Plan Pickup', editable: true, dateLike: true, always: true },
+  { key: 'actualPickup', label: 'Actual Pickup', editable: true, dateLike: true, always: true },
+  { key: 'lsp', label: 'LSP', editable: true, always: true },
+  { key: 'supplier', label: 'Supplier', editable: true, always: true },
+  { key: 'packaging', label: 'Packaging', editable: true, always: true },
+  { key: 'qty', label: 'Qty', editable: true, always: true },
+  { key: 'refNumber', label: 'Ref #', editable: true, always: true },
+  { key: 'shipmentNumber', label: 'Shipment #', editable: true, always: true },
+  { key: 'atw', label: 'ATW', editable: true, always: true },
+  { key: 'eta', label: 'ETA', editable: true, dateLike: true, always: true },
+  { key: 'remarks', label: 'Remarks', editable: true, always: true },
+  { key: 'gpsTimestamp', label: 'GPS Timestamp', readOnly: true, always: true },
+  { key: 'actions', label: 'Actions', kind: 'actions', always: true },
+];
+
+const DISPATCH_EXTRA_COLUMNS = [
+  { key: 'materialCode', label: 'Material Code', editable: true },
+  { key: 'materialDescription', label: 'Material Description', editable: true },
+  { key: 'poReference', label: 'PO Reference', editable: true },
+  { key: 'drInvoice', label: 'DR / Invoice', editable: true },
+  { key: 'sto', label: 'STO', editable: true },
+  { key: 'doNumber', label: 'DO', editable: true },
+  { key: 'palletQty', label: 'Pallet Qty', editable: true },
+  { key: 'typeOfPallet', label: 'Type of Pallet', editable: true },
+  { key: 'truckType', label: 'Truck Type', editable: true },
+];
 
 /* ══════════════════════════════════════════════════════
    APPS SCRIPT FETCH FUNCTIONS
@@ -244,20 +338,32 @@ function normalizeLiveTruck(t) {
     longitude:   t.longitude     ?? null,
     lastUpdated: t.lastUpdated   || null,
     // original API fields (kept for map popup)
-    plateNumber:   t.plateNumber   || t.plate  || '',
-    driverName:    t.driverName    || t.driver || '',
-    helperName:    t.helperName    || t.helper || '',
-    groupCategory: t.groupCategory || '',
-    fullAddress:   t.fullAddress   || '',
-    mapLink:       t.mapLink       || '',
-    imei:          t.imei          || '',
+    plateNumber:      t.plateNumber      || t.plate  || '',
+    driverName:       t.driverName       || t.driver || '',
+    helperName:       t.helperName       || t.helper || '',
+    groupCategory:    t.groupCategory    || '',
+    fullAddress:      t.fullAddress      || '',
+    mapLink:          t.mapLink          || '',
+    imei:             t.imei             || '',
+    // geofence fields from GPS API
+    geofenceName:     t.geofenceName     || '',
+    geofenceCategory: t.geofenceCategory || '',
+    isInsideGeofence: t.isInsideGeofence ?? false,
+    friendlyLocation: t.friendlyLocation || '',
   };
 }
 
 function normalizeLiveTrip(t) {
+  const stableIdParts = [
+    t.plateNumber || t.plate || '',
+    t.dateAssigned || t.bookingDate || '',
+    t.source || '',
+    t.destination || '',
+    t.shipmentNumber || t.refNumber || '',
+  ].filter(Boolean);
   return {
     // local field names
-    id:             t.id             || null,
+    id:             t.id || t.tripId || (stableIdParts.length ? stableIdParts.join('-').replace(/\s+/g, '-') : uid()),
     plate:          t.plateNumber    || t.plate    || '',
     driver:         t.driverName     || t.driver   || '',
     helper:         t.helperName     || t.helper   || '',
@@ -278,21 +384,34 @@ function normalizeLiveTrip(t) {
     shipmentNumber: t.shipmentNumber || '',
     atw:            t.atw            || '',
     remarks:        t.remarks        || '',
+    materialCode:   t.materialCode || t.material_code || t['Material Code'] || '',
+    materialDescription: t.materialDescription || t.material_description || t['Material Description'] || '',
+    poReference:    t.poReference || t.po_reference || t['PO Reference'] || '',
+    drInvoice:      t.drInvoice || t.dr_invoice || t['DR / Invoice'] || t.drNo || t.invoiceNo || '',
+    sto:            t.sto || t.STO || '',
+    doNumber:       t.doNumber || t.do || t.DO || '',
+    palletQty:      t.palletQty || t.pallet_qty || t['Pallet Qty'] || '',
+    typeOfPallet:   t.typeOfPallet || t.type_of_pallet || t['Type of Pallet'] || '',
     latitude:       t.latitude       ?? null,
     longitude:      t.longitude      ?? null,
     lastUpdated:    t.lastUpdated    || null,
     timestamp:      t.lastUpdated    || t.timestamp || new Date().toLocaleString('en-PH'),
     // original API fields
-    plateNumber:    t.plateNumber    || t.plate  || '',
-    driverName:     t.driverName     || t.driver || '',
-    helperName:     t.helperName     || t.helper || '',
-    groupCategory:  t.groupCategory  || '',
-    fullAddress:    t.fullAddress    || '',
-    mapLink:        t.mapLink        || '',
-    etaAta:         t.etaAta         || '',
-    dateAssigned:   t.dateAssigned   || '',
-    deliveredAt:    t.deliveredAt    || '',
-    imei:           t.imei           || '',
+    plateNumber:      t.plateNumber      || t.plate  || '',
+    driverName:       t.driverName       || t.driver || '',
+    helperName:       t.helperName       || t.helper || '',
+    groupCategory:    t.groupCategory    || '',
+    fullAddress:      t.fullAddress      || '',
+    mapLink:          t.mapLink          || '',
+    etaAta:           t.etaAta           || '',
+    dateAssigned:     t.dateAssigned     || '',
+    deliveredAt:      t.deliveredAt      || '',
+    imei:             t.imei             || '',
+    // geofence fields from GPS API
+    geofenceName:     t.geofenceName     || '',
+    geofenceCategory: t.geofenceCategory || '',
+    isInsideGeofence: t.isInsideGeofence ?? false,
+    friendlyLocation: t.friendlyLocation || '',
   };
 }
 
@@ -302,59 +421,552 @@ function normalizeLiveLog(t) {
   return entry;
 }
 
+function mergeLocalDispatchEdits(liveTrips) {
+  const localTrips = loadTrips();
+  const byId = new Map(localTrips.map(trip => [trip.id, trip]));
+  return liveTrips.map(liveTrip => {
+    const localTrip = byId.get(liveTrip.id);
+    if (!localTrip || !localTrip.updatedAt) return liveTrip;
+    const merged = { ...liveTrip };
+    DISPATCH_EDITABLE_FIELDS.forEach(field => {
+      if (Object.prototype.hasOwnProperty.call(localTrip, field)) {
+        merged[field] = localTrip[field];
+      }
+    });
+    merged.updatedAt = localTrip.updatedAt;
+    return merged;
+  });
+}
+
+/* ══════════════════════════════════════════════════════
+   GROUP FILTER HELPERS
+══════════════════════════════════════════════════════ */
+
+function getDispatchGroup(record) {
+  const gc = (record.groupCategory || '').trim();
+  if (gc) {
+    if (gc === 'Bottle' || gc === 'Bottles') return 'Bottle';
+    if (gc === 'Sugar') return 'Sugar';
+    if (gc === 'Preform / Resin' || gc === 'Preform' || gc === 'Resin') return 'Preform / Resin';
+    if (gc === 'Caps / Crown' || gc === 'Caps' || gc === 'Crowns' || gc === 'Crown') return 'Caps / Crown';
+    return gc;
+  }
+  const c = (record.commodity || '').trim();
+  if (c === 'Bottles' || c === 'Bottle') return 'Bottle';
+  if (c === 'Sugar') return 'Sugar';
+  if (c === 'Preform' || c === 'Resin') return 'Preform / Resin';
+  if (c === 'Caps' || c === 'Crowns' || c === 'Crown') return 'Caps / Crown';
+  return c;
+}
+
+function filterBySelectedGroup(records) {
+  if (selectedDispatchGroup === 'All') return records;
+  return records.filter(r => getDispatchGroup(r) === selectedDispatchGroup);
+}
+
+function setDispatchGroup(group) {
+  selectedDispatchGroup = group;
+  document.querySelectorAll('.dg-tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.group === group);
+  });
+  refreshDispatchDashboard();
+  renderSheet();
+}
+
+function renderDispatchGroupTabs() {
+  const html = DISPATCH_GROUPS.map(g =>
+    `<button class="dg-tab-btn${g === selectedDispatchGroup ? ' active' : ''}" data-group="${esc(g)}" onclick="setDispatchGroup('${esc(g)}')">${esc(g)}</button>`
+  ).join('');
+  document.querySelectorAll('.dispatch-group-tabs').forEach(el => { el.innerHTML = html; });
+}
+
+function formatDispatchDateTime(value) {
+  if (!value) return '—';
+  try {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return String(value);
+    return d.toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+  } catch { return String(value); }
+}
+
+function formatDispatchDate(value) {
+  if (!value) return '—';
+  try {
+    const d = new Date(value.includes('T') ? value : value + 'T00:00:00');
+    if (isNaN(d.getTime())) return String(value);
+    return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch { return String(value); }
+}
+
+function getFriendlyLocation(record) {
+  // Use API-provided location first; fall back to address-guessing only when absent
+  if (record.friendlyLocation) return record.friendlyLocation;
+  if (record.geofenceName)     return record.geofenceName;
+
+  const haystack = [
+    record.location    || '',
+    record.fullAddress || '',
+    record.source      || '',
+    record.destination || '',
+  ].join(' ').toLowerCase();
+
+  if (haystack.includes('majada') || haystack.includes('garage'))                         return 'Majada Garage';
+  if (haystack.includes('santa rosa') || haystack.includes('sta. rosa') ||
+      haystack.includes('sta rosa'))                                                       return 'Sta Rosa Area';
+  if (haystack.includes('manila port') || haystack.includes('north harbor') ||
+      haystack.includes('south harbor'))                                                   return 'Manila Port';
+  if (haystack.includes('batangas'))                                                       return 'Batangas Area';
+
+  const addr = (record.fullAddress || '').trim();
+  if (!addr) return 'Location unavailable';
+  return addr.length > 45 ? addr.slice(0, 42) + '...' : addr;
+}
+
+function formatFriendlyDateTime(value) {
+  if (!value) return '—';
+  try {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return String(value);
+    return d.toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+  } catch {
+    return String(value);
+  }
+}
+
+function formatFriendlyDate(value) {
+  if (!value) return '—';
+  try {
+    const d = new Date(String(value).includes('T') ? value : value + 'T00:00:00');
+    if (isNaN(d.getTime())) return String(value);
+    return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  } catch {
+    return String(value);
+  }
+}
+
+function getTruckOperationalStatus(record) {
+  const status = (record.status || '').trim();
+  if (status) return status;
+  const hasRoute = Boolean((record.source || '').trim() || (record.destination || '').trim());
+  if (getFriendlyLocation(record) === 'Majada Garage' && !hasRoute) return 'At Garage';
+  return hasRoute ? 'Scheduled' : 'Needs Dispatch';
+}
+
+function isGpsOffline(record) {
+  if (!record.lastUpdated) return true;
+  try {
+    const d = new Date(record.lastUpdated);
+    if (isNaN(d.getTime())) return true;
+    return (Date.now() - d.getTime()) > 24 * 60 * 60 * 1000;
+  } catch { return true; }
+}
+
+function isAtGarage(record) {
+  if (!record) return false;
+  // Use API geofenceCategory as primary signal; only text-match when absent
+  if (record.geofenceCategory) return record.geofenceCategory === 'Garage';
+  const GARAGE_TERMS = ['majada garage', 'majada labas', 'majada', 'garage'];
+  const haystack = [
+    record.location         || '',
+    record.friendlyLocation || '',
+    record.fullAddress      || '',
+    record.source           || '',
+    record.destination      || '',
+    record.status           || '',
+    getFriendlyLocation(record),
+  ].join(' ').toLowerCase();
+  return GARAGE_TERMS.some(term => haystack.includes(term));
+}
+
+function isForRepair(record) {
+  if (!record) return false;
+  if (record.repairStatus) return true;
+  return /repair/i.test(record.status || '');
+}
+
+/* ══════════════════════════════════════════════════════
+   DISPATCHER SHEET HELPERS
+══════════════════════════════════════════════════════ */
+
+function setSheetGroupBy(val) {
+  sheetGroupBy = val;
+  renderSheet();
+}
+
+function getUniqueDispatchValues(records, field) {
+  const seen = new Set();
+  const vals = [];
+  records.forEach(r => {
+    const v = (field === 'location' ? getFriendlyLocation(r) : (field === 'group' ? getDispatchGroup(r) : (r[field] || ''))).trim();
+    if (v && !seen.has(v)) { seen.add(v); vals.push(v); }
+  });
+  return vals.sort();
+}
+
+function applyDispatchSheetFilters(records) {
+  let trips       = filterBySelectedGroup(records);
+  const commodity = document.getElementById('filter-commodity')?.value || '';
+  const status    = document.getElementById('filter-status')?.value    || '';
+  const truck     = document.getElementById('filter-truck')?.value     || '';
+  const src       = document.getElementById('filter-source')?.value    || '';
+  const dest      = document.getElementById('filter-dest')?.value      || '';
+  const location  = document.getElementById('filter-location')?.value  || '';
+  const search    = (document.getElementById('filter-search')?.value   || '').toLowerCase();
+
+  if (commodity) trips = trips.filter(t => getDispatchGroup(t)   === commodity);
+  if (status)    trips = trips.filter(t => getTruckOperationalStatus(t) === status);
+  if (truck)     trips = trips.filter(t => t.plate               === truck);
+  if (src)       trips = trips.filter(t => (t.source      || '') === src);
+  if (dest)      trips = trips.filter(t => (t.destination || '') === dest);
+  if (location)  trips = trips.filter(t => getFriendlyLocation(t) === location);
+  if (search)    trips = trips.filter(t =>
+    [t.plate, t.driver, t.helper, t.source, t.destination, getDispatchGroup(t), getFriendlyLocation(t), t.remarks, t.refNumber, t.shipmentNumber]
+      .some(v => (v || '').toLowerCase().includes(search))
+  );
+  return trips;
+}
+
+function groupDispatchRows(records, groupBy) {
+  if (!groupBy || groupBy === 'None') return [{ label: null, rows: records }];
+  const fieldMap = {
+    'Source':            'source',
+    'Destination':       'destination',
+    'Commodity / Group': 'group',
+    'Status':            'status',
+    'Location':          'location',
+  };
+  const field = fieldMap[groupBy];
+  if (!field) return [{ label: null, rows: records }];
+  const groups = {};
+  const order  = [];
+  records.forEach(r => {
+    const raw = field === 'location' ? getFriendlyLocation(r) : (field === 'group' ? getDispatchGroup(r) : (field === 'status' ? getTruckOperationalStatus(r) : r[field]));
+    const key = ((raw || '').trim()) || '(Blank)';
+    if (!groups[key]) { groups[key] = []; order.push(key); }
+    groups[key].push(r);
+  });
+  return order.map(k => ({ label: `${groupBy}: ${k}`, count: groups[k].length, rows: groups[k] }));
+}
+
+function renderDispatchGroupHeader(label, count) {
+  const colspan = document.querySelectorAll('#sheet-head-row th').length || 24;
+  return `<tr class="sheet-group-header"><td colspan="${colspan}"><span class="sgh-label">${esc(label)}</span><span class="sgh-count">${count} trip${count !== 1 ? 's' : ''}</span></td></tr>`;
+}
+
+function updateDispatchRowLocal(id, field, value) {
+  let trips = loadTrips();
+  const idx = trips.findIndex(t => t.id === id);
+  if (idx === -1) return;
+  const oldValue = trips[idx][field] || '';
+  if (String(oldValue) === String(value)) return;
+  recordDispatchHistoryChange({ id, field, oldValue, newValue: value });
+  trips[idx][field] = value;
+  trips[idx].updatedAt = new Date().toISOString();
+  saveTrips(trips);
+}
+
+function recordDispatchHistoryChange(change) {
+  if (isApplyingDispatchHistory) return;
+  if (dispatchHistoryBatch) {
+    dispatchHistoryBatch.push(change);
+    return;
+  }
+  dispatchUndoStack.push({ changes: [change] });
+  if (dispatchUndoStack.length > 100) dispatchUndoStack.shift();
+  dispatchRedoStack = [];
+}
+
+function beginDispatchHistoryBatch() {
+  dispatchHistoryBatch = [];
+}
+
+function endDispatchHistoryBatch() {
+  if (dispatchHistoryBatch && dispatchHistoryBatch.length) {
+    dispatchUndoStack.push({ changes: dispatchHistoryBatch });
+    if (dispatchUndoStack.length > 100) dispatchUndoStack.shift();
+    dispatchRedoStack = [];
+  }
+  dispatchHistoryBatch = null;
+}
+
+function applyDispatchHistoryAction(action, direction) {
+  if (!action || !action.changes?.length) return;
+  let trips = loadTrips();
+  isApplyingDispatchHistory = true;
+  const changes = direction === 'undo' ? [...action.changes].reverse() : action.changes;
+  changes.forEach(change => {
+    const idx = trips.findIndex(t => t.id === change.id);
+    if (idx === -1) return;
+    const value = direction === 'undo' ? change.oldValue : change.newValue;
+    trips[idx][change.field] = value;
+    trips[idx].updatedAt = new Date().toISOString();
+    const input = document.querySelector(`.dispatch-cell-input[data-id="${change.id}"][data-field="${change.field}"]`);
+    if (input) input.value = value || '';
+  });
+  saveTrips(trips);
+  isApplyingDispatchHistory = false;
+  updateDispatchSelectionStyles();
+}
+
+function undoDispatchEdit() {
+  const action = dispatchUndoStack.pop();
+  if (!action) { toast('Nothing to undo.', '#6b7280'); return; }
+  applyDispatchHistoryAction(action, 'undo');
+  dispatchRedoStack.push(action);
+}
+
+function redoDispatchEdit() {
+  const action = dispatchRedoStack.pop();
+  if (!action) { toast('Nothing to redo.', '#6b7280'); return; }
+  applyDispatchHistoryAction(action, 'redo');
+  dispatchUndoStack.push(action);
+}
+
+function populateSheetFilterDropdowns(allTrips) {
+  const srcSel  = document.getElementById('filter-source');
+  const destSel = document.getElementById('filter-dest');
+  const locSel  = document.getElementById('filter-location');
+  if (srcSel) {
+    const cur  = srcSel.value;
+    const vals = getUniqueDispatchValues(allTrips, 'source');
+    srcSel.innerHTML = '<option value="">All Sources</option>' +
+      vals.map(v => `<option${v === cur ? ' selected' : ''}>${esc(v)}</option>`).join('');
+  }
+  if (destSel) {
+    const cur  = destSel.value;
+    const vals = getUniqueDispatchValues(allTrips, 'destination');
+    destSel.innerHTML = '<option value="">All Destinations</option>' +
+      vals.map(v => `<option${v === cur ? ' selected' : ''}>${esc(v)}</option>`).join('');
+  }
+  if (locSel) {
+    const cur  = locSel.value;
+    const vals = getUniqueDispatchValues(allTrips, 'location');
+    locSel.innerHTML = '<option value="">All Locations</option>' +
+      vals.map(v => `<option${v === cur ? ' selected' : ''}>${esc(v)}</option>`).join('');
+  }
+}
+
+function handleDispatchTableCopy() {
+  const checked = Array.from(document.querySelectorAll('.sheet-row-check:checked'));
+  if (!checked.length) { toast('Select rows first to copy.', '#d97706'); return; }
+  const fields = ['plate','driver','helper','source','destination','status',
+                  'bookingDate','planPickup','actualPickup','lsp','supplier',
+                  'packaging','qty','refNumber','shipmentNumber','atw','eta','remarks'];
+  const trips  = loadTrips();
+  const rows   = checked.map(cb => {
+    const t = trips.find(x => x.id === cb.dataset.id);
+    if (!t) return '';
+    return fields.map(f => (t[f] || '')).join('\t');
+  }).filter(Boolean);
+  navigator.clipboard.writeText(rows.join('\n'))
+    .then(() => toast(`${rows.length} row(s) copied to clipboard.`, '#2563eb'))
+    .catch(() => toast('Copy failed. Select text manually and use Ctrl+C.', '#dc2626'));
+}
+
+function handleDispatchCellPaste(e, rowId, startField) {
+  e.preventDefault();
+  const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+  if (!text) return;
+  const editableFields = ['driver','helper','source','destination','lsp','supplier',
+                          'packaging','qty','refNumber','shipmentNumber','atw','eta','remarks'];
+  const pasteRows  = text.split(/\r?\n/).filter(r => r.length).map(r => r.split('\t'));
+  const startFIdx  = editableFields.indexOf(startField);
+
+  if (startFIdx === -1 || (pasteRows.length === 1 && pasteRows[0].length === 1)) {
+    const clean = text.trim();
+    e.currentTarget.textContent = clean;
+    updateDispatchRowLocal(rowId, startField, clean);
+    return;
+  }
+
+  const allRowEls = Array.from(document.querySelectorAll('#sheet-body tr[data-id]'));
+  let rowElIdx    = allRowEls.findIndex(tr => tr.dataset.id === rowId);
+
+  pasteRows.forEach((cols, rOffset) => {
+    const tr = allRowEls[rowElIdx + rOffset];
+    if (!tr) return;
+    const id = tr.dataset.id;
+    cols.forEach((val, cOffset) => {
+      const field = editableFields[startFIdx + cOffset];
+      if (!field) return;
+      const clean = val.trim();
+      updateDispatchRowLocal(id, field, clean);
+      const cell = tr.querySelector(`[data-field="${field}"]`);
+      if (cell) cell.textContent = clean;
+    });
+  });
+  toast(`Pasted ${pasteRows.length} row(s).`, '#2563eb');
+}
+
+function openTruckEditModal(plateOrId) {
+  const trips = loadTrips();
+  let t = trips.find(x => x.id === plateOrId);
+  if (!t) {
+    t = trips.find(x => (x.plate || x.plateNumber) === plateOrId && !['Delivered', 'Cancelled'].includes(x.status));
+  }
+  const modal = document.getElementById('truck-edit-modal');
+  if (!modal) return;
+  const plate = (t && (t.plate || t.plateNumber)) || (typeof plateOrId === 'string' ? plateOrId : '');
+  document.getElementById('te-id').value            = t ? t.id : '';
+  document.getElementById('te-plate').value         = plate;
+  document.getElementById('te-group').value         = t ? (getDispatchGroup(t) || t.commodity || '') : '';
+  document.getElementById('te-driver').value        = t ? (t.driver || '') : '';
+  document.getElementById('te-helper').value        = t ? (t.helper || '') : '';
+  document.getElementById('te-source').value        = t ? (t.source || '') : '';
+  document.getElementById('te-destination').value   = t ? (t.destination || '') : '';
+  document.getElementById('te-status').value        = t ? (t.status || 'Scheduled') : 'Scheduled';
+  document.getElementById('te-eta').value           = t ? (t.eta || t.etaAta || '') : '';
+  document.getElementById('te-remarks').value       = t ? (t.remarks || '') : '';
+  document.getElementById('te-booking-date').value  = t ? (t.bookingDate || '') : '';
+  document.getElementById('te-plan-pickup').value   = t ? (t.planPickup || '') : '';
+  document.getElementById('te-actual-pickup').value = t ? (t.actualPickup || '') : '';
+  const note = document.getElementById('te-save-note');
+  if (note) note.style.display = 'none';
+  modal.classList.add('open');
+}
+
+function closeTruckEditModal() {
+  document.getElementById('truck-edit-modal')?.classList.remove('open');
+}
+
+function saveTruckEdit() {
+  const id = document.getElementById('te-id').value;
+  if (!id) { toast('No trip linked to this truck card.', '#dc2626'); return; }
+  let trips = loadTrips();
+  const idx = trips.findIndex(t => t.id === id);
+  if (idx === -1) { toast('Trip not found.', '#dc2626'); return; }
+  trips[idx] = {
+    ...trips[idx],
+    driver:       document.getElementById('te-driver').value.trim(),
+    helper:       document.getElementById('te-helper').value.trim(),
+    source:       document.getElementById('te-source').value.trim(),
+    destination:  document.getElementById('te-destination').value.trim(),
+    status:       document.getElementById('te-status').value,
+    eta:          document.getElementById('te-eta').value.trim(),
+    remarks:      document.getElementById('te-remarks').value.trim(),
+    bookingDate:  document.getElementById('te-booking-date').value,
+    planPickup:   document.getElementById('te-plan-pickup').value,
+    actualPickup: document.getElementById('te-actual-pickup').value,
+  };
+  saveTrips(trips);
+  const note = document.getElementById('te-save-note');
+  if (note) note.style.display = 'block';
+  logActivity(`Edited: ${trips[idx].plate} — ${trips[idx].commodity}`, '#7c3aed');
+  renderSheet();
+  renderDashboardIfActive();
+  toast('Saved locally. Backend sync not enabled yet.', '#16a34a');
+}
+
+/* ══════════════════════════════════════════════════════
+   API RESPONSE CACHE
+══════════════════════════════════════════════════════ */
+
+const LS_API_CACHE = 'vnsDispatchApiCache';
+
+function loadDispatchApiCache() {
+  try { return JSON.parse(localStorage.getItem(LS_API_CACHE)) || null; } catch { return null; }
+}
+
+function saveDispatchApiCache(data) {
+  try {
+    localStorage.setItem(LS_API_CACHE, JSON.stringify({ savedAt: new Date().toISOString(), dashboardData: data }));
+  } catch {}
+}
+
+function isDispatchCacheStale(cache) {
+  if (!cache || !cache.savedAt) return true;
+  try { return (Date.now() - new Date(cache.savedAt).getTime()) > 30 * 60 * 1000; }
+  catch { return true; }
+}
+
 /* ══════════════════════════════════════════════════════
    DASHBOARD
 ══════════════════════════════════════════════════════ */
 
-async function refreshDispatchDashboard() {
-  setDataStatus('loading');
-  try {
-    const raw = await fetchDispatchDashboardData();
+function applyDispatchDashboardData(raw, sourceLabel) {
+  const shouldSaveLocal = sourceLabel === 'live';
+  const todayStr        = today();
+  const ACTIVE_STATUSES = ['In Transit', 'Loaded', 'Unloaded'];
+  let trucks, trips, logs;
 
-    let trucks, trips, logs;
-
-    if (DISPATCH_APP_SCRIPT_URL && raw.ok !== false) {
-      // Live API data — normalize field names and cache to localStorage
-      trucks = (raw.trucks || []).map(normalizeLiveTruck);
-      trips  = (raw.trips  || []).map(normalizeLiveTrip);
-      logs   = (raw.logs   || []).map(normalizeLiveLog);
+  const isApiData = raw && Array.isArray(raw.trucks) && raw.ok !== false && Array.isArray(raw.logs);
+  if (isApiData) {
+    trucks = raw.trucks.map(normalizeLiveTruck);
+    trips  = mergeLocalDispatchEdits((raw.trips || []).map(normalizeLiveTrip));
+    logs   = raw.logs.map(normalizeLiveLog);
+    if (shouldSaveLocal) {
       saveTrucks(trucks);
       saveTrips(trips);
       saveLogs(logs);
       if (raw.warnings && raw.warnings.length) {
         console.warn('[VNS Dispatch] API warnings:', raw.warnings);
       }
-    } else {
-      // Local fallback — use stored data as-is
-      trucks = raw.trucks || loadTrucks();
-      trips  = raw.trips  || loadTrips();
-      logs   = loadLogs();
     }
+  } else {
+    trucks = (raw && Array.isArray(raw.trucks)) ? raw.trucks : loadTrucks();
+    trips  = (raw && Array.isArray(raw.trips))  ? raw.trips  : loadTrips();
+    logs   = loadLogs();
+  }
 
-    const todayStr = today();
-    renderDispatchKPIs({
-      activeTrips:    trips.filter(t => !['Delivered', 'Cancelled'].includes(t.status)).length,
-      inTransit:      trips.filter(t => t.status === 'In Transit').length,
-      deliveredToday: logs.filter(l => (l.loggedAt || l.deliveredAt || '').startsWith(todayStr)).length,
-      totalLogs:      logs.length,
-    });
+  const filteredTrips = filterBySelectedGroup(trips);
+  const filteredLogs  = filterBySelectedGroup(logs);
 
-    renderDispatchTruckCards(trucks, trips);
-    renderCommodityBreakdown(trips);
-    renderRecentActivity(raw.recentActivity || null);
-    populateTruckFilter(trucks);
+  renderDispatchGroupTabs();
+  renderDispatchKPIs({
+    activeTrips: filteredTrips.filter(t => {
+      if (['Delivered', 'Cancelled', 'At Garage', 'Inactive / No Trip'].includes(t.status)) return false;
+      if (ACTIVE_STATUSES.includes(t.status)) return true;
+      return (t.bookingDate || '').startsWith(todayStr)
+          || (t.planPickup  || '').startsWith(todayStr)
+          || (t.actualPickup|| '').startsWith(todayStr);
+    }).length,
+    inTransit:      filteredTrips.filter(t => t.status === 'In Transit').length,
+    deliveredToday: filteredLogs.filter(l => (l.loggedAt || l.deliveredAt || '').startsWith(todayStr)).length,
+    totalLogs:      filteredLogs.length,
+  });
 
-    // GPS markers come from trucks with lat/lng in the dashboard response
-    renderTruckMarkers(trucks.filter(t => t.latitude && t.longitude));
+  renderDispatchTruckCards(trucks, trips);
+  renderCommodityBreakdown(filteredTrips);
+  renderRecentActivity(raw ? (raw.recentActivity || null) : null);
+  populateTruckFilter(trucks);
 
-    renderSheet();
-    renderLogs();
+  renderTruckMarkers(trucks.filter(t => {
+    if (!t.latitude || !t.longitude) return false;
+    return selectedDispatchGroup === 'All' || getDispatchGroup(t) === selectedDispatchGroup;
+  }));
 
-    setDataStatus(DISPATCH_APP_SCRIPT_URL ? 'live' : 'local');
+  renderSheet();
+  renderLogs();
+
+  if (sourceLabel === 'live')  setDataStatus(DISPATCH_APP_SCRIPT_URL ? 'live' : 'local');
+  if (sourceLabel === 'stale') setDataStatus('local');
+}
+
+async function refreshDispatchDashboard() {
+  const cache = loadDispatchApiCache();
+
+  if (cache && cache.dashboardData) {
+    applyDispatchDashboardData(cache.dashboardData, isDispatchCacheStale(cache) ? 'stale' : 'cache');
+    setDataStatus('loading');
+  } else {
+    setDataStatus('loading');
+  }
+
+  try {
+    const raw = await fetchDispatchDashboardData();
+    applyDispatchDashboardData(raw, 'live');
+    if (Array.isArray(raw.trucks)) saveDispatchApiCache(raw);
   } catch (err) {
     console.error('[VNS Dispatch] refreshDispatchDashboard failed:', err);
-    setDataStatus('error');
-    toast('Could not load live data. Showing local data.', '#dc2626');
+    if (!cache || !cache.dashboardData) {
+      setDataStatus('error');
+      toast('Could not load live data. Showing local data.', '#dc2626');
+    } else {
+      setDataStatus('local');
+      if (isDispatchCacheStale(cache)) {
+        toast('Live data unavailable — showing cached data.', '#d97706');
+      }
+    }
   }
 }
 
@@ -366,14 +978,51 @@ function renderDispatchKPIs(data) {
   set('sc-logs',      data.totalLogs      ?? 0);
 }
 
+function truckSortTier(t, trips) {
+  if (isGpsOffline(t)) return 4;
+  const plate = t.plate || t.plateNumber || '';
+  const trip = trips.find(tr => (tr.plate || tr.plateNumber) === plate && !['Delivered','Cancelled'].includes(tr.status));
+  const record = trip || t;
+  if (isForRepair(record)) return 3;
+  if (isAtGarage(t)) return 2;
+  const st = getTruckOperationalStatus(record);
+  if (st === 'Inactive / No Trip') return 2;
+  return 1;
+}
+
 function renderDispatchTruckCards(trucks, trips) {
   const row = document.getElementById('truck-cards-row');
   if (!row) return;
-  if (!trucks.length) {
-    row.innerHTML = '<p class="no-trucks-note">No trucks configured. Go to the Truck Master tab to add trucks.</p>';
+
+  let displayTrucks = trucks;
+  if (selectedDispatchGroup !== 'All') {
+    displayTrucks = trucks.filter(t => {
+      const plate = t.plate || t.plateNumber || '';
+      const activeTrip = trips.find(tr =>
+        (tr.plate || tr.plateNumber) === plate &&
+        !['Delivered', 'Cancelled'].includes(tr.status)
+      );
+      return activeTrip && getDispatchGroup(activeTrip) === selectedDispatchGroup;
+    });
+  }
+
+  if (!displayTrucks.length) {
+    row.innerHTML = selectedDispatchGroup === 'All'
+      ? '<p class="no-trucks-note">No trucks configured. Go to the Truck Master tab to add trucks.</p>'
+      : `<p class="no-trucks-note">No active ${esc(selectedDispatchGroup)} trips currently assigned.</p>`;
+    renderFleetSummaryStrip(displayTrucks, trips);
     return;
   }
-  row.innerHTML = trucks.map(t => {
+
+  displayTrucks = [...displayTrucks].sort((a, b) => {
+    const tierDiff = truckSortTier(a, trips) - truckSortTier(b, trips);
+    if (tierDiff !== 0) return tierDiff;
+    const pa = (a.plate || a.plateNumber || '').toLowerCase();
+    const pb = (b.plate || b.plateNumber || '').toLowerCase();
+    return pa < pb ? -1 : pa > pb ? 1 : 0;
+  });
+
+  row.innerHTML = displayTrucks.map(t => {
     const plate  = t.plate || t.plateNumber || '';
     const driver = t.driver || t.driverName || '';
     const helper = t.helper || t.helperName || '';
@@ -381,18 +1030,34 @@ function renderDispatchTruckCards(trucks, trips) {
       (tr.plate || tr.plateNumber) === plate &&
       !['Delivered', 'Cancelled'].includes(tr.status)
     );
-    const status   = activeTrip ? activeTrip.status : (t.status || 'Idle');
-    const badgeCls = STATUS_BADGE[status] || 'badge-idle';
-    const commMeta = activeTrip ? COMMODITY_META[activeTrip.commodity] : null;
-    const hasGPS   = t.latitude && t.longitude;
+    const status     = activeTrip ? getTruckOperationalStatus(activeTrip) : getTruckOperationalStatus(t);
+    const commMeta   = activeTrip ? COMMODITY_META[activeTrip.commodity] : null;
+    const hasGPS     = t.latitude && t.longitude;
+    const gpsTime    = formatFriendlyDateTime(t.lastUpdated);
+    const groupLabel = activeTrip ? (getDispatchGroup(activeTrip) || activeTrip.commodity || '') : '';
+
+    const gpsOffline  = isGpsOffline(t);
+    const truckRecord = activeTrip || t;
+    const atGarage    = !gpsOffline && isAtGarage(t);
+    const forRepair   = !gpsOffline && isForRepair(truckRecord);
+    const cardClass   = gpsOffline ? 'tdc-gps-offline' : (forRepair ? 'tdc-for-repair' : (atGarage ? 'tdc-at-garage' : ''));
+
+    let badgeLabel = status;
+    let badgeCls   = STATUS_BADGE[status] || 'badge-idle';
+    if (gpsOffline)     { badgeLabel = 'GPS Offline'; badgeCls = 'badge-gps-offline'; }
+    else if (forRepair) { badgeLabel = 'For Repair';  badgeCls = 'badge-for-repair';  }
+    else if (atGarage)  { badgeLabel = 'At Garage';   badgeCls = 'badge-at-garage';   }
+
+    const locFriendly = getFriendlyLocation(t) || 'Location unavailable';
+    const locLabel    = gpsOffline ? 'Last Known Loc' : 'Loc';
 
     return `
-      <div class="truck-dispatch-card" data-plate="${esc(plate)}">
+      <div class="truck-dispatch-card${cardClass ? ' ' + cardClass : ''}" data-plate="${esc(plate)}" onclick="openTruckEditModal('${esc(plate)}')" style="cursor:pointer;">
         <div class="tdc-header">
           <div class="tdc-plate-wrap">
             <span class="tdc-plate">${esc(plate)}</span>
           </div>
-          <span class="badge ${esc(badgeCls)}">${esc(status)}</span>
+          <span class="badge ${esc(badgeCls)}">${esc(badgeLabel)}</span>
         </div>
         <div class="tdc-crew">
           <div class="tdc-crew-row">
@@ -406,36 +1071,85 @@ function renderDispatchTruckCards(trucks, trips) {
         </div>
         ${activeTrip ? `
           <div class="tdc-trip-info">
-            <span class="badge badge-sm pill-${esc(commMeta?.cls || '')}">${esc(activeTrip.commodity)}</span>
-            <div class="tdc-route">${esc(activeTrip.source || '?')} <span class="arrow">→</span> ${esc(activeTrip.destination || '?')}</div>
+            ${groupLabel ? `<span class="badge badge-sm pill-${esc(commMeta?.cls || '')}">${esc(groupLabel)}</span>` : ''}
+            <div class="tdc-route">${esc(activeTrip.source || 'Needs Input')} <span class="arrow">→</span> ${esc(activeTrip.destination || 'Needs Input')}</div>
             <div class="tdc-eta">ETA <strong>${esc(activeTrip.etaAta || activeTrip.eta || '—')}</strong></div>
           </div>
+        ` : atGarage ? `
+          <div class="tdc-garage-tag">🏠 Parked at Garage</div>
+        ` : gpsOffline ? `
+          <div class="tdc-idle" style="color:#dc2626;font-size:0.76rem;">GPS signal lost — check truck</div>
         ` : `<div class="tdc-idle">No active trip assigned</div>`}
+        <div class="tdc-location">${esc(locLabel)}: <strong>${esc(locFriendly)}</strong></div>
         <div class="tdc-footer">
           ${hasGPS ? `
-            <button class="dbtn dbtn-sm dbtn-map-btn" onclick="focusMapOnTruck(${t.latitude},${t.longitude},'${esc(plate)}')">
+            <button class="dbtn dbtn-sm dbtn-map-btn" onclick="event.stopPropagation();focusMapOnTruck(${t.latitude},${t.longitude},'${esc(plate)}')">
               View on Map
             </button>
-          ` : ''}
-          ${t.lastUpdated ? `
-            <span class="tdc-gps-time">GPS ${esc(new Date(t.lastUpdated).toLocaleTimeString('en-PH'))}</span>
-          ` : ''}
+          ` : '<span></span>'}
+          <span class="tdc-gps-time${gpsOffline ? ' tdc-gps-stale' : ''}">
+            ${gpsOffline ? `Last GPS: ${gpsTime}` : `GPS: ${gpsTime}`}
+          </span>
         </div>
       </div>
     `;
   }).join('');
+
+  renderFleetSummaryStrip(displayTrucks, trips);
+}
+
+function renderFleetSummaryStrip(tabTrucks, trips) {
+  const strip = document.getElementById('fleet-summary-strip');
+  if (!strip) return;
+  const todayStr = today();
+  const total = tabTrucks.length;
+  const activeCount = tabTrucks.filter(t => {
+    const plate = t.plate || t.plateNumber || '';
+    const trip = trips.find(tr => (tr.plate || tr.plateNumber) === plate && !['Delivered','Cancelled','At Garage','Inactive / No Trip'].includes(tr.status));
+    if (!trip) return false;
+    const st = getTruckOperationalStatus(trip);
+    if (['In Transit','Loaded','Unloaded'].includes(st)) return true;
+    return (trip.bookingDate||'').startsWith(todayStr) || (trip.planPickup||'').startsWith(todayStr) || (trip.actualPickup||'').startsWith(todayStr);
+  }).length;
+  const garageCount = tabTrucks.filter(t => {
+    if (isGpsOffline(t)) return false;
+    return isAtGarage(t);
+  }).length;
+  const offlineCount = tabTrucks.filter(t => isGpsOffline(t)).length;
+  const repairCount = tabTrucks.filter(t => {
+    const plate = t.plate || t.plateNumber || '';
+    const trip = trips.find(tr => (tr.plate || tr.plateNumber) === plate && !['Delivered','Cancelled'].includes(tr.status));
+    return isForRepair(trip || t);
+  }).length;
+  const pill = (cls, num, lbl) =>
+    `<span class="fss-pill fss-pill-${cls}"><span class="fss-num">${num}</span><span class="fss-lbl">${lbl}</span></span>`;
+  strip.innerHTML =
+    pill('total',   total,        'trucks') +
+    pill('active',  activeCount,  'active today') +
+    pill('garage',  garageCount,  'at garage') +
+    (offlineCount ? pill('offline', offlineCount, 'GPS offline') : '') +
+    (repairCount  ? pill('repair',  repairCount,  'for repair')  : '');
 }
 
 function renderCommodityBreakdown(trips) {
   const grid = document.getElementById('commodity-grid');
   if (!grid) return;
+  const allGroups = DISPATCH_GROUPS.filter(g => g !== 'All');
+  const visibleGroups = selectedDispatchGroup === 'All'
+    ? allGroups
+    : allGroups.filter(g => g === selectedDispatchGroup);
   const counts = {};
-  COMMODITIES.forEach(c => (counts[c] = 0));
-  trips.forEach(t => { if (counts[t.commodity] !== undefined) counts[t.commodity]++; });
-  grid.innerHTML = COMMODITIES.map(c => {
-    const meta  = COMMODITY_META[c];
+  visibleGroups.forEach(g => (counts[g] = 0));
+  trips.forEach(t => {
+    const group = getDispatchGroup(t);
+    if (counts[group] !== undefined) counts[group]++;
+  });
+  const total = Object.values(counts).reduce((s, n) => s + n, 0);
+  grid.innerHTML = visibleGroups.map(c => {
+    const metaKey = c === 'Bottle' ? 'Bottles' : (c === 'Preform / Resin' ? 'Preform' : (c === 'Caps / Crown' ? 'Caps' : c));
+    const meta  = COMMODITY_META[metaKey] || { cls: '', color: '#6b7280' };
     const count = counts[c];
-    const pct   = trips.length ? Math.round((count / trips.length) * 100) : 0;
+    const pct   = total ? Math.round((count / total) * 100) : 0;
     return `
       <div class="commodity-chip ${meta.cls}">
         <div class="cc-top">
@@ -493,9 +1207,68 @@ function initDispatchMap() {
     attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19,
   }).addTo(dispatchMap);
+  renderDispatchGeofences();
 
   const note = document.getElementById('map-no-data-note');
   if (note && !DISPATCH_APP_SCRIPT_URL) note.style.display = 'block';
+}
+
+function updateDispatchGeofenceToggle() {
+  const btn = document.getElementById('geofence-toggle-btn');
+  if (!btn) return;
+  btn.classList.toggle('active', dispatchGeofencesVisible);
+  btn.textContent = dispatchGeofencesVisible ? 'Geofences' : 'Geofences Off';
+}
+
+function renderDispatchGeofences() {
+  updateDispatchGeofenceToggle();
+  if (!dispatchMap || typeof L === 'undefined') return;
+
+  if (dispatchGeofenceLayer) {
+    dispatchMap.removeLayer(dispatchGeofenceLayer);
+    dispatchGeofenceLayer = null;
+  }
+  if (!dispatchGeofencesVisible) return;
+
+  dispatchGeofenceLayer = L.layerGroup();
+  DISPATCH_GEOFENCES.forEach(zone => {
+    const circle = L.circle([zone.lat, zone.lng], {
+      radius: zone.radius,
+      color: zone.color,
+      weight: 1.5,
+      opacity: 0.58,
+      fillColor: zone.color,
+      fillOpacity: 0.08,
+      dashArray: '6 6',
+    }).bindPopup(`
+      <div class="map-popup">
+        <div class="mp-title">${esc(zone.name)}</div>
+        <div class="mp-row"><b>Type:</b> ${esc(zone.type)}</div>
+        <div class="mp-row"><b>Radius:</b> ${Math.round(zone.radius / 100) / 10} km</div>
+        <div class="mp-time">${esc(zone.note)}</div>
+      </div>
+    `);
+
+    const label = L.marker([zone.lat, zone.lng], {
+      interactive: false,
+      icon: L.divIcon({
+        className: '',
+        html: `<div class="map-zone-label">${esc(zone.name)}</div>`,
+        iconSize: [120, 22],
+        iconAnchor: [60, 11],
+      }),
+    });
+
+    dispatchGeofenceLayer.addLayer(circle);
+    dispatchGeofenceLayer.addLayer(label);
+  });
+  dispatchGeofenceLayer.addTo(dispatchMap);
+}
+
+function toggleDispatchGeofences() {
+  dispatchGeofencesVisible = !dispatchGeofencesVisible;
+  localStorage.setItem(LS_GEOFENCES_VISIBLE, dispatchGeofencesVisible ? 'true' : 'false');
+  renderDispatchGeofences();
 }
 
 function renderTruckMarkers(locations) {
@@ -523,7 +1296,8 @@ function renderTruckMarkers(locations) {
   valid.forEach(t => {
     const lat     = parseFloat(t.latitude  || t.lat);
     const lng     = parseFloat(t.longitude || t.lng);
-    const plate   = esc(t.plateNumber  || t.plate       || 'Unknown');
+    const plateRaw = t.plateNumber || t.plate || 'Unknown';
+    const plate   = esc(plateRaw);
     const group   = esc(t.groupCategory || t.commodity  || '—');
     const driver  = esc(t.driverName   || t.driver      || '—');
     const helper  = esc(t.helperName   || t.helper      || '—');
@@ -531,30 +1305,38 @@ function renderTruckMarkers(locations) {
     const src     = esc(t.source       || '—');
     const dest    = esc(t.destination  || '—');
     const addr    = esc(t.fullAddress  || '');
-    const updated = t.lastUpdated
-      ? esc(new Date(t.lastUpdated).toLocaleString('en-PH'))
-      : '—';
+    const updated = formatDispatchDateTime(t.lastUpdated);
 
     const icon = L.divIcon({
       className: '',
-      html: `<div class="truck-map-pin" title="${plate}">T</div>`,
-      iconSize: [36, 36],
-      iconAnchor: [18, 18],
-      popupAnchor: [0, -20],
+      html: `<div class="truck-map-pin" title="${plate}">${plate}</div>`,
+      iconSize: [88, 30],
+      iconAnchor: [44, 30],
+      popupAnchor: [0, -30],
     });
 
-    const marker = L.marker([lat, lng], { icon }).addTo(dispatchMap);
+    const location        = esc(getFriendlyLocation(t));
+    const gpsOff          = isGpsOffline(t);
+    const gpsStatusHtml   = gpsOff
+      ? '<span style="color:#dc2626;font-weight:700;">Offline</span>'
+      : '<span style="color:#16a34a;font-weight:700;">Online</span>';
+    const locLabel        = gpsOff ? 'Last Known Loc' : 'Location';
+    const gpsTimeLabel    = gpsOff ? 'Last GPS' : 'GPS';
+    const geofenceName    = esc(t.geofenceName     || '');
+    const geofenceCategory = esc(t.geofenceCategory || '');
+    const marker = L.marker([lat, lng], { icon, dispatchPlate: plateRaw }).addTo(dispatchMap);
     marker.bindPopup(`
       <div class="map-popup">
         <div class="mp-title">${plate}</div>
-        <div class="mp-row"><b>Group:</b> ${group}</div>
-        <div class="mp-row"><b>Driver:</b> ${driver}</div>
-        <div class="mp-row"><b>Helper:</b> ${helper}</div>
-        <div class="mp-row"><b>Status:</b> ${status}</div>
-        <div class="mp-row"><b>From:</b> ${src}</div>
-        <div class="mp-row"><b>To:</b> ${dest}</div>
+        <div class="mp-row"><b>Status:</b> ${esc(getTruckOperationalStatus(t))}</div>
+        <div class="mp-row"><b>GPS:</b> ${gpsStatusHtml}</div>
+        <div class="mp-row"><b>${locLabel}:</b> ${location}</div>
+        ${geofenceName     ? `<div class="mp-row"><b>Geofence:</b> ${geofenceName}</div>`     : ''}
+        ${geofenceCategory ? `<div class="mp-row"><b>Zone:</b> ${geofenceCategory}</div>` : ''}
         ${addr ? `<div class="mp-row"><b>Address:</b> ${addr}</div>` : ''}
-        <div class="mp-time">Updated: ${updated}</div>
+        <div class="mp-row"><b>Driver:</b> ${driver}</div>
+        <div class="mp-row"><b>Group:</b> ${group}</div>
+        <div class="mp-time">${gpsTimeLabel}: ${formatFriendlyDateTime(t.lastUpdated)}</div>
       </div>
     `);
     dispatchMarkers.push(marker);
@@ -562,7 +1344,7 @@ function renderTruckMarkers(locations) {
 
   if (dispatchMarkers.length && dispatchMap) {
     const group = L.featureGroup(dispatchMarkers);
-    dispatchMap.fitBounds(group.getBounds(), { padding: [50, 50] });
+    dispatchMap.fitBounds(group.getBounds(), { padding: [70, 70], maxZoom: 13 });
   }
 }
 
@@ -579,10 +1361,9 @@ function focusMapOnTruck(lat, lng, plate) {
   setTimeout(() => {
     if (!dispatchMap) return;
     dispatchMap.invalidateSize();
-    dispatchMap.setView([lat, lng], 14);
+    dispatchMap.setView([lat, lng], 16);
     dispatchMarkers.forEach(m => {
-      const el = m.getElement();
-      if (el && el.title === plate) m.openPopup();
+      if (m.options.dispatchPlate === plate) m.openPopup();
     });
   }, 120);
 }
@@ -623,65 +1404,94 @@ function switchTab(tabName) {
 ══════════════════════════════════════════════════════ */
 
 function renderSheet() {
-  let trips = loadTrips();
-  const commodity = document.getElementById('filter-commodity')?.value || '';
-  const status    = document.getElementById('filter-status')?.value    || '';
-  const truck     = document.getElementById('filter-truck')?.value     || '';
-  const search    = (document.getElementById('filter-search')?.value   || '').toLowerCase();
+  const allTrips = loadTrips();
+  const trips    = applyDispatchSheetFilters(allTrips);
 
-  if (commodity) trips = trips.filter(t => t.commodity === commodity);
-  if (status)    trips = trips.filter(t => t.status    === status);
-  if (truck)     trips = trips.filter(t => t.plate     === truck);
-  if (search)    trips = trips.filter(t =>
-    [t.plate, t.driver, t.source, t.destination, t.commodity, t.remarks, t.refNumber]
-      .some(v => (v || '').toLowerCase().includes(search))
-  );
+  populateSheetFilterDropdowns(allTrips);
 
   const tbody = document.getElementById('sheet-body');
   if (!tbody) return;
 
   if (!trips.length) {
-    tbody.innerHTML = `<tr><td colspan="22"><div class="empty-state">No trips match the current filter.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="23"><div class="empty-state">No trips match the current filter.</div></td></tr>`;
     return;
   }
 
-  tbody.innerHTML = trips.map(t => {
-    const badgeCls = STATUS_BADGE[t.status] || '';
-    const commMeta = COMMODITY_META[t.commodity] || {};
-    const pillCls  = commMeta.cls ? `badge pill-${commMeta.cls}` : 'badge';
+  const grouped       = groupDispatchRows(trips, sheetGroupBy);
+  const statusOptions = ['Scheduled','In Transit','Loaded','Unloaded','Delivered','On Hold','Cancelled'];
+
+  const editCell = (id, field, val) => {
+    const safeVal = esc(val || '');
+    return `<td class="sheet-cell-edit" contenteditable="true" data-id="${id}" data-field="${field}"
+      onblur="updateDispatchRowLocal('${id}','${field}',this.textContent.trim())"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+      onpaste="handleDispatchCellPaste(event,'${id}','${field}')"
+      >${safeVal}</td>`;
+  };
+
+  const dateCell = (id, field, val) => {
+    const raw = val || '';
+    return `<td class="sheet-cell-date"><input type="date" class="sheet-date-input" value="${esc(raw)}"
+      onchange="updateDispatchRowLocal('${id}','${field}',this.value)" /></td>`;
+  };
+
+  const statusCell = (id, val) => `<td class="sheet-cell-select"><select class="sheet-status-sel"
+    onchange="updateDispatchRowLocal('${id}','status',this.value)">
+    ${statusOptions.map(s => `<option${val === s ? ' selected' : ''}>${esc(s)}</option>`).join('')}
+    </select></td>`;
+
+  const renderRow = t => {
+    const id         = t.id;
+    const commMeta   = COMMODITY_META[t.commodity] || {};
+    const pillCls    = commMeta.cls ? `badge badge-sm pill-${commMeta.cls}` : 'badge badge-sm';
+    const groupLabel = getDispatchGroup(t) || t.commodity || '—';
+    const location   = getFriendlyLocation(t);
+    const lat        = t.latitude  ? String(t.latitude).slice(0, 9)  : '—';
+    const lng        = t.longitude ? String(t.longitude).slice(0, 10) : '—';
+
     return `
-      <tr data-id="${esc(t.id)}">
-        <td><input type="checkbox" class="sheet-row-check" data-id="${esc(t.id)}"></td>
-        <td><strong>${esc(t.plate)}</strong></td>
-        <td>${esc(t.driver)}</td>
-        <td>${esc(t.helper)}</td>
-        <td><span class="${pillCls}">${esc(t.commodity)}</span></td>
-        <td>${esc(t.source)}</td>
-        <td>${esc(t.destination)}</td>
-        <td><span class="badge ${badgeCls}">${esc(t.status)}</span></td>
-        <td>${esc(t.bookingDate)}</td>
-        <td>${esc(t.planPickup)}</td>
-        <td>${esc(t.actualPickup)}</td>
-        <td>${esc(t.lsp)}</td>
-        <td>${esc(t.supplier)}</td>
-        <td>${esc(t.packaging)}</td>
-        <td>${esc(t.qty)}</td>
-        <td>${esc(t.refNumber)}</td>
-        <td>${esc(t.shipmentNumber)}</td>
-        <td>${esc(t.atw)}</td>
-        <td>${esc(t.eta)}</td>
-        <td>${esc(t.remarks)}</td>
-        <td class="ts-cell">${esc(t.timestamp || '')}</td>
-        <td>
+      <tr data-id="${esc(id)}" class="sheet-row">
+        <td class="sheet-cell-check"><input type="checkbox" class="sheet-row-check" data-id="${esc(id)}"></td>
+        <td class="sheet-cell-ro"><strong>${esc(t.plate || '—')}</strong></td>
+        ${editCell(id, 'driver',         t.driver)}
+        ${editCell(id, 'helper',         t.helper)}
+        <td class="sheet-cell-ro"><span class="${pillCls}">${esc(groupLabel)}</span></td>
+        <td class="sheet-cell-ro ts-cell">${esc(t.imei || '—')}</td>
+        ${editCell(id, 'source',         t.source)}
+        ${editCell(id, 'destination',    t.destination)}
+        ${statusCell(id, t.status)}
+        ${dateCell(id, 'bookingDate',    t.bookingDate)}
+        ${dateCell(id, 'planPickup',     t.planPickup)}
+        ${dateCell(id, 'actualPickup',   t.actualPickup)}
+        ${editCell(id, 'lsp',            t.lsp)}
+        ${editCell(id, 'supplier',       t.supplier)}
+        ${editCell(id, 'packaging',      t.packaging)}
+        ${editCell(id, 'qty',            t.qty)}
+        ${editCell(id, 'refNumber',      t.refNumber)}
+        ${editCell(id, 'shipmentNumber', t.shipmentNumber)}
+        ${editCell(id, 'atw',            t.atw)}
+        ${editCell(id, 'eta',            t.eta)}
+        ${editCell(id, 'remarks',        t.remarks)}
+        <td class="sheet-cell-ro ts-cell">${formatDispatchDateTime(t.lastUpdated || t.timestamp)}</td>
+        <td class="sheet-cell-ro sheet-cell-loc">${esc(location)}</td>
+        <td class="sheet-cell-ro ts-cell">${lat}</td>
+        <td class="sheet-cell-ro ts-cell">${lng}</td>
+        <td class="sheet-cell-actions">
           <div class="actions-cell">
-            <button class="dbtn dbtn-gray dbtn-sm" onclick="editTrip('${esc(t.id)}')">Edit</button>
-            <button class="dbtn dbtn-primary dbtn-sm" onclick="markOneDelivered('${esc(t.id)}')">Delivered</button>
-            <button class="dbtn dbtn-gray dbtn-sm" onclick="deleteOneTrip('${esc(t.id)}')">Del</button>
+            <button class="dbtn dbtn-primary dbtn-sm" onclick="markOneDelivered('${esc(id)}')">Delivered</button>
+            <button class="dbtn dbtn-outline-danger dbtn-sm" onclick="deleteOneTrip('${esc(id)}')">Delete</button>
           </div>
         </td>
       </tr>
     `;
-  }).join('');
+  };
+
+  let html = '';
+  grouped.forEach(({ label, count, rows }) => {
+    if (label) html += renderDispatchGroupHeader(label, count || rows.length);
+    rows.forEach(t => { html += renderRow(t); });
+  });
+  tbody.innerHTML = html;
 
   document.querySelectorAll('.sheet-row-check').forEach(cb => {
     cb.addEventListener('change', () => cb.closest('tr').classList.toggle('row-selected', cb.checked));
@@ -773,7 +1583,7 @@ function markOneDelivered(id) {
 }
 
 function deleteOneTrip(id) {
-  if (!confirm('Remove this trip from the dispatcher sheet?')) return;
+  if (!confirm('Delete this trip from the local list? This does not affect Google Sheets.')) return;
   let trips = loadTrips();
   const t   = trips.find(x => x.id === id);
   trips     = trips.filter(x => x.id !== id);
@@ -782,6 +1592,360 @@ function deleteOneTrip(id) {
   renderSheet();
   renderDashboardIfActive();
   toast('Trip removed.', '#dc2626');
+}
+
+function getDispatchSheetColumns(records) {
+  const usefulExtras = DISPATCH_EXTRA_COLUMNS.filter(col =>
+    records.some(r => String(r[col.key] || '').trim())
+  );
+  const beforeActions = DISPATCH_BASE_COLUMNS.filter(c => c.key !== 'actions');
+  const actions = DISPATCH_BASE_COLUMNS.find(c => c.key === 'actions');
+  return [...beforeActions, ...usefulExtras, actions];
+}
+
+function renderDispatchSheetHeader(columns) {
+  const headRow = document.getElementById('sheet-head-row');
+  if (!headRow) return;
+  headRow.innerHTML = columns.map(col => {
+    const cls = `sheet-col-${col.key}`;
+    if (col.kind === 'select') return `<th class="${cls}" style="width:36px;"><input type="checkbox" id="sheet-select-all" onchange="toggleAllSheet(this)"></th>`;
+    return `<th class="${cls}">${esc(col.label)}</th>`;
+  }).join('');
+}
+
+function renderSheet() {
+  const allTrips = loadTrips();
+  const trips = applyDispatchSheetFilters(allTrips);
+  const columns = getDispatchSheetColumns(trips);
+
+  populateSheetFilterDropdowns(allTrips);
+  renderDispatchSheetHeader(columns);
+
+  const tbody = document.getElementById('sheet-body');
+  if (!tbody) return;
+  selectedDispatchCells.clear();
+
+  if (!trips.length) {
+    tbody.innerHTML = `<tr><td colspan="${columns.length}"><div class="empty-state">No trips match the current filter.</div></td></tr>`;
+    return;
+  }
+
+  const editCell = (id, field, value, rowIndex, colIndex) =>
+    `<td class="sheet-cell-edit sheet-col-${esc(field)}" data-id="${esc(id)}" data-field="${esc(field)}" data-row-index="${rowIndex}" data-col-index="${colIndex}">
+      <input class="dispatch-cell-input" data-id="${esc(id)}" data-field="${esc(field)}" data-row-index="${rowIndex}" data-col-index="${colIndex}" type="text" value="${esc(value || '')}">
+    </td>`;
+
+  const readCell = (value, extraCls = '', colKey = '') =>
+    `<td class="sheet-cell-ro ${extraCls} ${colKey ? `sheet-col-${esc(colKey)}` : ''}">${value}</td>`;
+
+  const statusCell = (id, value, rowIndex, colIndex) =>
+    `<td class="sheet-cell-select sheet-cell-edit sheet-col-status" data-id="${esc(id)}" data-field="status" data-row-index="${rowIndex}" data-col-index="${colIndex}">
+      <select class="sheet-status-sel dispatch-cell-input" data-id="${esc(id)}" data-field="status" data-row-index="${rowIndex}" data-col-index="${colIndex}">
+        ${DISPATCH_STATUS_OPTIONS.map(s => `<option${value === s ? ' selected' : ''}>${esc(s)}</option>`).join('')}
+      </select>
+    </td>`;
+
+  const renderCell = (trip, col, rowIndex, colIndex) => {
+    const id = trip.id;
+    if (col.kind === 'select') {
+      return `<td class="sheet-cell-check sheet-col-select"><input type="checkbox" class="sheet-row-check" data-id="${esc(id)}"></td>`;
+    }
+    if (col.kind === 'actions') {
+      return `<td class="sheet-cell-actions sheet-col-actions">
+        <div class="actions-cell">
+          <button class="dbtn dbtn-primary dbtn-sm" onclick="markOneDelivered('${esc(id)}')">Delivered</button>
+          <button class="dbtn dbtn-outline-danger dbtn-sm" onclick="deleteDispatchTripLocal('${esc(id)}')">Delete</button>
+        </div>
+      </td>`;
+    }
+    if (col.key === 'plate') return readCell(`<strong>${esc(trip.plate || '—')}</strong>`);
+    if (col.key === 'group') {
+      const groupLabel = getDispatchGroup(trip) || trip.commodity || '—';
+      const meta = COMMODITY_META[trip.commodity] || {};
+      const pillCls = meta.cls ? `badge badge-sm pill-${meta.cls}` : 'badge badge-sm';
+      return readCell(`<span class="${pillCls}">${esc(groupLabel)}</span>`);
+    }
+    if (col.key === 'location') return readCell(esc(getFriendlyLocation(trip)), 'sheet-cell-loc');
+    if (col.key === 'gpsTimestamp') return readCell(formatFriendlyDateTime(trip.lastUpdated || trip.timestamp), 'ts-cell');
+    if (col.key === 'status') return statusCell(id, getTruckOperationalStatus(trip), rowIndex, colIndex);
+    if (col.editable) {
+      return editCell(id, col.key, trip[col.key], rowIndex, colIndex);
+    }
+    return readCell(esc(trip[col.key] || '—'));
+  };
+
+  const grouped = groupDispatchRows(trips, sheetGroupBy);
+  let html = '';
+  let displayRowIndex = 0;
+  grouped.forEach(({ label, count, rows }) => {
+    if (label) html += renderDispatchGroupHeader(label, count || rows.length);
+    rows.forEach(trip => {
+      const rowIndex = displayRowIndex;
+      html += `<tr data-id="${esc(trip.id)}" data-row-index="${rowIndex}" class="sheet-row">${columns.map((col, idx) => renderCell(trip, col, rowIndex, idx)).join('')}</tr>`;
+      displayRowIndex += 1;
+    });
+  });
+  tbody.innerHTML = html;
+
+  document.querySelectorAll('.sheet-row-check').forEach(cb => {
+    cb.addEventListener('change', () => cb.closest('tr').classList.toggle('row-selected', cb.checked));
+  });
+  bindDispatchSheetCellEvents();
+}
+
+function bindDispatchSheetCellEvents() {
+  const tbody = document.getElementById('sheet-body');
+  if (!tbody) return;
+  tbody.querySelectorAll('.dispatch-cell-input').forEach(input => {
+    input.addEventListener('input', handleDispatchCellEdit);
+    input.addEventListener('change', handleDispatchCellEdit);
+    input.addEventListener('focus', event => handleDispatchCellSelect(event));
+    input.addEventListener('mousedown', event => {
+      if (event.button !== 0) return;
+      isSelectingDispatchRange = true;
+      handleDispatchCellSelect(event);
+    });
+    input.addEventListener('mouseover', event => {
+      if (!isSelectingDispatchRange) return;
+      extendDispatchCellSelection(event.currentTarget);
+    });
+    input.addEventListener('keydown', handleDispatchSpreadsheetKeydown);
+    input.addEventListener('paste', handleDispatchTablePaste);
+  });
+  updateDispatchSelectionStyles();
+}
+
+function getSelectedDispatchCellElements() {
+  return Array.from(document.querySelectorAll('.sheet-cell-selected'));
+}
+
+function extendDispatchCellSelection(input) {
+  if (!dispatchSheetSelection || !input?.classList?.contains('dispatch-cell-input')) return;
+  dispatchSheetSelection.focusRow = Number(input.dataset.rowIndex);
+  dispatchSheetSelection.focusCol = Number(input.dataset.colIndex);
+  updateDispatchSelectionStyles();
+}
+
+function updateDispatchSelectionStyles() {
+  document.querySelectorAll('.sheet-cell-selected, .sheet-cell-active').forEach(cell => {
+    cell.classList.remove('sheet-cell-selected', 'sheet-cell-active');
+  });
+  if (!dispatchSheetSelection) return;
+  const minRow = Math.min(dispatchSheetSelection.anchorRow, dispatchSheetSelection.focusRow);
+  const maxRow = Math.max(dispatchSheetSelection.anchorRow, dispatchSheetSelection.focusRow);
+  const minCol = Math.min(dispatchSheetSelection.anchorCol, dispatchSheetSelection.focusCol);
+  const maxCol = Math.max(dispatchSheetSelection.anchorCol, dispatchSheetSelection.focusCol);
+  document.querySelectorAll('.dispatch-cell-input').forEach(input => {
+    const row = Number(input.dataset.rowIndex);
+    const col = Number(input.dataset.colIndex);
+    const cell = input.closest('td');
+    if (row >= minRow && row <= maxRow && col >= minCol && col <= maxCol) {
+      cell?.classList.add('sheet-cell-selected');
+    }
+    if (row === dispatchSheetSelection.focusRow && col === dispatchSheetSelection.focusCol) {
+      cell?.classList.add('sheet-cell-active');
+    }
+  });
+}
+
+function getSelectedDispatchSpreadsheetText() {
+  if (!dispatchSheetSelection) return '';
+  const minRow = Math.min(dispatchSheetSelection.anchorRow, dispatchSheetSelection.focusRow);
+  const maxRow = Math.max(dispatchSheetSelection.anchorRow, dispatchSheetSelection.focusRow);
+  const minCol = Math.min(dispatchSheetSelection.anchorCol, dispatchSheetSelection.focusCol);
+  const maxCol = Math.max(dispatchSheetSelection.anchorCol, dispatchSheetSelection.focusCol);
+  const rows = [];
+  for (let row = minRow; row <= maxRow; row += 1) {
+    const values = [];
+    for (let col = minCol; col <= maxCol; col += 1) {
+      const input = document.querySelector(`.dispatch-cell-input[data-row-index="${row}"][data-col-index="${col}"]`);
+      if (input) values.push(input.value || '');
+    }
+    if (values.length) rows.push(values.join('\t'));
+  }
+  return rows.join('\n');
+}
+
+function hasDispatchRangeSelection() {
+  return Boolean(dispatchSheetSelection &&
+    (dispatchSheetSelection.anchorRow !== dispatchSheetSelection.focusRow ||
+     dispatchSheetSelection.anchorCol !== dispatchSheetSelection.focusCol));
+}
+
+function focusDispatchCell(row, col) {
+  const input = document.querySelector(`.dispatch-cell-input[data-row-index="${row}"][data-col-index="${col}"]`);
+  if (input) input.focus();
+}
+
+function handleDispatchSpreadsheetKeydown(event) {
+  if (!event.currentTarget.classList.contains('dispatch-cell-input')) return;
+  const key = event.key.toLowerCase();
+  if ((event.ctrlKey || event.metaKey) && key === 'z') {
+    event.preventDefault();
+    if (event.shiftKey) redoDispatchEdit();
+    else undoDispatchEdit();
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && key === 'y') {
+    event.preventDefault();
+    redoDispatchEdit();
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && key === 'a') {
+    event.preventDefault();
+    selectAllDispatchCells();
+    return;
+  }
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (event.key === 'Backspace' && !hasDispatchRangeSelection()) return;
+    event.preventDefault();
+    handleDispatchCellDelete(event);
+    return;
+  }
+  const moves = {
+    ArrowRight: [0, 1],
+    ArrowLeft: [0, -1],
+    ArrowDown: [1, 0],
+    ArrowUp: [-1, 0],
+    Enter: [1, 0],
+  };
+  if (!moves[event.key]) return;
+  event.preventDefault();
+  const row = Number(event.currentTarget.dataset.rowIndex) + moves[event.key][0];
+  const col = Number(event.currentTarget.dataset.colIndex) + moves[event.key][1];
+  focusDispatchCell(row, col);
+}
+
+function selectAllDispatchCells() {
+  const inputs = Array.from(document.querySelectorAll('.dispatch-cell-input'));
+  if (!inputs.length) return;
+  const rows = inputs.map(input => Number(input.dataset.rowIndex));
+  const cols = inputs.map(input => Number(input.dataset.colIndex));
+  dispatchSheetSelection = {
+    anchorRow: Math.min(...rows),
+    anchorCol: Math.min(...cols),
+    focusRow: Math.max(...rows),
+    focusCol: Math.max(...cols),
+  };
+  updateDispatchSelectionStyles();
+}
+
+function handleDispatchCellSelect(event) {
+  const input = event.currentTarget;
+  if (!input?.classList?.contains('dispatch-cell-input')) return;
+  const row = Number(input.dataset.rowIndex);
+  const col = Number(input.dataset.colIndex);
+  if (!event.shiftKey || !dispatchSheetSelection) {
+    dispatchSheetSelection = { anchorRow: row, anchorCol: col, focusRow: row, focusCol: col };
+  } else {
+    dispatchSheetSelection.focusRow = row;
+    dispatchSheetSelection.focusCol = col;
+  }
+  updateDispatchSelectionStyles();
+}
+
+function handleDispatchCellEdit(event) {
+  const input = event.currentTarget.closest('.dispatch-cell-input');
+  if (!input) return;
+  const id = input.dataset.id;
+  const field = input.dataset.field;
+  const value = input.value.trim();
+  if (!id || !field || !DISPATCH_EDITABLE_FIELDS.includes(field)) return;
+  updateDispatchRowLocal(id, field, value);
+}
+
+function handleDispatchTablePaste(event, rowId, startField) {
+  const input = event.currentTarget.closest('.dispatch-cell-input');
+  const text = (event.clipboardData || window.clipboardData).getData('text/plain');
+  if (!text.includes('\t') && !text.includes('\n')) return;
+  event.preventDefault();
+  if (!text || (!input && (!rowId || !startField))) return;
+
+  const startId = rowId || input.dataset.id;
+  const startKey = startField || input.dataset.field;
+  const rows = text.replace(/\r/g, '').split('\n').filter(Boolean).map(row => row.split('\t'));
+  const rowEls = Array.from(document.querySelectorAll('#sheet-body tr[data-id]'));
+  const startRow = rowEls.findIndex(row => row.dataset.id === startId);
+  const columns = getDispatchSheetColumns(applyDispatchSheetFilters(loadTrips()));
+  const editableColumns = columns.filter(col => col.editable && col.key !== 'status');
+  const startCol = editableColumns.findIndex(col => col.key === startKey);
+  if (startRow === -1 || startCol === -1) return;
+
+  beginDispatchHistoryBatch();
+  rows.forEach((cols, rOffset) => {
+    const tr = rowEls[startRow + rOffset];
+    if (!tr) return;
+    const id = tr.dataset.id;
+    cols.forEach((value, cOffset) => {
+      const col = editableColumns[startCol + cOffset];
+      if (!col) return;
+      const clean = value.trim();
+      updateDispatchRowLocal(id, col.key, clean);
+    });
+  });
+  endDispatchHistoryBatch();
+  renderSheet();
+  toast(`Pasted ${rows.length} row(s) locally.`, '#2563eb');
+}
+
+function handleDispatchTableCopy() {
+  const copied = getSelectedDispatchSpreadsheetText();
+  if (copied) {
+    navigator.clipboard.writeText(copied)
+      .then(() => toast('Selected cells copied.', '#2563eb'))
+      .catch(() => toast('Copy failed. Use Ctrl+C after selecting cells.', '#dc2626'));
+    return;
+  }
+
+  const checked = Array.from(document.querySelectorAll('.sheet-row-check:checked'));
+  if (!checked.length) { toast('Select cells or rows first to copy.', '#d97706'); return; }
+  const columns = getDispatchSheetColumns(applyDispatchSheetFilters(loadTrips()))
+    .filter(col => col.key !== 'select' && col.key !== 'actions');
+  const trips = loadTrips();
+  const lines = checked.map(cb => {
+    const trip = trips.find(t => t.id === cb.dataset.id);
+    if (!trip) return '';
+    return columns.map(col => {
+      if (col.key === 'group') return getDispatchGroup(trip);
+      if (col.key === 'location') return getFriendlyLocation(trip);
+      if (col.key === 'gpsTimestamp') return formatFriendlyDateTime(trip.lastUpdated || trip.timestamp);
+      if (col.key === 'status') return getTruckOperationalStatus(trip);
+      return trip[col.key] || '';
+    }).join('\t');
+  }).filter(Boolean);
+  navigator.clipboard.writeText(lines.join('\n'))
+    .then(() => toast(`${lines.length} row(s) copied.`, '#2563eb'))
+    .catch(() => toast('Copy failed. Use Ctrl+C after selecting rows.', '#dc2626'));
+}
+
+function handleDispatchCellDelete(event) {
+  if (event && !['Delete', 'Backspace'].includes(event.key)) return;
+  const selected = Array.from(document.querySelectorAll('.sheet-cell-selected .dispatch-cell-input'));
+  if (!selected.length) return;
+  if (event) event.preventDefault();
+  beginDispatchHistoryBatch();
+  selected.forEach(input => {
+    const field = input.dataset.field;
+    const id = input.dataset.id;
+    if (!DISPATCH_EDITABLE_FIELDS.includes(field)) return;
+    input.value = '';
+    updateDispatchRowLocal(id, field, '');
+  });
+  endDispatchHistoryBatch();
+  updateDispatchSelectionStyles();
+  toast(`${selected.length} cell(s) cleared locally.`, '#374151');
+}
+
+function deleteDispatchTripLocal(id) {
+  if (!confirm('Delete this trip from the current local/frontend trip list only? This will not delete the truck or Google Sheets data.')) return;
+  let trips = loadTrips();
+  const trip = trips.find(t => t.id === id);
+  trips = trips.filter(t => t.id !== id);
+  saveTrips(trips);
+  if (trip) logActivity(`Removed local trip: ${trip.plate} - ${getDispatchGroup(trip) || trip.commodity}`, '#dc2626');
+  renderSheet();
+  renderDashboardIfActive();
+  toast('Local trip removed.', '#dc2626');
 }
 
 function exportSheetCSV() {
@@ -1003,7 +2167,7 @@ function openTripModal(tripId = null) {
   document.getElementById('trip-modal').classList.add('open');
 }
 
-function editTrip(id) { openTripModal(id); }
+function editTrip(id) { openTruckEditModal(id); }
 
 function closeTripModal() {
   document.getElementById('trip-modal').classList.remove('open');
@@ -1151,6 +2315,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const modal = document.getElementById('trip-modal');
   if (modal) modal.addEventListener('click', e => { if (e.target === modal) closeTripModal(); });
 
+  const teModal = document.getElementById('truck-edit-modal');
+  if (teModal) teModal.addEventListener('click', e => { if (e.target === teModal) closeTruckEditModal(); });
+
+  renderDispatchGroupTabs();
+
   // Init map then load dashboard
   setTimeout(() => {
     initDispatchMap();
@@ -1158,4 +2327,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }, 150);
 
   renderSheet();
+});
+
+document.addEventListener('mouseup', () => {
+  isSelectingDispatchRange = false;
+});
+
+document.addEventListener('copy', event => {
+  if (!document.activeElement?.classList?.contains('dispatch-cell-input')) return;
+  const selectedText = window.getSelection()?.toString();
+  if (selectedText) return;
+  const copied = getSelectedDispatchSpreadsheetText();
+  if (!copied) return;
+  event.preventDefault();
+  event.clipboardData.setData('text/plain', copied);
 });

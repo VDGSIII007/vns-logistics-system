@@ -35,7 +35,7 @@
       pointer-events: none;
     }
     .dispatch-banner-inner {
-      max-width: 1440px;
+      max-width: 1600px;
       margin: 0 auto;
       padding: 0 2rem;
       display: flex;
@@ -86,7 +86,7 @@
 
     /* ─── Workspace ─── */
     .dispatch-workspace {
-      max-width: 1440px;
+      max-width: 1600px;
       margin: 0 auto;
       padding: 1.5rem 2rem 3rem;
     }
@@ -196,7 +196,7 @@
       grid-template-columns: 1fr 580px;
       gap: 1.25rem;
       margin-bottom: 1.25rem;
-      align-items: start;
+      align-items: stretch;
     }
     @media (max-width: 1100px) { .dash-main-grid { grid-template-columns: 1fr; } }
 
@@ -243,7 +243,63 @@
       gap: 0.55rem;
       transition: box-shadow 0.15s, border-color 0.15s;
     }
-    .truck-dispatch-card:hover { border-color: #d71920; box-shadow: 0 4px 12px rgba(215,25,32,0.1); }
+    .truck-dispatch-card:hover { border-color: #cbd5e1; box-shadow: 0 4px 12px rgba(15,23,42,0.08); }
+    .truck-dispatch-card.tdc-at-garage {
+      border: 1px solid #e5e7eb;
+      border-left: 5px solid #f59e0b;
+      background: #fffdf5;
+    }
+    .truck-dispatch-card.tdc-at-garage:hover { border-color: #e5e7eb; border-left-color: #f59e0b; box-shadow: 0 4px 12px rgba(245,158,11,0.15); }
+    .tdc-garage-tag {
+      font-size: 0.8rem;
+      color: #92400e;
+      background: #fef3c7;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-weight: 600;
+    }
+    .truck-dispatch-card.tdc-gps-offline {
+      border: 1px solid #e5e7eb;
+      border-left: 5px solid #ef4444;
+      background: #fff9f9;
+    }
+    .truck-dispatch-card.tdc-gps-offline:hover { border-color: #e5e7eb; border-left-color: #ef4444; box-shadow: 0 4px 12px rgba(239,68,68,0.15); }
+    .tdc-gps-stale { color: #dc2626; font-weight: 700; font-size: 0.72rem; }
+
+    .truck-dispatch-card.tdc-for-repair {
+      border: 1px solid #e5e7eb;
+      border-left: 5px solid #7c3aed;
+      background: #fdfaff;
+    }
+    .truck-dispatch-card.tdc-for-repair:hover { border-color: #e5e7eb; border-left-color: #7c3aed; box-shadow: 0 4px 12px rgba(124,58,237,0.15); }
+
+    .badge-gps-offline { background: #fee2e2; color: #991b1b; }
+    .badge-for-repair  { background: #ede9fe; color: #5b21b6; }
+    .badge-at-garage   { background: #fef3c7; color: #92400e; }
+
+    /* ─── Fleet Summary Strip ─── */
+    .fleet-summary-strip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 0.85rem;
+      flex-wrap: wrap;
+    }
+    .fss-pill {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 5px;
+      padding: 5px 13px;
+      border-radius: 20px;
+      border: 1px solid transparent;
+    }
+    .fss-num { font-size: 1rem; font-weight: 900; line-height: 1; color: #111827; }
+    .fss-lbl { font-size: 0.78rem; font-weight: 600; color: #64748b; }
+    .fss-pill-total   { background: #f8fafc; border-color: #e2e8f0; }
+    .fss-pill-active  { background: #f0fdf4; border-color: #bbf7d0; }
+    .fss-pill-garage  { background: #fffbeb; border-color: #fde68a; }
+    .fss-pill-offline { background: #fef2f2; border-color: #fecaca; }
+    .fss-pill-repair  { background: #f5f3ff; border-color: #ddd6fe; }
 
     .tdc-header {
       display: flex;
@@ -277,13 +333,46 @@
     .no-trucks-note { font-size: 0.85rem; color: #9ca3af; padding: 1rem 0; }
 
     /* ─── Map Panel ─── */
-    .map-panel-wrap { position: relative; }
+    .map-panel-wrap { position: relative; display: flex; flex-direction: column; height: 100%; }
     #dispatch-map {
-      height: 560px;
+      flex: 1;
+      min-height: 720px;
       width: 100%;
       border-radius: 0 0 12px 12px;
       background: #e5e7eb;
       z-index: 1;
+    }
+    @media (max-width: 1100px) {
+      #dispatch-map { min-height: 420px; }
+    }
+    .map-head-tools {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .map-head-note {
+      font-size: 0.72rem;
+      color: #9ca3af;
+    }
+    .map-toggle-btn {
+      border: 1px solid #d1d5db;
+      background: #fff;
+      color: #374151;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .map-toggle-btn:hover { background: #f9fafb; border-color: #9ca3af; }
+    .map-toggle-btn.active {
+      border-color: #94a3b8;
+      background: #f8fafc;
+      color: #111827;
     }
     #map-no-data-note {
       display: none;
@@ -310,17 +399,45 @@
     .map-popup .mp-row { margin: 2px 0; color: #374151; }
     .map-popup .mp-time { margin-top: 6px; font-size: 11px; color: #9ca3af; }
     .truck-map-pin {
-      font-size: 22px;
-      width: 36px;
-      height: 36px;
+      min-width: 74px;
+      height: 30px;
+      padding: 0 10px 0 8px;
       display: flex;
       align-items: center;
+      gap: 6px;
       justify-content: center;
       background: #fff;
-      border: 2px solid #d71920;
-      border-radius: 50%;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      border: 1px solid rgba(215, 25, 32, 0.6);
+      border-radius: 999px;
+      box-shadow: 0 3px 10px rgba(17, 24, 39, 0.18);
       cursor: pointer;
+      color: #111827;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+    .truck-map-pin::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      background: #d71920;
+      border-radius: 50%;
+      box-shadow: 0 0 0 3px rgba(215, 25, 32, 0.12);
+      flex: 0 0 auto;
+    }
+    .map-zone-label {
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(148, 163, 184, 0.55);
+      border-radius: 999px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+      color: #334155;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      padding: 4px 8px;
+      text-transform: uppercase;
+      white-space: nowrap;
     }
 
     /* ─── Dash Bottom Grid ─── */
@@ -455,11 +572,15 @@
       overflow-x: auto;
       box-shadow: 0 1px 4px rgba(0,0,0,0.05);
     }
+    .dispatch-table-scroll {
+      width: 100%;
+      overflow: auto;
+    }
     .dispatch-table {
       width: 100%;
       border-collapse: collapse;
       font-size: 0.8rem;
-      min-width: 1200px;
+      min-width: 1500px;
     }
     .dispatch-table th {
       background: #f9fafb;
@@ -481,6 +602,7 @@
       border-bottom: 1px solid #f3f4f6;
       color: #374151;
       white-space: nowrap;
+      vertical-align: middle;
     }
     .dispatch-table tbody tr:last-child td { border-bottom: none; }
     .dispatch-table tbody tr:hover td { background: #f9fafb; }
@@ -630,6 +752,229 @@
       to   { opacity: 1; transform: translateY(0); }
     }
 
+    /* ─── Group Filter Tabs ─── */
+    .dispatch-group-tabs {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .dg-tab-btn {
+      padding: 6px 18px;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.82rem;
+      color: #6b7280;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .dg-tab-btn:hover { background: #f3f4f6; color: #111; border-color: #d1d5db; }
+    .dg-tab-btn.active { background: #d71920; color: #fff; border-color: #d71920; }
+
+    /* ─── Outline Danger Button ─── */
+    .dbtn-outline-danger { background: transparent; color: #b91c1c; border: 1px solid #fca5a5; }
+    .dbtn-outline-danger:hover { background: #fee2e2; border-color: #ef4444; color: #991b1b; }
+
+    /* ─── Truck Card Location ─── */
+    .tdc-location { font-size: 0.74rem; color: #6b7280; padding: 2px 0 0; }
+    .tdc-location strong { color: #374151; font-weight: 600; }
+
+    /* ─── Excel Sheet Cells ─── */
+    .sheet-cell-edit {
+      padding: 0;
+      min-width: 90px;
+      cursor: default;
+      outline: none;
+      white-space: nowrap;
+    }
+    .sheet-cell-edit:hover { background: #f0f9ff; }
+    .sheet-cell-edit:focus {
+      background: #fff;
+      outline: 2px solid #2563eb;
+      outline-offset: -2px;
+      z-index: 3;
+      position: relative;
+    }
+    .sheet-cell-selected {
+      background: #eff6ff !important;
+      box-shadow: inset 0 0 0 2px #2563eb;
+    }
+    .sheet-cell-edit.sheet-cell-selected:focus { box-shadow: none; }
+    .dispatch-cell-input {
+      width: 100%;
+      min-width: 105px;
+      border: 0;
+      background: transparent;
+      padding: 8px 10px;
+      border-radius: 0;
+      font: inherit;
+      color: #111827;
+      box-sizing: border-box;
+      outline: none;
+    }
+    .dispatch-cell-input:focus {
+      background: transparent;
+      outline: none;
+    }
+    .sheet-cell-active {
+      box-shadow: inset 0 0 0 2px #2563eb;
+      background: #fff !important;
+    }
+    #tab-dispatcher-sheet .dispatch-table th:nth-child(1),
+    #tab-dispatcher-sheet .dispatch-table td:nth-child(1),
+    #tab-dispatcher-sheet .dispatch-table th:nth-child(2),
+    #tab-dispatcher-sheet .dispatch-table td:nth-child(2),
+    #tab-dispatcher-sheet .dispatch-table th:nth-child(3),
+    #tab-dispatcher-sheet .dispatch-table td:nth-child(3),
+    #tab-dispatcher-sheet .dispatch-table th:nth-child(4),
+    #tab-dispatcher-sheet .dispatch-table td:nth-child(4) {
+      position: sticky;
+      background: #fff;
+      z-index: 4;
+    }
+    #tab-dispatcher-sheet .dispatch-table th:nth-child(1),
+    #tab-dispatcher-sheet .dispatch-table td:nth-child(1) {
+      left: 0;
+      min-width: 38px;
+      width: 38px;
+      z-index: 7;
+    }
+    #tab-dispatcher-sheet .dispatch-table th:nth-child(2),
+    #tab-dispatcher-sheet .dispatch-table td:nth-child(2) {
+      left: 38px;
+      min-width: 120px;
+      width: 120px;
+      z-index: 6;
+    }
+    #tab-dispatcher-sheet .dispatch-table th:nth-child(3),
+    #tab-dispatcher-sheet .dispatch-table td:nth-child(3) {
+      left: 158px;
+      min-width: 120px;
+      width: 120px;
+      z-index: 5;
+    }
+    #tab-dispatcher-sheet .dispatch-table th:nth-child(4),
+    #tab-dispatcher-sheet .dispatch-table td:nth-child(4) {
+      left: 278px;
+      min-width: 120px;
+      width: 120px;
+      z-index: 5;
+      box-shadow: 8px 0 10px -10px rgba(15, 23, 42, 0.55);
+    }
+    #tab-dispatcher-sheet .dispatch-table th:nth-child(-n+4) {
+      z-index: 8;
+      background: #f9fafb;
+    }
+    .sheet-cell-date { padding: 3px 6px; }
+    .sheet-date-input {
+      border: 1px solid transparent;
+      background: transparent;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.78rem;
+      color: #374151;
+      padding: 3px 4px;
+      border-radius: 4px;
+      width: 118px;
+    }
+    .sheet-date-input:hover { border-color: #d1d5db; }
+    .sheet-date-input:focus { outline: 2px solid #2563eb; border-color: transparent; background: #fff; }
+    .sheet-cell-select { padding: 3px 5px; }
+    .sheet-status-sel {
+      border: 1px solid transparent;
+      border-radius: 5px;
+      font-size: 0.78rem;
+      font-family: 'Inter', sans-serif;
+      color: #374151;
+      padding: 3px 5px;
+      background: transparent;
+      cursor: pointer;
+      min-width: 100px;
+    }
+    .sheet-status-sel:hover { border-color: #d1d5db; background: #fff; }
+    .sheet-status-sel:focus { outline: 2px solid #2563eb; border-color: transparent; background: #fff; }
+    .sheet-cell-ro {
+      padding: 6px 10px;
+      color: #6b7280;
+      background: #fafafa;
+    }
+    .sheet-cell-loc { max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sheet-cell-check { padding: 6px 8px; text-align: center; background: #fafafa; }
+    .sheet-cell-actions { padding: 4px 7px; background: #fafafa; white-space: nowrap; }
+    .sheet-row:hover .sheet-cell-ro,
+    .sheet-row:hover .sheet-cell-check,
+    .sheet-row:hover .sheet-cell-actions { background: #f3f4f6; }
+
+    /* ─── Group Header Row ─── */
+    .sheet-group-header td {
+      background: #1f2937;
+      color: #f9fafb;
+      padding: 5px 12px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+    .sgh-label { margin-right: 10px; }
+    .sgh-count { color: #9ca3af; font-weight: 500; font-size: 0.68rem; }
+
+    /* ─── Sheet Filter Bar ─── */
+    .sheet-filter-bar {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 0.65rem;
+      padding: 0.5rem 0.9rem;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .sheet-filter-bar label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #374151;
+      white-space: nowrap;
+    }
+    .sheet-filter-bar select {
+      padding: 5px 9px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-family: 'Inter', sans-serif;
+      color: #374151;
+      background: #fff;
+    }
+    .sheet-filter-bar select:focus { outline: 2px solid #2563eb; border-color: transparent; }
+
+    /* ─── Sheet Local Save Note ─── */
+    .sheet-local-note {
+      font-size: 0.75rem;
+      color: #6b7280;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 5px 12px;
+      margin-bottom: 0.65rem;
+    }
+
+    /* ─── Truck Edit Modal Save Note ─── */
+    #te-save-note {
+      display: none;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 7px;
+      padding: 9px 13px;
+      font-size: 0.8rem;
+      color: #15803d;
+      font-weight: 600;
+      margin-top: 0.85rem;
+    }
+
     /* ─── Truck Master info strip ─── */
     .tm-info {
       background: #f9fafb;
@@ -699,6 +1044,11 @@
       ════════════════════════════════════════ -->
       <div id="tab-dashboard" class="dispatch-tab-panel active">
 
+        <!-- Group Filter Tabs -->
+        <div class="dispatch-group-tabs" id="dispatch-group-tabs-dash">
+          <!-- rendered by renderDispatchGroupTabs() -->
+        </div>
+
         <!-- KPI Cards -->
         <div class="kpi-row">
           <div class="kpi-card blue">
@@ -741,6 +1091,7 @@
               <button class="dbtn dbtn-gray dbtn-sm" onclick="openTruckMasterTab()">Manage Fleet</button>
             </div>
             <div class="dash-panel-body">
+              <div class="fleet-summary-strip" id="fleet-summary-strip"></div>
               <div class="truck-cards-grid" id="truck-cards-row">
                 <!-- rendered by dispatch.js -->
               </div>
@@ -751,7 +1102,10 @@
           <div class="dash-panel map-panel-wrap">
             <div class="dash-panel-head">
               <h3>Live Map</h3>
-              <span style="font-size:0.72rem;color:#9ca3af;">OpenStreetMap · No API key required</span>
+              <div class="map-head-tools">
+                <button class="map-toggle-btn active" id="geofence-toggle-btn" onclick="toggleDispatchGeofences()" type="button">Geofences</button>
+                <span class="map-head-note">OpenStreetMap · No API key required</span>
+              </div>
             </div>
             <div id="dispatch-map"></div>
             <div id="map-no-data-note">
@@ -799,17 +1153,22 @@
       ════════════════════════════════════════ -->
       <div id="tab-dispatcher-sheet" class="dispatch-tab-panel">
 
+        <!-- Sheet Group Filter Tabs -->
+        <div class="dispatch-group-tabs" id="dispatch-group-tabs-sheet">
+          <!-- rendered by renderDispatchGroupTabs() -->
+        </div>
+
         <div class="dispatch-toolbar">
           <button class="dbtn dbtn-primary" onclick="openTripModal()">+ Add Trip</button>
           <div class="toolbar-divider"></div>
           <select id="filter-commodity" onchange="renderSheet()">
-            <option value="">All Commodities</option>
-            <option>Bottles</option><option>Sugar</option><option>Preform</option>
-            <option>Resin</option><option>Caps</option><option>Crowns</option>
+            <option value="">All Groups</option>
+            <option>Bottle</option><option>Sugar</option><option>Preform / Resin</option>
+            <option>Caps / Crown</option>
           </select>
           <select id="filter-status" onchange="renderSheet()">
             <option value="">All Status</option>
-            <option>Scheduled</option><option>In Transit</option><option>Loaded</option>
+            <option>Scheduled</option><option>Needs Dispatch</option><option>At Garage</option><option>Inactive / No Trip</option><option>In Transit</option><option>Loaded</option>
             <option>Unloaded</option><option>Delivered</option><option>Cancelled</option><option>On Hold</option>
           </select>
           <select id="filter-truck" onchange="renderSheet()">
@@ -823,22 +1182,56 @@
           <button class="dbtn dbtn-gray" onclick="exportSheetCSV()">Export CSV</button>
         </div>
 
-        <div class="dispatch-table-wrap">
+        <!-- Grouping / Filter Bar -->
+        <div class="sheet-filter-bar">
+          <label>Group by:</label>
+          <select id="sheet-group-by" onchange="setSheetGroupBy(this.value)">
+            <option value="None">None</option>
+            <option value="Source">Source</option>
+            <option value="Destination">Destination</option>
+            <option value="Commodity / Group">Commodity / Group</option>
+            <option value="Status">Status</option>
+            <option value="Location">Location</option>
+          </select>
+          <div class="toolbar-divider"></div>
+          <label>Source:</label>
+          <select id="filter-source" onchange="renderSheet()">
+            <option value="">All Sources</option>
+          </select>
+          <label>Destination:</label>
+          <select id="filter-dest" onchange="renderSheet()">
+            <option value="">All Destinations</option>
+          </select>
+          <label>Location:</label>
+          <select id="filter-location" onchange="renderSheet()">
+            <option value="">All Locations</option>
+          </select>
+          <div class="toolbar-divider"></div>
+          <button class="dbtn dbtn-gray dbtn-sm" onclick="handleDispatchTableCopy()">Copy Selected</button>
+        </div>
+
+        <!-- Local save note -->
+        <div class="sheet-local-note">
+          Edits are saved locally only. Google Sheets sync not enabled yet.
+        </div>
+
+        <div class="dispatch-table-wrap"><div class="dispatch-table-scroll">
           <table class="dispatch-table">
             <thead>
-              <tr>
-                <th><input type="checkbox" id="sheet-select-all" onchange="toggleAllSheet(this)"></th>
+              <tr id="sheet-head-row">
+                <th style="width:36px;"><input type="checkbox" id="sheet-select-all" onchange="toggleAllSheet(this)"></th>
                 <th>Plate</th><th>Driver</th><th>Helper</th>
-                <th>Commodity</th><th>Source</th><th>Destination</th><th>Status</th>
+                <th>Source</th><th>Destination</th><th>Status</th>
                 <th>Booking Date</th><th>Plan Pickup</th><th>Actual Pickup</th>
                 <th>LSP</th><th>Supplier</th><th>Packaging</th><th>Qty</th>
                 <th>Ref #</th><th>Shipment #</th><th>ATW</th><th>ETA</th>
-                <th>Remarks</th><th>Timestamp</th><th>Actions</th>
+                <th>Remarks</th><th>GPS Timestamp</th><th>Location</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="sheet-body">
               <tr>
-                <td colspan="22">
+                <td colspan="23">
                   <div class="empty-state">
                     No active trips. Click <strong>+ Add Trip</strong> to begin.
                   </div>
@@ -846,7 +1239,7 @@
               </tr>
             </tbody>
           </table>
-        </div>
+        </div></div>
       </div><!-- /dispatcher-sheet -->
 
 
@@ -871,7 +1264,7 @@
           <button class="dbtn dbtn-gray" onclick="exportLogsCSV()">Export CSV</button>
         </div>
 
-        <div class="dispatch-table-wrap">
+        <div class="dispatch-table-wrap"><div class="dispatch-table-scroll">
           <table class="dispatch-table">
             <thead>
               <tr>
@@ -893,7 +1286,7 @@
               </tr>
             </tbody>
           </table>
-        </div>
+        </div></div>
       </div><!-- /logs -->
 
 
@@ -911,7 +1304,7 @@
           ℹ️ Edit plate, driver, and helper directly in the table. Click <strong>Save</strong> on each row to apply changes. Driver and helper names auto-fill in the Add Trip form.
         </div>
 
-        <div class="dispatch-table-wrap">
+        <div class="dispatch-table-wrap"><div class="dispatch-table-scroll">
           <table class="dispatch-table" style="min-width:700px;">
             <thead>
               <tr>
@@ -928,7 +1321,7 @@
               <!-- rendered by dispatch.js -->
             </tbody>
           </table>
-        </div>
+        </div></div>
       </div><!-- /trucks -->
 
     </div><!-- /dispatch-workspace -->
@@ -1051,6 +1444,95 @@
       <div class="modal-foot">
         <button class="dbtn dbtn-gray" onclick="closeTripModal()">Cancel</button>
         <button class="dbtn dbtn-primary" onclick="saveTrip()">Save Trip</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════
+       MODAL: Edit Trip Details (truck card / sheet row)
+  ════════════════════════════════════════ -->
+  <div class="modal-overlay" id="truck-edit-modal">
+    <div class="modal-box" style="max-width:640px;">
+      <div class="modal-head">
+        <div>
+          <h2>Edit Trip Details</h2>
+          <div style="font-size:0.75rem;color:#6b7280;margin-top:2px;">Updates local state only. Backend sync not enabled yet.</div>
+        </div>
+        <button class="modal-close" onclick="closeTruckEditModal()" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="te-id" />
+        <div class="form-grid">
+
+          <div class="form-section-label">Truck / Group</div>
+
+          <div class="form-group">
+            <label>Plate Number</label>
+            <input type="text" id="te-plate" readonly style="background:#f9fafb;color:#6b7280;cursor:default;" />
+          </div>
+          <div class="form-group">
+            <label>Group</label>
+            <input type="text" id="te-group" readonly style="background:#f9fafb;color:#6b7280;cursor:default;" />
+          </div>
+
+          <div class="form-section-label">Crew</div>
+
+          <div class="form-group">
+            <label>Driver</label>
+            <input type="text" id="te-driver" placeholder="Driver name" />
+          </div>
+          <div class="form-group">
+            <label>Helper</label>
+            <input type="text" id="te-helper" placeholder="Helper name" />
+          </div>
+
+          <div class="form-section-label">Trip Details</div>
+
+          <div class="form-group">
+            <label>Source</label>
+            <input type="text" id="te-source" placeholder="Warehouse / pickup point" />
+          </div>
+          <div class="form-group">
+            <label>Destination</label>
+            <input type="text" id="te-destination" placeholder="Plant / delivery point" />
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select id="te-status">
+              <option>Scheduled</option><option>In Transit</option><option>Loaded</option>
+              <option>Unloaded</option><option>Delivered</option><option>On Hold</option><option>Cancelled</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>ETA / ATA</label>
+            <input type="text" id="te-eta" placeholder="ETA or actual arrival" />
+          </div>
+
+          <div class="form-section-label">Schedule</div>
+
+          <div class="form-group">
+            <label>Booking Date</label>
+            <input type="date" id="te-booking-date" />
+          </div>
+          <div class="form-group">
+            <label>Plan Pickup</label>
+            <input type="date" id="te-plan-pickup" />
+          </div>
+          <div class="form-group form-full">
+            <label>Actual Pickup</label>
+            <input type="date" id="te-actual-pickup" />
+          </div>
+          <div class="form-group form-full">
+            <label>Remarks</label>
+            <textarea id="te-remarks" rows="2" placeholder="Notes, instructions, or issues"></textarea>
+          </div>
+
+        </div>
+        <div id="te-save-note">Saved locally. Backend sync not enabled yet.</div>
+      </div>
+      <div class="modal-foot">
+        <button class="dbtn dbtn-gray" onclick="closeTruckEditModal()">Cancel</button>
+        <button class="dbtn dbtn-primary" onclick="saveTruckEdit()">Save Changes</button>
       </div>
     </div>
   </div>
