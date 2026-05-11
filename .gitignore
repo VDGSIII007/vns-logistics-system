@@ -16,3 +16,8 @@ desktop.ini
 
 # ── Node (if ever added) ──────────────────────────────────────────────────────
 node_modules/
+
+# ORCR scanner outputs
+tools/orcr_scanner/output/
+tools/orcr_scanner/__pycache__/
+*.pyc
