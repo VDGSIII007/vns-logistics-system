@@ -7,9 +7,10 @@
 ═══════════════════════════════════════════════════════════════════ */
 
 /* ──────────────────────────────────────────
-   APPS SCRIPT CONNECTION (set URL when ready)
+   APPS SCRIPT CONNECTION
 ────────────────────────────────────────── */
 const DISPATCH_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwkA_gMbqPvtW3kEDsCKAkgylrakQwRHlPNPYENT2GYvjH1AGAsmusUuPUvWrB_KakH/exec";
+const VNS_SYNC_KEY = "vns-dispatch-sync-2026-Jay";
 
 /*
   Expected doGet actions:
@@ -20,9 +21,12 @@ const DISPATCH_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwkA_gM
     ?action=getTruckLocations
 
   Expected doPost actions (payload.action):
-    updateDispatchTrip
-    saveDispatchLog
-    updateTruckStatus
+    saveDispatchTrip
+    batchSaveDispatchTrips
+    markDelivered
+    addToLogs
+    ensureTabs
+    health
 */
 
 /* ──────────────────────────────────────────
@@ -99,6 +103,8 @@ let dispatchUndoStack = [];
 let dispatchRedoStack = [];
 let dispatchHistoryBatch = null;
 let isApplyingDispatchHistory = false;
+let dispatchSyncTimer = null;
+let dispatchLastSyncError = '';
 
 const DISPATCH_STATUS_OPTIONS = ['Scheduled','Needs Dispatch','At Garage','Inactive / No Trip','In Transit','Loaded','Unloaded','Delivered','On Hold','Cancelled'];
 const DISPATCH_EDITABLE_FIELDS = ['driver','helper','source','destination','status','bookingDate','planPickup','actualPickup','lsp','supplier','packaging','qty','refNumber','shipmentNumber','atw','eta','remarks','materialCode','materialDescription','poReference','drInvoice','sto','doNumber','palletQty','typeOfPallet','truckType'];
@@ -231,12 +237,139 @@ async function postDispatchUpdate(payload) {
    LOCAL DATA STORE
 ══════════════════════════════════════════════════════ */
 
-function loadTrips()    { try { return JSON.parse(localStorage.getItem(LS_TRIPS))    || []; } catch { return []; } }
+function isDispatchGoogleSyncConfigured() {
+  return Boolean(DISPATCH_APP_SCRIPT_URL && VNS_SYNC_KEY);
+}
+
+function setDispatchSyncStatus(state, detail = '') {
+  const label = {
+    local: 'Local only',
+    syncing: 'Saving...',
+    synced: 'Saved to Google Sheets',
+    failed: 'Save failed',
+  }[state] || state;
+  const el = document.getElementById('dispatch-sync-status');
+  if (el) {
+    el.textContent = detail ? `${label}: ${detail}` : label;
+    el.className = `dispatch-sync-status sync-${state}`;
+  }
+  if (state === 'failed' && detail) toast(`Google Sheets save failed: ${detail}`, '#d97706');
+}
+
+async function dispatchSheetsRequest(payload, method = 'POST') {
+  if (!isDispatchGoogleSyncConfigured()) {
+    setDispatchSyncStatus('local');
+    return { ok: false, localOnly: true, error: 'Google Sheets save is not configured.' };
+  }
+  const url = method === 'GET'
+    ? `${DISPATCH_APP_SCRIPT_URL}?${new URLSearchParams({ ...payload, syncKey: VNS_SYNC_KEY }).toString()}`
+    : DISPATCH_APP_SCRIPT_URL;
+  const options = method === 'GET'
+    ? { method: 'GET' }
+    : {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ ...payload, syncKey: VNS_SYNC_KEY }),
+      };
+  const response = await fetch(url, options);
+  const text = await response.text();
+  const result = text ? JSON.parse(text) : {};
+  if (!response.ok || result.ok === false) throw new Error(result.error || `HTTP ${response.status}`);
+  return result;
+}
+
+function queueDispatchTripSync(trip, action = 'saveDispatchTrip') {
+  if (!trip) return Promise.resolve({ ok: false, error: 'No trip to sync.' });
+  const record = dispatchTripToSheetRecord(trip);
+  if (!record.Record_ID) return Promise.resolve({ ok: false, error: 'Missing Record_ID.' });
+  if (!isDispatchGoogleSyncConfigured()) {
+    setDispatchSyncStatus('local');
+    return Promise.resolve({ ok: false, localOnly: true });
+  }
+  setDispatchSyncStatus('syncing');
+  return dispatchSheetsRequest({ action, commodity: getDispatchGroup(trip), record })
+    .then(result => {
+      setDispatchSyncStatus('synced');
+      return result;
+    })
+    .catch(error => {
+      dispatchLastSyncError = error.message;
+      setDispatchSyncStatus('failed', error.message);
+      return { ok: false, error: error.message };
+    });
+}
+
+function queueDispatchTripsSync(trips) {
+  const records = (trips || []).map(trip => dispatchTripToSheetRecord(trip)).filter(record => record.Record_ID);
+  if (!records.length) return Promise.resolve({ ok: true, skipped: true });
+  if (!isDispatchGoogleSyncConfigured()) {
+    setDispatchSyncStatus('local');
+    return Promise.resolve({ ok: false, localOnly: true });
+  }
+  setDispatchSyncStatus('syncing');
+  return dispatchSheetsRequest({ action: 'batchSaveDispatchTrips', records })
+    .then(result => {
+      setDispatchSyncStatus('synced');
+      return result;
+    })
+    .catch(error => {
+      dispatchLastSyncError = error.message;
+      setDispatchSyncStatus('failed', error.message);
+      return { ok: false, error: error.message };
+    });
+}
+
+function debounceDispatchTripSync(id) {
+  window.clearTimeout(dispatchSyncTimer);
+  dispatchSyncTimer = window.setTimeout(() => {
+    const trip = loadTrips().find(t => t.id === id);
+    if (trip) queueDispatchTripSync(trip);
+  }, 800);
+}
+
+async function fetchAndMergeDispatchSheetTrips() {
+  if (!isDispatchGoogleSyncConfigured()) {
+    setDispatchSyncStatus('local');
+    return;
+  }
+  setDispatchSyncStatus('syncing');
+  try {
+    const result = await dispatchSheetsRequest({ action: 'getAllTrips' }, 'GET');
+    const remoteTrips = Array.isArray(result.data) ? result.data.map(sheetRecordToDispatchTrip) : [];
+    if (!remoteTrips.length) {
+      setDispatchSyncStatus('synced');
+      return;
+    }
+    const localTrips = loadTrips();
+    const byId = new Map(localTrips.map(trip => [trip.recordId || trip.id, trip]));
+    remoteTrips.forEach(remoteTrip => {
+      const key = remoteTrip.recordId || remoteTrip.id;
+      if (!key) return;
+      const localTrip = byId.get(key);
+      if (!localTrip) {
+        byId.set(key, remoteTrip);
+        return;
+      }
+      const localUpdated = Date.parse(localTrip.updatedAt || localTrip.lastUpdated || localTrip.timestamp || '') || 0;
+      const remoteUpdated = Date.parse(remoteTrip.updatedAt || remoteTrip.lastUpdated || remoteTrip.timestamp || '') || 0;
+      if (remoteUpdated > localUpdated) byId.set(key, { ...localTrip, ...remoteTrip });
+    });
+    saveTrips(Array.from(byId.values()));
+    renderSheet();
+    renderDashboardIfActive();
+    setDispatchSyncStatus('synced');
+  } catch (error) {
+    dispatchLastSyncError = error.message;
+    setDispatchSyncStatus('failed', error.message);
+  }
+}
+
+function loadTrips()    { try { return ensureDispatchTripRecordIds(JSON.parse(localStorage.getItem(LS_TRIPS)) || []); } catch { return []; } }
 function loadLogs()     { try { return JSON.parse(localStorage.getItem(LS_LOGS))     || []; } catch { return []; } }
 function loadTrucks()   { try { return JSON.parse(localStorage.getItem(LS_TRUCKS))   || defaultTrucks(); } catch { return defaultTrucks(); } }
 function loadActivity() { try { return JSON.parse(localStorage.getItem(LS_ACTIVITY)) || []; } catch { return []; } }
 
-function saveTrips(d)    { localStorage.setItem(LS_TRIPS,    JSON.stringify(d)); }
+function saveTrips(d)    { localStorage.setItem(LS_TRIPS,    JSON.stringify(ensureDispatchTripRecordIds(d || []))); }
 function saveLogs(d)     { localStorage.setItem(LS_LOGS,     JSON.stringify(d)); }
 function saveTrucks(d)   { localStorage.setItem(LS_TRUCKS,   JSON.stringify(d)); }
 function saveActivity(d) { localStorage.setItem(LS_ACTIVITY, JSON.stringify(d)); }
@@ -421,6 +554,118 @@ function getDispatchGroup(record) {
   if (c === 'Preform' || c === 'Resin') return 'Preform / Resin';
   if (c === 'Caps' || c === 'Crowns' || c === 'Crown') return 'Caps / Crown';
   return c;
+}
+
+function getSheetCommodityName(recordOrCommodity) {
+  const group = typeof recordOrCommodity === 'string'
+    ? getDispatchGroup({ commodity: recordOrCommodity, groupCategory: recordOrCommodity })
+    : getDispatchGroup(recordOrCommodity || {});
+  if (group === 'Bottle') return 'Bottle';
+  if (group === 'Sugar') return 'Sugar';
+  if (group === 'Preform / Resin') return 'Preform / Resin';
+  if (group === 'Caps / Crown') return 'Caps / Crown';
+  return group || 'Bottle';
+}
+
+function ensureDispatchTripRecordIds(trips) {
+  return (trips || []).map(trip => {
+    if (!trip) return trip;
+    if (trip.recordId) return trip;
+    return { ...trip, recordId: createDispatchRecordId(getSheetCommodityName(trip)) };
+  });
+}
+
+function createDispatchRecordId(commodity) {
+  const code = String(commodity || 'TRIP').replace(/[^a-z0-9]/gi, '').toUpperCase() || 'TRIP';
+  const d = new Date();
+  const stamp = [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+    String(d.getHours()).padStart(2, '0'),
+    String(d.getMinutes()).padStart(2, '0'),
+    String(d.getSeconds()).padStart(2, '0'),
+  ].join('');
+  const random = Math.random().toString(16).slice(2, 6).toUpperCase().padEnd(4, '0');
+  return `VNS-${code}-${stamp}-${random}`;
+}
+
+function dispatchTripToSheetRecord(trip) {
+  const commodity = getSheetCommodityName(trip);
+  const now = new Date().toISOString();
+  const recordId = trip.recordId || trip.Record_ID || trip.id || createDispatchRecordId(commodity);
+  return {
+    Record_ID: recordId,
+    Commodity: commodity,
+    Group: commodity,
+    Plate: trip.plate || trip.plateNumber || '',
+    Driver: trip.driver || trip.driverName || '',
+    Helper: trip.helper || trip.helperName || '',
+    Source: trip.source || '',
+    Destination: trip.destination || '',
+    Location: getFriendlyLocation(trip),
+    Status: trip.status || getTruckOperationalStatus(trip) || '',
+    Booking_Date: trip.bookingDate || trip.dateAssigned || '',
+    Plan_Pickup: trip.planPickup || '',
+    Actual_Pickup: trip.actualPickup || '',
+    LSP: trip.lsp || '',
+    Supplier: trip.supplier || '',
+    Shipment_Number: trip.shipmentNumber || '',
+    Container_Number: trip.refNumber || trip.containerNumber || '',
+    Pallet_Size: trip.typeOfPallet || trip.packaging || '',
+    Loaded: trip.qty || trip.loaded || '',
+    Remarks: trip.remarks || '',
+    Created_At: trip.createdAt || trip.timestamp || now,
+    Updated_At: trip.updatedAt || now,
+    Delivered_At: trip.deliveredAt || '',
+    Logged_At: trip.loggedAt || '',
+  };
+}
+
+function sheetRecordToDispatchTrip(record) {
+  const commodity = sheetCommodityToDispatchCommodity(record.Commodity || record.Group);
+  const recordId = record.Record_ID || createDispatchRecordId(record.Commodity || record.Group);
+  return {
+    id: recordId,
+    recordId,
+    plate: record.Plate || '',
+    driver: record.Driver || '',
+    helper: record.Helper || '',
+    truckType: '',
+    commodity,
+    groupCategory: getSheetCommodityName(record.Commodity || record.Group),
+    status: record.Status || 'Scheduled',
+    source: record.Source || '',
+    destination: record.Destination || '',
+    bookingDate: record.Booking_Date || '',
+    planPickup: record.Plan_Pickup || '',
+    actualPickup: record.Actual_Pickup || '',
+    eta: '',
+    lsp: record.LSP || '',
+    supplier: record.Supplier || '',
+    packaging: record.Pallet_Size || '',
+    qty: record.Loaded || '',
+    refNumber: record.Container_Number || '',
+    shipmentNumber: record.Shipment_Number || '',
+    atw: '',
+    remarks: record.Remarks || '',
+    latitude: null,
+    longitude: null,
+    friendlyLocation: record.Location || '',
+    deliveredAt: record.Delivered_At || '',
+    loggedAt: record.Logged_At || '',
+    createdAt: record.Created_At || '',
+    updatedAt: record.Updated_At || '',
+    timestamp: record.Created_At || record.Updated_At || new Date().toLocaleString('en-PH'),
+  };
+}
+
+function sheetCommodityToDispatchCommodity(value) {
+  const commodity = getSheetCommodityName(value);
+  if (commodity === 'Bottle') return 'Bottles';
+  if (commodity === 'Preform / Resin') return 'Preform';
+  if (commodity === 'Caps / Crown') return 'Caps';
+  return commodity;
 }
 
 function filterBySelectedGroup(records) {
@@ -627,7 +872,11 @@ function updateDispatchRowLocal(id, field, value) {
   recordDispatchHistoryChange({ id, field, oldValue, newValue: value });
   trips[idx][field] = value;
   trips[idx].updatedAt = new Date().toISOString();
+  if (field === 'status' && value === 'Delivered' && !trips[idx].deliveredAt) {
+    trips[idx].deliveredAt = trips[idx].updatedAt;
+  }
   saveTrips(trips);
+  debounceDispatchTripSync(id);
 }
 
 function recordDispatchHistoryChange(change) {
@@ -1617,14 +1866,21 @@ function addSelectedToLogs() {
   if (!ids.length) { toast('Select at least one trip first.', '#d97706'); return; }
   const trips = loadTrips();
   const logs  = loadLogs();
+  const synced = [];
   ids.forEach(id => {
-    const t = trips.find(x => x.id === id);
+    const idx = trips.findIndex(x => x.id === id);
+    const t = trips[idx];
     if (t) {
-      logs.push({ ...t, loggedAt: new Date().toISOString() });
+      const loggedTrip = { ...t, loggedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      logs.push(loggedTrip);
+      trips[idx] = loggedTrip;
+      synced.push(loggedTrip);
       logActivity(`Added to logs: ${t.plate} — ${t.commodity} → ${t.destination}`, '#7c3aed');
     }
   });
+  saveTrips(trips);
   saveLogs(logs);
+  synced.forEach(trip => queueDispatchTripSync(trip, 'addToLogs'));
   toast(`${ids.length} trip(s) added to Logs (kept active).`, '#7c3aed');
 }
 
@@ -1638,7 +1894,7 @@ function clearSelectedTrips() {
     if (!ids.includes(t.id)) return t;
     const trk = trks.find(tr => tr.plate === t.plate);
     return {
-      id: t.id, plate: t.plate,
+      id: t.id, recordId: t.recordId || createDispatchRecordId(getSheetCommodityName(t)), plate: t.plate,
       driver: trk ? trk.driver : t.driver,
       helper: trk ? trk.helper : t.helper,
       truckType: t.truckType,
@@ -1646,6 +1902,10 @@ function clearSelectedTrips() {
       bookingDate: '', planPickup: '', actualPickup: '', lsp: '', supplier: '',
       packaging: '', qty: '', refNumber: '', shipmentNumber: '', atw: '',
       eta: '', remarks: '', latitude: null, longitude: null, lastUpdated: null,
+      createdAt: t.createdAt || t.timestamp || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      deliveredAt: '',
+      loggedAt: '',
       timestamp: t.timestamp,
     };
   });
@@ -1658,12 +1918,14 @@ function moveToLogs(id, finalStatus) {
   let trips = loadTrips();
   const logs = loadLogs();
   const idx  = trips.findIndex(t => t.id === id);
-  if (idx === -1) return;
-  const t = { ...trips[idx], status: finalStatus, loggedAt: new Date().toISOString() };
+  if (idx === -1) return null;
+  const now = new Date().toISOString();
+  const t = { ...trips[idx], status: finalStatus, deliveredAt: now, loggedAt: now, updatedAt: now };
   logs.push(t);
   trips.splice(idx, 1);
   saveTrips(trips);
   saveLogs(logs);
+  queueDispatchTripSync(t, finalStatus === 'Delivered' ? 'markDelivered' : 'addToLogs');
   logActivity(`Delivered: ${t.plate} — ${t.commodity} → ${t.destination}`, '#16a34a');
 }
 
@@ -2291,6 +2553,7 @@ function saveTrip() {
 
   const tripData = {
     id:             editId || uid(),
+    recordId:       prev?.recordId || createDispatchRecordId(commodity),
     plate,
     driver:         document.getElementById('f-driver').value.trim(),
     helper:         document.getElementById('f-helper').value.trim(),
@@ -2314,6 +2577,10 @@ function saveTrip() {
     latitude:       prev?.latitude    || null,
     longitude:      prev?.longitude   || null,
     lastUpdated:    prev?.lastUpdated || null,
+    createdAt:      prev?.createdAt || new Date().toISOString(),
+    updatedAt:      new Date().toISOString(),
+    deliveredAt:    prev?.deliveredAt || '',
+    loggedAt:       prev?.loggedAt || '',
     timestamp:      prev?.timestamp   || new Date().toLocaleString('en-PH'),
   };
 
@@ -2330,6 +2597,7 @@ function saveTrip() {
   closeTripModal();
   renderSheet();
   renderDashboardIfActive();
+  queueDispatchTripSync(tripData);
   toast(editId ? 'Trip updated.' : 'Trip added.', '#16a34a');
 }
 
@@ -2389,6 +2657,7 @@ function renderDashboardIfActive() {
 document.addEventListener('DOMContentLoaded', () => {
   // Seed default trucks if first load
   if (!localStorage.getItem(LS_TRUCKS)) saveTrucks(defaultTrucks());
+  saveTrips(loadTrips());
 
   // Tab switching
   document.querySelectorAll('.dispatch-tab-btn').forEach(btn => {
@@ -2414,9 +2683,10 @@ document.addEventListener('DOMContentLoaded', () => {
   renderDispatchGroupTabs();
 
   // Init map then load dashboard
-  setTimeout(() => {
+  setTimeout(async () => {
     initDispatchMap();
-    refreshDispatchDashboard();
+    await refreshDispatchDashboard();
+    fetchAndMergeDispatchSheetTrips();
   }, 150);
 
   renderSheet();
