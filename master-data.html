@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Master Data | VNS Logistics</title>
+  <meta name="description" content="Shared local master data for trucks, drivers, and helpers." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .master-page{background:#fafafa}
+    .master-header{padding-bottom:30px}
+    .master-header h1{margin:0;font-size:clamp(2.35rem,5vw,4.8rem);line-height:.98;letter-spacing:0}
+    .master-header p{max-width:900px;margin:16px 0 0;color:#5e6470;font-size:1.04rem;font-weight:650;line-height:1.6}
+    .master-shell{width:min(1500px,96vw);max-width:1500px;margin:0 auto}
+    .master-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 18px}
+    .master-tab{border:1px solid var(--line);background:#fff;color:#222;border-radius:999px;padding:11px 16px;font:inherit;font-weight:900;cursor:pointer}
+    .master-tab.active{background:var(--red);border-color:var(--red);color:#fff;box-shadow:0 12px 28px rgba(215,25,32,.22)}
+    .master-panel{display:none}
+    .master-panel.active{display:block}
+    .master-card{width:100%;margin:0 auto 22px;background:#fff;border:1px solid var(--line);border-radius:24px;padding:24px;box-shadow:0 16px 40px rgba(0,0,0,.05)}
+    .master-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}
+    .master-card-head h2{margin:0;font-size:1.25rem}
+    .master-card-head p{margin:5px 0 0;color:var(--muted);font-weight:700}
+    .master-grid{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:14px}
+    .master-grid label,.master-filters label,.import-panel label{display:grid;gap:7px;color:#222;font-size:.8rem;font-weight:900}
+    .master-grid input,.master-grid select,.master-grid textarea,.master-filters input,.master-filters select,.import-panel textarea{
+      width:100%;min-height:46px;border:1px solid var(--line);border-radius:13px;padding:10px 12px;background:#f8f8f8;font:inherit
+    }
+    .master-grid textarea,.import-panel textarea{resize:vertical;min-height:96px}
+    .master-grid .wide-field{grid-column:span 2}
+    .master-grid .full-field{grid-column:1/-1}
+    .master-actions{grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px}
+    .master-status{min-height:22px;color:var(--red);font-weight:800}
+    .master-status.success{color:#15803d}
+    .master-status.warning{color:#c2410c}
+    .master-filters{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px}
+    .master-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+    .master-toolbar-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .master-table-wrap{
+      overflow:auto;
+      border:1px solid #e5e7eb;
+      border-radius:18px;
+      background:#fff;
+      scrollbar-gutter:stable both-edges;
+      scrollbar-width:thin;
+    }
+    .master-table-wrap::-webkit-scrollbar{height:14px;width:12px}
+    .master-table-wrap::-webkit-scrollbar-track{background:#f3f4f6}
+    .master-table-wrap::-webkit-scrollbar-thumb{background:#9ca3af;border-radius:999px;border:3px solid #f3f4f6}
+    .master-table{width:100%;min-width:1380px;border-collapse:separate;border-spacing:0;font-size:13px}
+    .master-table.compact{min-width:1100px}
+    .master-table th{position:sticky;top:0;z-index:4;background:#fafafa;padding:11px 10px;border-bottom:1px solid #e5e7eb;text-align:left;white-space:nowrap;font-weight:900;color:#111827}
+    .master-table td{padding:10px;border-bottom:1px solid #eef0f3;color:#1f2937;vertical-align:top}
+    .master-table tbody tr:hover{background:#fff7f7}
+    .truck-id-cell{max-width:150px;white-space:nowrap;font-size:12px;color:#4b5563}
+    .truck-summary-grid{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;margin:0 0 14px}
+    .truck-summary-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px;box-shadow:0 10px 24px rgba(0,0,0,.04)}
+    .truck-summary-card span{display:block;color:var(--muted);font-size:.68rem;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+    .truck-summary-card strong{display:block;margin-top:6px;color:#111827;font-size:1.05rem;line-height:1}
+    .group-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:14px 0}
+    .group-toggle{display:inline-flex;align-items:center;gap:10px;font-size:.84rem;font-weight:900;color:#374151}
+    .group-toggle input{width:18px;height:18px}
+    .truck-showing-line{margin:14px 0;color:#6b7280;font-size:.84rem;font-weight:800}
+    .empty-row{text-align:center;color:var(--muted);padding:28px}
+    .needs-update{display:inline-flex;align-items:center;color:#9ca3af;font-size:12px;font-weight:800;white-space:nowrap}
+    .needs-update.important{border-radius:999px;padding:5px 9px;background:#ffedd5;color:#c2410c}
+    .status-pill{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;background:#eef2ff;color:#3730a3;font-size:12px;font-weight:900;white-space:nowrap}
+    .row-actions{display:flex;gap:7px;flex-wrap:wrap}
+    .row-actions button{border:1px solid var(--line);background:#fff;color:var(--red);border-radius:999px;padding:7px 10px;font:inherit;font-size:.74rem;font-weight:900;cursor:pointer}
+    .truck-tools-card{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;padding:14px 16px;border:1px solid #eceef3;border-radius:18px;background:#fbfbfc}
+    .truck-tools-copy strong{display:block;font-size:.94rem}
+    .truck-tools-copy span{display:block;margin-top:3px;color:#6b7280;font-size:.8rem;font-weight:700}
+    .truck-tools-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .import-panel{display:none;gap:12px;margin-top:14px;padding:16px;border:1px dashed #d1d5db;border-radius:18px;background:#fff}
+    .import-panel.open{display:grid}
+    .import-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .hint-text{margin:0;color:#6b7280;font-size:.82rem;font-weight:700;line-height:1.5}
+    @media(max-width:1100px){
+      .master-grid{grid-template-columns:repeat(2,minmax(180px,1fr))}
+      .master-filters{grid-template-columns:repeat(2,minmax(150px,1fr))}
+      .master-card-head{flex-direction:column}
+      .truck-summary-grid{grid-template-columns:repeat(3,minmax(120px,1fr))}
+    }
+    @media(max-width:640px){
+      .master-grid,.master-filters,.truck-summary-grid{grid-template-columns:1fr}
+      .master-grid .wide-field{grid-column:1}
+      .master-actions .btn,.master-toolbar-actions .btn,.import-actions .btn{width:100%}
+    }
+
+    /* ── Top scrollbar mirror ── */
+    .master-table-top-scroll {
+      overflow-x: scroll;
+      overflow-y: hidden;
+      height: 16px;
+      border: 1px solid #e5e7eb;
+      border-bottom: none;
+      border-radius: 12px 12px 0 0;
+      background: #f3f4f6;
+      scrollbar-width: thin;
+    }
+    .master-table-top-scroll::-webkit-scrollbar { height: 10px; }
+    .master-table-top-scroll::-webkit-scrollbar-track { background: #f3f4f6; border-radius: 999px; }
+    .master-table-top-scroll::-webkit-scrollbar-thumb { background: #9ca3af; border-radius: 999px; border: 2px solid #f3f4f6; }
+    .master-table-top-scroll-inner { height: 1px; }
+    .master-table-wrap.with-top-scroll { border-top-left-radius: 0; border-top-right-radius: 0; max-height: 72vh; }
+
+    /* ── Inline cell inputs ── */
+    .master-table td.edit-cell { padding: 3px 4px; }
+    .cell-input, .cell-select {
+      display: block;
+      width: 100%;
+      min-width: 70px;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      padding: 5px 7px;
+      font: inherit;
+      font-size: 12px;
+      background: transparent;
+      color: #1f2937;
+      transition: border-color 0.1s, background 0.1s;
+    }
+    .cell-input:hover { border-color: #d1d5db; background: #fafafa; }
+    .cell-select:hover { border-color: #d1d5db; background: #fafafa; }
+    .cell-input:focus, .cell-select:focus {
+      outline: none;
+      border-color: #3b82f6;
+      background: #fff;
+      box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+    }
+    .cell-select { cursor: pointer; }
+    .cell-input.cell-saved, .cell-select.cell-saved {
+      border-color: #16a34a !important;
+      background: #f0fdf4 !important;
+      box-shadow: 0 0 0 2px rgba(22,163,74,0.18) !important;
+    }
+    @keyframes rowSaveFlash { 0%,30% { background:#f0fdf4; } 100% { background: transparent; } }
+    tr.row-flash { animation: rowSaveFlash 1.2s ease forwards; }
+    .ts-cell { white-space: nowrap; font-size: 11px; color: #6b7280; }
+  </style>
+</head>
+<body class="master-page">
+  <header class="site-header" id="top">
+    <nav class="nav-shell">
+      <a href="index.html" class="brand" aria-label="VNS Logistics home"><span class="brand-mark">VNS</span><span class="brand-text">Logistics</span></a>
+      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav">Menu</button>
+      <div class="nav-links" id="main-nav">
+        <a href="index.html">Home</a>
+        <a href="portal.html">System Portal</a>
+        <a href="parts-inventory.html">Parts Inventory</a>
+        <a href="cash.html">Budget / PO / Bali</a>
+        <a href="master-data.html" class="active-link">Master Data</a>
+        <a href="portal.html" class="nav-cta">Back to Portal</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="section-pad master-header">
+      <div class="container">
+        <p class="eyebrow">Shared Local Directory</p>
+        <h1>Master Data</h1>
+        <p>Maintain truck, driver, and helper records locally first, with enough structure to reuse across future VNS internal modules.</p>
+      </div>
+    </section>
+
+    <section class="master-shell">
+      <div class="master-tabs" role="tablist" aria-label="Master data sections">
+        <button class="master-tab active" type="button" data-tab="truck-panel">Truck Master</button>
+        <button class="master-tab" type="button" data-tab="driver-panel">Driver Master</button>
+        <button class="master-tab" type="button" data-tab="helper-panel">Helper Master</button>
+      </div>
+
+      <section id="truck-panel" class="master-panel active">
+        <div class="master-card">
+          <div class="master-card-head">
+            <div>
+              <h2>Truck Record</h2>
+              <p>Plate number and IMEI are enough to save a starter record. Unfilled fields stay visible as Needs Update.</p>
+            </div>
+          </div>
+          <form id="truck-form" class="master-grid">
+            <input id="truck-edit-id" type="hidden">
+            <label><span>Plate Number</span><input id="truck-plate-number" type="text" required></label>
+            <label><span>IMEI</span><input id="truck-imei" type="text"></label>
+            <label><span>Truck Type</span><select id="truck-type">
+              <option value="">Select supported layout</option>
+              <option value="6W_40FT_3AX">Tractor Head (6W) + 40 ft Flatbed (3 Axle)</option>
+              <option value="10W_40FT_4AX">Tractor Head (10W) + 40 ft Flatbed (4 Axle)</option>
+              <option value="10W_SHORT_FB_3AX">Tractor Head (10W) + 26/28/32/34/36 Trailer Flatbed (3 Axle)</option>
+              <option value="10W_SHORT_WV_3AX">Tractor Head (10W) + 26/28/32/34/36 Trailer Wing Van (3 Axle)</option>
+              <option value="10W_WV">10W Wingvan</option>
+              <option value="12W_WV">12W Wingvan</option>
+            </select></label>
+            <label><span>Truck Make</span><input id="truck-make" type="text"></label>
+            <label><span>Body Type</span><input id="truck-body-type" type="text"></label>
+            <label><span>Trailer Plate</span><input id="truck-trailer-plate" type="text"></label>
+            <label><span>Group Category</span><input id="truck-group-category" type="text"></label>
+            <label><span>Dispatcher</span><input id="truck-dispatcher" type="text"></label>
+            <label><span>Current Driver</span><select id="truck-driver-id"></select></label>
+            <label><span>Current Helper</span><select id="truck-helper-id"></select></label>
+            <label><span>Status</span><select id="truck-status"><option>Active</option><option>Inactive</option><option>For Review</option></select></label>
+            <label class="wide-field"><span>Remarks</span><textarea id="truck-remarks" rows="2"></textarea></label>
+            <div class="master-actions">
+              <button class="btn btn-primary" type="submit">Save Truck</button>
+              <button id="truck-clear-button" class="btn btn-outline" type="button">Clear</button>
+              <span id="truck-status-line" class="master-status"></span>
+            </div>
+          </form>
+        </div>
+
+        <div class="master-card">
+          <div class="truck-tools-card">
+            <div class="truck-tools-copy">
+              <strong>Truck Data Tools</strong>
+              <span>Paste plate number and IMEI list, or seed from the current dispatch truck list.</span>
+            </div>
+            <div class="truck-tools-actions">
+              <button id="truck-bulk-toggle-button" class="btn btn-outline" type="button">Bulk Upload Trucks</button>
+              <button id="truck-dispatch-import-button" class="btn btn-outline" type="button">Import From Dispatch List</button>
+            </div>
+          </div>
+          <div id="truck-import-panel" class="import-panel">
+            <label><span>Bulk Truck Upload</span><textarea id="truck-import" placeholder="PLATE IMEI&#10;CAG4353 123456789012345&#10;CAA7125 987654321098765"></textarea></label>
+            <p class="hint-text">Paste one truck per line. The parser accepts an optional header row and splits plate and IMEI on spaces, tabs, or commas.</p>
+            <div class="import-actions">
+              <button id="truck-import-button" class="btn btn-outline" type="button">Import Trucks</button>
+              <button id="truck-import-clear-button" class="btn btn-outline" type="button">Clear Import</button>
+              <button id="truck-import-hide-button" class="btn btn-outline" type="button">Hide Bulk Upload</button>
+            </div>
+          </div>
+          <p id="truck-import-result" class="hint-text"></p>
+        </div>
+
+        <div class="master-card">
+          <div class="master-toolbar">
+            <div class="master-card-head" style="margin:0;">
+              <div>
+                <h2>Truck Master</h2>
+                <p>Search by plate, IMEI, linked driver, linked helper, or status.</p>
+              </div>
+            </div>
+            <div class="master-toolbar-actions">
+              <button id="truck-export-button" class="btn btn-outline" type="button">Export All CSV</button>
+              <button id="truck-export-filtered-button" class="btn btn-outline" type="button">Export Filtered CSV</button>
+            </div>
+          </div>
+          <div id="truck-summary-cards" class="truck-summary-grid"></div>
+          <div class="master-filters">
+            <label><span>Plate Number</span><input id="truck-filter-plate" type="text"></label>
+            <label><span>IMEI</span><input id="truck-filter-imei" type="text"></label>
+            <label><span>Driver Name</span><input id="truck-filter-driver" type="text"></label>
+            <label><span>Helper Name</span><input id="truck-filter-helper" type="text"></label>
+            <label><span>Group</span><select id="truck-filter-group"><option value="">All</option><option>Bottle</option><option>Sugar</option><option>Preform / Resin</option><option>Caps / Crown</option><option>Unknown / Needs Update</option></select></label>
+            <label><span>Status</span><select id="truck-filter-status"><option value="">All</option><option>Active</option><option>Inactive</option><option>For Review</option></select></label>
+          </div>
+          <p id="truck-showing-label" class="truck-showing-line">Showing: All Groups</p>
+          <div class="master-table-top-scroll" id="truck-top-scroll"><div class="master-table-top-scroll-inner"></div></div>
+          <div class="master-table-wrap with-top-scroll" id="truck-table-wrap">
+            <table class="master-table" id="truck-table">
+              <thead><tr><th>Truck ID</th><th>Plate</th><th>IMEI</th><th>Truck Type</th><th>Truck Make</th><th>Body Type</th><th>Trailer Plate</th><th>Group</th><th>Driver</th><th>Helper</th><th>Dispatcher</th><th>Status</th><th>Remarks</th><th>Updated</th><th>Actions</th></tr></thead>
+              <tbody id="truck-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="driver-panel" class="master-panel">
+        <div class="master-card">
+          <div class="master-card-head">
+            <div><h2>Driver Record</h2><p>Maintain contact, GCash, license, and operating status.</p></div>
+          </div>
+          <form id="driver-form" class="master-grid">
+            <input id="driver-edit-id" type="hidden">
+            <label><span>Driver Name</span><input id="driver-name" type="text" required></label>
+            <label><span>GCash Number</span><input id="driver-gcash" type="text"></label>
+            <label><span>Contact Number</span><input id="driver-contact" type="text"></label>
+            <label><span>License Number</span><input id="driver-license" type="text"></label>
+            <label class="wide-field"><span>Address</span><textarea id="driver-address" rows="2"></textarea></label>
+            <label><span>Status</span><select id="driver-status"><option>Active</option><option>Inactive</option><option>For Review</option></select></label>
+            <label class="wide-field"><span>Remarks</span><textarea id="driver-remarks" rows="2"></textarea></label>
+            <div class="master-actions">
+              <button class="btn btn-primary" type="submit">Save Driver</button>
+              <button id="driver-clear-button" class="btn btn-outline" type="button">Clear</button>
+              <span id="driver-status-line" class="master-status"></span>
+            </div>
+          </form>
+        </div>
+        <div class="master-card">
+          <div class="master-toolbar">
+            <div class="master-card-head" style="margin:0;"><div><h2>Driver Master</h2><p>Search drivers by name and status.</p></div></div>
+            <div class="master-toolbar-actions"><button id="driver-export-button" class="btn btn-outline" type="button">Export CSV</button></div>
+          </div>
+          <div class="master-filters" style="grid-template-columns:repeat(2,minmax(180px,1fr));">
+            <label><span>Driver Name</span><input id="driver-filter-name" type="text"></label>
+            <label><span>Status</span><select id="driver-filter-status"><option value="">All</option><option>Active</option><option>Inactive</option><option>For Review</option></select></label>
+          </div>
+          <div class="master-table-top-scroll" id="driver-top-scroll"><div class="master-table-top-scroll-inner"></div></div>
+          <div class="master-table-wrap with-top-scroll" id="driver-table-wrap">
+            <table class="master-table compact" id="driver-table">
+              <thead><tr><th>Driver ID</th><th>Name</th><th>GCash</th><th>Contact</th><th>License</th><th>Address</th><th>Status</th><th>Remarks</th><th>Updated</th><th>Actions</th></tr></thead>
+              <tbody id="driver-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="helper-panel" class="master-panel">
+        <div class="master-card">
+          <div class="master-card-head">
+            <div><h2>Helper Record</h2><p>Keep helper contact, payout, and status details ready for reuse.</p></div>
+          </div>
+          <form id="helper-form" class="master-grid">
+            <input id="helper-edit-id" type="hidden">
+            <label><span>Helper Name</span><input id="helper-name" type="text" required></label>
+            <label><span>GCash Number</span><input id="helper-gcash" type="text"></label>
+            <label><span>Contact Number</span><input id="helper-contact" type="text"></label>
+            <label><span>Status</span><select id="helper-status"><option>Active</option><option>Inactive</option><option>For Review</option></select></label>
+            <label class="wide-field"><span>Address</span><textarea id="helper-address" rows="2"></textarea></label>
+            <label class="wide-field"><span>Remarks</span><textarea id="helper-remarks" rows="2"></textarea></label>
+            <div class="master-actions">
+              <button class="btn btn-primary" type="submit">Save Helper</button>
+              <button id="helper-clear-button" class="btn btn-outline" type="button">Clear</button>
+              <span id="helper-status-line" class="master-status"></span>
+            </div>
+          </form>
+        </div>
+        <div class="master-card">
+          <div class="master-toolbar">
+            <div class="master-card-head" style="margin:0;"><div><h2>Helper Master</h2><p>Search helpers by name and status.</p></div></div>
+            <div class="master-toolbar-actions"><button id="helper-export-button" class="btn btn-outline" type="button">Export CSV</button></div>
+          </div>
+          <div class="master-filters" style="grid-template-columns:repeat(2,minmax(180px,1fr));">
+            <label><span>Helper Name</span><input id="helper-filter-name" type="text"></label>
+            <label><span>Status</span><select id="helper-filter-status"><option value="">All</option><option>Active</option><option>Inactive</option><option>For Review</option></select></label>
+          </div>
+          <div class="master-table-top-scroll" id="helper-top-scroll"><div class="master-table-top-scroll-inner"></div></div>
+          <div class="master-table-wrap with-top-scroll" id="helper-table-wrap">
+            <table class="master-table compact" id="helper-table">
+              <thead><tr><th>Helper ID</th><th>Name</th><th>GCash</th><th>Contact</th><th>Address</th><th>Status</th><th>Remarks</th><th>Updated</th><th>Actions</th></tr></thead>
+              <tbody id="helper-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <footer class="footer"><div class="container footer-grid"><div><strong>VNS Logistics</strong><p>Moving Business Forward</p></div><a href="#top">Back to top</a></div></footer>
+  <script src="master-data.js"></script>
+</body>
+</html>

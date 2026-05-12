@@ -1,0 +1,1406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tire Monitoring | VNS Logistics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+
+  <style>
+    /* ══════════════════════════════════════════
+       TIRE MONITORING PAGE — scoped to .tire-page
+    ══════════════════════════════════════════ */
+    body.tire-page { background: #f1f3f5; }
+    .tire-page .master-header { padding: 42px 0 28px; }
+    .tire-page .master-header h1 {
+      margin: 0;
+      font-size: clamp(2.1rem, 4vw, 3.8rem);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+    .tire-page .master-header p:last-child {
+      max-width: 900px;
+      margin: 14px 0 0;
+      color: #5e6470;
+      font-size: 1rem;
+      font-weight: 650;
+      line-height: 1.6;
+    }
+
+    /* ─── Banner ─── */
+    .tire-banner {
+      background: linear-gradient(135deg, #0f0f0f 0%, #0a1a0c 60%, #0f2d12 100%);
+      border-bottom: 3px solid #16a34a;
+      padding: 2rem 0 1.6rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .tire-banner::before {
+      content: '';
+      position: absolute;
+      right: -80px; top: -80px;
+      width: 380px; height: 380px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(22,163,74,.18), transparent 70%);
+      pointer-events: none;
+    }
+    .tire-banner-inner {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .tire-banner .eyebrow {
+      color: #16a34a;
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-weight: 800;
+      margin: 0 0 0.3rem;
+    }
+    .tire-banner h1 {
+      margin: 0 0 0.25rem;
+      font-size: 1.75rem;
+      font-weight: 900;
+      color: #fff;
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+    .tire-banner .banner-sub {
+      color: #9ca3af;
+      font-size: 0.85rem;
+      margin: 0;
+    }
+    .tire-banner-right {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    /* ─── Workspace ─── */
+    .tire-workspace {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 1.25rem 1rem 2.5rem;
+    }
+
+    /* ─── Tab Nav ─── */
+    .tire-tabs {
+      display: flex;
+      gap: 2px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 5px;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+      width: fit-content;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .tire-tab-btn {
+      padding: 8px 20px;
+      border: none;
+      background: none;
+      font-weight: 700;
+      font-size: 0.85rem;
+      color: #6b7280;
+      cursor: pointer;
+      border-radius: 7px;
+      transition: all 0.15s;
+      font-family: 'Inter', sans-serif;
+      white-space: nowrap;
+    }
+    .tire-tab-btn:hover { background: #f3f4f6; color: #111; }
+    .tire-tab-btn.active { background: #111; color: #fff; }
+    .tire-tab-panel { display: none; }
+    .tire-tab-panel.active { display: block; }
+
+    /* ─── Section Panel ─── */
+    .tire-panel {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      overflow: hidden;
+      margin-bottom: 1.25rem;
+    }
+    .tire-panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.85rem 1.25rem;
+      border-bottom: 1px solid #f3f4f6;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .tire-panel-head h3 {
+      margin: 0;
+      font-size: 0.88rem;
+      font-weight: 800;
+      color: #111;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .tire-panel-body { padding: 1rem 1.25rem; }
+
+    /* ─── KPI Row ─── */
+    .tire-kpi-row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    @media (max-width: 1100px) { .tire-kpi-row { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 700px)  { .tire-kpi-row { grid-template-columns: repeat(2, 1fr); } }
+    .tire-kpi-card {
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid #e5e7eb;
+      padding: 1rem 1.2rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      border-left: 4px solid transparent;
+    }
+    .tire-kpi-card.green  { border-left-color: #16a34a; }
+    .tire-kpi-card.amber  { border-left-color: #d97706; }
+    .tire-kpi-card.red    { border-left-color: #dc2626; }
+    .tire-kpi-card.blue   { border-left-color: #2563eb; }
+    .tire-kpi-card.slate  { border-left-color: #475569; }
+    .tire-kpi-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #6b7280;
+      margin: 0 0 2px;
+    }
+    .tire-kpi-value {
+      font-size: 2rem;
+      font-weight: 900;
+      color: #111;
+      line-height: 1;
+      margin: 0;
+    }
+    .tire-kpi-card.green  .tire-kpi-value { color: #16a34a; }
+    .tire-kpi-card.amber  .tire-kpi-value { color: #d97706; }
+    .tire-kpi-card.red    .tire-kpi-value { color: #dc2626; }
+    .tire-kpi-card.blue   .tire-kpi-value { color: #2563eb; }
+    .tire-kpi-card.slate  .tire-kpi-value { color: #475569; }
+    .tire-kpi-sub { font-size: 0.7rem; color: #9ca3af; margin: 2px 0 0; }
+
+    /* ─── Truck Selector ─── */
+    .truck-selector-strip {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.25rem;
+    }
+    .truck-selector-strip label {
+      font-size: 0.82rem;
+      font-weight: 800;
+      color: #374151;
+      white-space: nowrap;
+    }
+    .truck-selector-strip select {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font: inherit;
+      font-size: 0.88rem;
+      font-weight: 700;
+      background: #fff;
+      min-width: 200px;
+    }
+
+    /* ─── Tire Layout Schematic ─── */
+    .tire-schematic-wrap {
+      overflow-x: auto;
+      padding-bottom: 0.85rem;
+      scrollbar-gutter: stable both-edges;
+      scrollbar-width: thin;
+    }
+    .tire-schematic-wrap::-webkit-scrollbar{height:14px}
+    .tire-schematic-wrap::-webkit-scrollbar-track{background:#f3f4f6;border-radius:999px}
+    .tire-schematic-wrap::-webkit-scrollbar-thumb{background:#9ca3af;border-radius:999px;border:3px solid #f3f4f6}
+    .tire-schematic {
+      display: flex;
+      flex-direction: column;
+      gap: 1.4rem;
+      align-items: center;
+      min-width: 760px;
+      padding: 1.35rem 1rem 1rem;
+    }
+    .tire-layout-block {
+      min-width: 560px;
+      border: 2px solid #d1d5db;
+      border-radius: 10px;
+      background: #fff;
+      padding: 0.9rem 1rem 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.85rem;
+    }
+    .tire-layout-heading {
+      width: 100%;
+      text-align: center;
+      font-size: 0.9rem;
+      font-weight: 900;
+      color: #111827;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      padding-bottom: 0.65rem;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .tire-layout-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 1.1rem;
+      width: 100%;
+    }
+    .paper-tire-chart {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      min-width: 360px;
+      max-width: 520px;
+      margin: 0 auto;
+      border: 2px solid #9ca3af;
+      background: #fff;
+    }
+    .paper-chart-title {
+      width: 100%;
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.5rem;
+      border-bottom: 2px solid #9ca3af;
+      color: #111827;
+      font-size: 0.88rem;
+      font-weight: 900;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+    .paper-chart-row {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 54px 1fr;
+      border-bottom: 2px solid #9ca3af;
+    }
+    .paper-chart-row:last-child { border-bottom: none; }
+    .paper-side {
+      display: grid;
+      grid-template-rows: 34px repeat(3, 42px);
+    }
+    .paper-side-title {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-bottom: 2px solid #9ca3af;
+      color: #374151;
+      font-size: 0.8rem;
+      font-weight: 900;
+    }
+    .paper-center-gap {
+      border-left: 2px solid #9ca3af;
+      border-right: 2px solid #9ca3af;
+      background: #fff;
+    }
+    .paper-tire-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      border-bottom: 2px solid #9ca3af;
+    }
+    .paper-tire-row:last-child { border-bottom: none; }
+    .paper-tire-row.single {
+      grid-template-columns: 1fr;
+    }
+    .paper-cell {
+      min-width: 52px;
+      min-height: 42px;
+      border-right: 2px solid #9ca3af;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      background: #f9fafb;
+      color: #111827;
+      font-size: 0.75rem;
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .paper-cell:last-child { border-right: none; }
+    .paper-cell:hover {
+      background: #eef2ff;
+      outline: 2px solid #374151;
+      outline-offset: -2px;
+    }
+    .paper-cell-status {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #d1d5db;
+    }
+    .paper-cell.status-good .paper-cell-status { background: #16a34a; }
+    .paper-cell.status-monitor .paper-cell-status { background: #d97706; }
+    .paper-cell.status-replace .paper-cell-status { background: #dc2626; }
+    .paper-cell.status-spare .paper-cell-status { background: #2563eb; }
+    .paper-cell.status-removed .paper-cell-status { background: #6b7280; }
+    .paper-trailer-title {
+      width: 100%;
+      min-height: 62px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.55rem;
+      border-bottom: 2px solid #9ca3af;
+      color: #111827;
+      font-size: 0.86rem;
+      font-weight: 900;
+      text-align: center;
+      line-height: 1.25;
+    }
+    .tire-axle-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .tire-axle-label {
+      font-size: 0.68rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #9ca3af;
+    }
+    .tire-axle-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .tire-axle-divider {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .tire-axle-bar {
+      width: 6px;
+      height: 80px;
+      background: #374151;
+      border-radius: 3px;
+    }
+    .tire-connector {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .tire-connector-line {
+      width: 40px;
+      height: 4px;
+      background: #6b7280;
+      border-radius: 2px;
+      margin-top: 28px;
+    }
+    .tire-trailer-label {
+      font-size: 0.72rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #fff;
+      background: #374151;
+      padding: 4px 10px;
+      border-radius: 4px;
+      margin-bottom: 0.5rem;
+    }
+
+    /* ─── Tire Box ─── */
+    .tire-box {
+      width: 48px;
+      height: 72px;
+      border-radius: 6px;
+      border: 2px solid #d1d5db;
+      background: #f9fafb;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s;
+      padding: 4px 3px;
+      gap: 2px;
+      position: relative;
+    }
+    .tire-box:hover {
+      border-color: #374151;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      transform: scale(1.05);
+    }
+    .tire-box.status-good     { border-color: #16a34a; background: #f0fdf4; }
+    .tire-box.status-monitor  { border-color: #d97706; background: #fffbeb; }
+    .tire-box.status-replace  { border-color: #dc2626; background: #fef2f2; }
+    .tire-box.status-spare    { border-color: #2563eb; background: #eff6ff; }
+    .tire-box.status-removed  { border-color: #6b7280; background: #f3f4f6; opacity: 0.65; }
+    .tire-box.status-empty    { border-color: #d1d5db; background: #f9fafb; }
+
+    .tire-box-pos {
+      font-size: 0.65rem;
+      font-weight: 900;
+      color: #374151;
+      text-align: center;
+      line-height: 1;
+    }
+    .tire-box.status-good    .tire-box-pos { color: #166534; }
+    .tire-box.status-monitor .tire-box-pos { color: #92400e; }
+    .tire-box.status-replace .tire-box-pos { color: #991b1b; }
+    .tire-box.status-spare   .tire-box-pos { color: #1d4ed8; }
+
+    .tire-box-serial {
+      font-size: 0.5rem;
+      font-weight: 600;
+      color: #6b7280;
+      text-align: center;
+      line-height: 1.2;
+      max-width: 42px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tire-box-brand {
+      font-size: 0.5rem;
+      font-weight: 700;
+      color: #9ca3af;
+      text-align: center;
+      line-height: 1;
+      max-width: 42px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tire-box-status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #d1d5db;
+      flex-shrink: 0;
+    }
+    .tire-box.status-good    .tire-box-status-dot { background: #16a34a; }
+    .tire-box.status-monitor .tire-box-status-dot { background: #d97706; }
+    .tire-box.status-replace .tire-box-status-dot { background: #dc2626; }
+    .tire-box.status-spare   .tire-box-status-dot { background: #2563eb; }
+    .tire-box.status-removed .tire-box-status-dot { background: #6b7280; }
+
+    /* Dual tire pair */
+    .tire-pair {
+      display: flex;
+      gap: 3px;
+    }
+    .tire-pair .tire-box {
+      width: 42px;
+    }
+
+    /* ─── Legend ─── */
+    .tire-legend {
+      display: flex;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      background: #f9fafb;
+      border-radius: 8px;
+      margin-top: 1rem;
+    }
+    .tire-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: #374151;
+    }
+    .tire-legend-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      border: 2px solid;
+      flex-shrink: 0;
+    }
+    .tld-good    { border-color: #16a34a; background: #f0fdf4; }
+    .tld-monitor { border-color: #d97706; background: #fffbeb; }
+    .tld-replace { border-color: #dc2626; background: #fef2f2; }
+    .tld-spare   { border-color: #2563eb; background: #eff6ff; }
+    .tld-removed { border-color: #6b7280; background: #f3f4f6; }
+    .tld-empty   { border-color: #d1d5db; background: #f9fafb; }
+
+    /* ─── Forms ─── */
+    .tire-form-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(180px, 1fr));
+      gap: 1rem;
+    }
+    @media (max-width: 1100px) { .tire-form-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 640px)  { .tire-form-grid { grid-template-columns: 1fr; } }
+    .tire-form-grid .wide-field { grid-column: span 2; }
+    .tire-form-grid .full-field { grid-column: 1 / -1; }
+    .tire-form-grid label {
+      display: grid;
+      gap: 6px;
+      font-weight: 800;
+      font-size: 0.82rem;
+      color: #374151;
+    }
+    .tire-form-grid input,
+    .tire-form-grid select,
+    .tire-form-grid textarea {
+      width: 100%;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 9px 12px;
+      font: inherit;
+      font-size: 0.88rem;
+      background: #f9fafb;
+      transition: border-color 0.15s;
+    }
+    .tire-form-grid input:focus,
+    .tire-form-grid select:focus,
+    .tire-form-grid textarea:focus {
+      outline: none;
+      border-color: #374151;
+      background: #fff;
+    }
+    .tire-form-grid textarea { min-height: 80px; resize: vertical; }
+    .tire-form-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      padding-top: 0.5rem;
+    }
+    .tire-form-status {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #16a34a;
+    }
+    .tire-form-status.error { color: #dc2626; }
+
+    /* ─── Buttons ─── */
+    .btn-tire-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 22px;
+      border: none;
+      border-radius: 999px;
+      background: #111;
+      color: #fff;
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 800;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .btn-tire-primary:hover { background: #374151; }
+    .btn-tire-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-tire-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 18px;
+      border: 1px solid #e5e7eb;
+      border-radius: 999px;
+      background: #fff;
+      color: #374151;
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .btn-tire-secondary:hover { border-color: #374151; color: #111; }
+    .btn-tire-danger {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 18px;
+      border: 1px solid #fecaca;
+      border-radius: 999px;
+      background: #fff;
+      color: #dc2626;
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .btn-tire-danger:hover { background: #fee2e2; }
+
+    /* ─── Tables ─── */
+    .tire-table-wrap {
+      overflow-x: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+    }
+    .tire-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+    .tire-table th {
+      background: #f9fafb;
+      font-weight: 800;
+      color: #374151;
+      padding: 9px 12px;
+      text-align: left;
+      border-bottom: 1px solid #e5e7eb;
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .tire-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #f3f4f6;
+      vertical-align: middle;
+    }
+    .tire-table tr:last-child td { border-bottom: none; }
+    .tire-table tr:hover td { background: #f9fafb; }
+    .tire-table .empty-row td {
+      text-align: center;
+      color: #9ca3af;
+      padding: 2.5rem;
+    }
+
+    .tire-status-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .tsb-good     { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+    .tsb-monitor  { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+    .tsb-replace  { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .tsb-spare    { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+    .tsb-removed  { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+    .tsb-disposal { background: #fdf4ff; color: #7e22ce; border: 1px solid #e9d5ff; }
+    .tsb-new      { background: #ecfdf5; color: #065f46; border: 1px solid #6ee7b7; }
+    .tsb-installed{ background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+    .tsb-returned { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+
+    /* ─── Filter Row ─── */
+    .tire-filter-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .tire-filter-row input,
+    .tire-filter-row select {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 7px 12px;
+      font: inherit;
+      font-size: 0.82rem;
+      background: #fff;
+    }
+    .tire-filter-row input { min-width: 180px; }
+    .tire-filter-row select { min-width: 140px; }
+
+    /* ─── Action cell ─── */
+    .tire-row-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tire-row-btn {
+      border: 1px solid #e5e7eb;
+      background: #fff;
+      color: #374151;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font: inherit;
+      font-size: 0.72rem;
+      font-weight: 800;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.12s;
+    }
+    .tire-row-btn:hover { border-color: #374151; }
+    .tire-row-btn.danger { color: #dc2626; border-color: #fecaca; }
+    .tire-row-btn.danger:hover { background: #fee2e2; }
+
+    /* ─── Inventory Tab ─── */
+    .inv-summary-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    @media (max-width: 900px) { .inv-summary-row { grid-template-columns: repeat(2, 1fr); } }
+
+    /* ─── Disposal Tab ─── */
+    .ecovadis-note {
+      background: #fdf4ff;
+      border: 1px solid #e9d5ff;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    .ecovadis-note p {
+      margin: 0;
+      font-size: 0.85rem;
+      color: #6b21a8;
+      font-weight: 700;
+    }
+    .ecovadis-note a {
+      color: #7c3aed;
+      text-decoration: underline;
+    }
+
+    /* ─── Toast ─── */
+    #tire-toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: #111;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+      z-index: 9999;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: all 0.2s;
+      pointer-events: none;
+    }
+    #tire-toast.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    #tire-toast.success { background: #065f46; }
+    #tire-toast.error   { background: #991b1b; }
+  </style>
+</head>
+<body class="tire-page">
+  <header class="site-header" id="top">
+    <nav class="nav-shell">
+      <a href="index.html" class="brand" aria-label="VNS Logistics home"><span class="brand-mark">VNS</span><span class="brand-text">Logistics</span></a>
+      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav">Menu</button>
+      <div class="nav-links" id="main-nav">
+        <a href="index.html">Home</a>
+        <a href="portal.html">System Portal</a>
+        <a href="master-data.html">Master Data</a>
+        <a href="tire-monitoring.html" class="active-link">Tire Monitoring</a>
+        <a href="portal.html" class="nav-cta">Back to Portal</a>
+      </div>
+    </nav>
+  </header>
+
+  <section class="section-pad master-header">
+    <div class="container">
+      <p class="eyebrow">Fleet Operations</p>
+      <h1>Tire Monitoring</h1>
+      <p>Tire lifecycle tracking for installations, inventory, truck layouts, history, and EcoVadis disposal records.</p>
+    </div>
+  </section>
+
+  <!-- ── Workspace ── -->
+  <div class="tire-workspace">
+
+    <!-- KPI Row -->
+    <div class="tire-kpi-row" id="tire-kpi-row">
+      <div class="tire-kpi-card green">
+        <p class="tire-kpi-label">Good / Installed</p>
+        <p class="tire-kpi-value" id="kpi-good">—</p>
+        <p class="tire-kpi-sub">Positions with good tires</p>
+      </div>
+      <div class="tire-kpi-card amber">
+        <p class="tire-kpi-label">Monitor / Worn</p>
+        <p class="tire-kpi-value" id="kpi-monitor">—</p>
+        <p class="tire-kpi-sub">Needs attention</p>
+      </div>
+      <div class="tire-kpi-card red">
+        <p class="tire-kpi-label">For Replacement</p>
+        <p class="tire-kpi-value" id="kpi-replace">—</p>
+        <p class="tire-kpi-sub">Replace ASAP</p>
+      </div>
+      <div class="tire-kpi-card blue">
+        <p class="tire-kpi-label">In Inventory</p>
+        <p class="tire-kpi-value" id="kpi-inventory">—</p>
+        <p class="tire-kpi-sub">Available spare tires</p>
+      </div>
+      <div class="tire-kpi-card slate">
+        <p class="tire-kpi-label">For Disposal</p>
+        <p class="tire-kpi-value" id="kpi-disposal">—</p>
+        <p class="tire-kpi-sub">EcoVadis pending</p>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tire-tabs">
+      <button class="tire-tab-btn active" data-tab="layout">Tire Layout</button>
+      <button class="tire-tab-btn" data-tab="change">Tire Change / Installation</button>
+      <button class="tire-tab-btn" data-tab="inventory">Inventory / Purchase</button>
+      <button class="tire-tab-btn" data-tab="history">Tire History</button>
+      <button class="tire-tab-btn" data-tab="disposal">Disposal / EcoVadis</button>
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         TAB 1 — TIRE LAYOUT
+    ═══════════════════════════════════════ -->
+    <div class="tire-tab-panel active" id="tab-layout">
+
+      <!-- Truck selector -->
+      <div class="truck-selector-strip">
+        <label for="layout-group-select">Truck Group:</label>
+        <select id="layout-group-select">
+          <option value="">All Groups</option>
+          <option value="Bottle">Bottle</option>
+          <option value="Sugar">Sugar</option>
+          <option value="Preform / Resin">Preform / Resin</option>
+          <option value="Caps / Crown">Caps / Crown</option>
+          <option value="Unknown / Needs Update">Unknown / Needs Update</option>
+        </select>
+        <label for="layout-truck-select">Select Truck:</label>
+        <select id="layout-truck-select">
+          <option value="">— Choose a truck —</option>
+        </select>
+        <span id="layout-truck-type" style="font-size:0.78rem;font-weight:700;color:#6b7280;"></span>
+      </div>
+
+      <div class="tire-panel" id="layout-panel" style="display:none;">
+        <div class="tire-panel-head">
+          <h3 id="layout-panel-title">Tire Layout</h3>
+          <div style="display:flex;gap:0.5rem;">
+            <button class="btn-tire-secondary" id="layout-refresh-btn" style="font-size:0.8rem;padding:6px 14px;">Refresh</button>
+          </div>
+        </div>
+        <div class="tire-panel-body">
+          <div class="tire-schematic-wrap">
+            <div class="tire-schematic" id="tire-schematic-container">
+              <!-- rendered by JS -->
+            </div>
+          </div>
+          <div class="tire-legend">
+            <div class="tire-legend-item"><div class="tire-legend-dot tld-good"></div> Good</div>
+            <div class="tire-legend-item"><div class="tire-legend-dot tld-monitor"></div> Monitor</div>
+            <div class="tire-legend-item"><div class="tire-legend-dot tld-replace"></div> Replace</div>
+            <div class="tire-legend-item"><div class="tire-legend-dot tld-spare"></div> Spare</div>
+            <div class="tire-legend-item"><div class="tire-legend-dot tld-removed"></div> Removed</div>
+            <div class="tire-legend-item"><div class="tire-legend-dot tld-empty"></div> No Data</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="layout-no-truck" class="tire-panel" style="display:none;">
+        <div class="tire-panel-body" style="text-align:center;padding:3rem;color:#9ca3af;font-weight:700;">
+          Select a truck above to view its tire layout.
+        </div>
+      </div>
+
+      <div id="layout-empty" class="tire-panel">
+        <div class="tire-panel-body" style="text-align:center;padding:3rem;color:#9ca3af;font-weight:700;">
+          No trucks found. Add trucks in the Master Data module first.
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         TAB 2 — TIRE CHANGE / INSTALLATION
+    ═══════════════════════════════════════ -->
+    <div class="tire-tab-panel" id="tab-change">
+
+      <div class="tire-panel">
+        <div class="tire-panel-head">
+          <h3>Log Tire Change / Installation</h3>
+        </div>
+        <div class="tire-panel-body">
+          <div class="tire-form-grid" id="change-form">
+            <label>
+              Date
+              <input type="date" id="chg-date" />
+            </label>
+            <label>
+              Truck (Plate)
+              <select id="chg-plate">
+                <option value="">— Select Truck —</option>
+              </select>
+            </label>
+            <label>
+              Action
+              <select id="chg-action">
+                <option value="Install">Install</option>
+                <option value="Remove">Remove</option>
+                <option value="Rotate">Rotate</option>
+                <option value="Swap">Swap</option>
+              </select>
+            </label>
+            <label>
+              Tire Position
+              <select id="chg-position">
+                <option value="">— Select Position —</option>
+              </select>
+            </label>
+            <label id="chg-to-position-wrap" style="display:none;">
+              To Position (Rotate/Swap)
+              <select id="chg-to-position">
+                <option value="">— Select Position —</option>
+              </select>
+            </label>
+            <label>
+              Tire Serial No.
+              <input type="text" id="chg-serial" placeholder="e.g. GY-2024-001" />
+            </label>
+            <label>
+              Brand
+              <input type="text" id="chg-brand" placeholder="e.g. Goodyear" />
+            </label>
+            <label>
+              Size
+              <input type="text" id="chg-size" placeholder="e.g. 11R22.5" />
+            </label>
+            <label>
+              Condition After
+              <select id="chg-condition">
+                <option value="Good">Good</option>
+                <option value="Monitor">Monitor</option>
+                <option value="Replace">Replace</option>
+                <option value="Removed">Removed</option>
+                <option value="Spare">Spare</option>
+              </select>
+            </label>
+            <label>
+              Odometer (km)
+              <input type="number" id="chg-odometer" placeholder="e.g. 125000" />
+            </label>
+            <label>
+              Performed By
+              <input type="text" id="chg-by" placeholder="Name or shop" />
+            </label>
+            <label class="wide-field">
+              Remarks
+              <input type="text" id="chg-remarks" placeholder="Optional notes" />
+            </label>
+          </div>
+          <div class="tire-form-actions">
+            <button class="btn-tire-primary" id="chg-save-btn">Save Change Log</button>
+            <button class="btn-tire-secondary" id="chg-clear-btn">Clear</button>
+            <span class="tire-form-status" id="chg-status"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent change logs -->
+      <div class="tire-panel">
+        <div class="tire-panel-head">
+          <h3>Recent Change Logs</h3>
+          <div style="display:flex;gap:0.5rem;">
+            <select id="chg-filter-plate" style="border:1px solid #e5e7eb;border-radius:8px;padding:5px 10px;font:inherit;font-size:0.78rem;background:#fff;">
+              <option value="">All Trucks</option>
+            </select>
+          </div>
+        </div>
+        <div class="tire-panel-body" style="padding:0;">
+          <div class="tire-table-wrap" style="max-height:360px;overflow-y:auto;border-radius:0;border:none;">
+            <table class="tire-table" id="chg-log-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Plate</th>
+                  <th>Action</th>
+                  <th>Position</th>
+                  <th>To Position</th>
+                  <th>Serial No.</th>
+                  <th>Brand</th>
+                  <th>Size</th>
+                  <th>Condition</th>
+                  <th>Odometer</th>
+                  <th>By</th>
+                  <th>Remarks</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="chg-log-tbody">
+                <tr class="empty-row"><td colspan="13">No change logs yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         TAB 3 — INVENTORY / PURCHASE
+    ═══════════════════════════════════════ -->
+    <div class="tire-tab-panel" id="tab-inventory">
+
+      <div class="inv-summary-row" id="inv-summary-row">
+        <div class="tire-kpi-card green">
+          <p class="tire-kpi-label">New / Available</p>
+          <p class="tire-kpi-value" id="inv-kpi-new">—</p>
+          <p class="tire-kpi-sub">Ready to install</p>
+        </div>
+        <div class="tire-kpi-card blue">
+          <p class="tire-kpi-label">Installed</p>
+          <p class="tire-kpi-value" id="inv-kpi-installed">—</p>
+          <p class="tire-kpi-sub">Currently on trucks</p>
+        </div>
+        <div class="tire-kpi-card slate">
+          <p class="tire-kpi-label">Returned / Stock</p>
+          <p class="tire-kpi-value" id="inv-kpi-returned">—</p>
+          <p class="tire-kpi-sub">Removed, in stock</p>
+        </div>
+        <div class="tire-kpi-card red">
+          <p class="tire-kpi-label">For Disposal</p>
+          <p class="tire-kpi-value" id="inv-kpi-disposal">—</p>
+          <p class="tire-kpi-sub">Scrap / worn out</p>
+        </div>
+      </div>
+
+      <!-- Add tire to inventory -->
+      <div class="tire-panel">
+        <div class="tire-panel-head">
+          <h3>Add Tire to Inventory</h3>
+        </div>
+        <div class="tire-panel-body">
+          <div class="tire-form-grid">
+            <label>
+              Purchase Date
+              <input type="date" id="inv-date" />
+            </label>
+            <label>
+              Serial No.
+              <input type="text" id="inv-serial" placeholder="e.g. GY-2024-001" />
+            </label>
+            <label>
+              Brand
+              <input type="text" id="inv-brand" placeholder="e.g. Goodyear" />
+            </label>
+            <label>
+              Size
+              <input type="text" id="inv-size" placeholder="e.g. 11R22.5" />
+            </label>
+            <label>
+              Type
+              <select id="inv-type">
+                <option value="Radial">Radial</option>
+                <option value="Bias">Bias</option>
+                <option value="Tubeless">Tubeless</option>
+                <option value="Tube-type">Tube-type</option>
+              </select>
+            </label>
+            <label>
+              Supplier
+              <input type="text" id="inv-supplier" placeholder="Supplier name" />
+            </label>
+            <label>
+              Unit Cost (₱)
+              <input type="number" id="inv-cost" placeholder="0.00" step="0.01" />
+            </label>
+            <label>
+              Quantity
+              <input type="number" id="inv-qty" value="1" min="1" />
+            </label>
+            <label>
+              Initial Status
+              <select id="inv-status">
+                <option value="New">New</option>
+                <option value="Good">Good</option>
+                <option value="Spare">Spare</option>
+              </select>
+            </label>
+            <label>
+              Location / Storage
+              <input type="text" id="inv-location" placeholder="e.g. Majada Garage" />
+            </label>
+            <label class="wide-field">
+              Remarks
+              <input type="text" id="inv-remarks" placeholder="Optional notes" />
+            </label>
+          </div>
+          <div class="tire-form-actions">
+            <button class="btn-tire-primary" id="inv-save-btn">Add to Inventory</button>
+            <button class="btn-tire-secondary" id="inv-clear-btn">Clear</button>
+            <span class="tire-form-status" id="inv-status-msg"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Inventory table -->
+      <div class="tire-panel">
+        <div class="tire-panel-head">
+          <h3>Tire Inventory</h3>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="inv-search" placeholder="Search serial, brand…" style="border:1px solid #e5e7eb;border-radius:8px;padding:6px 12px;font:inherit;font-size:0.78rem;" />
+            <select id="inv-filter-status" style="border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;font:inherit;font-size:0.78rem;background:#fff;">
+              <option value="">All Status</option>
+              <option value="New">New</option>
+              <option value="Good">Good</option>
+              <option value="Spare">Spare</option>
+              <option value="Installed">Installed</option>
+              <option value="Returned">Returned</option>
+              <option value="For Disposal">For Disposal</option>
+            </select>
+            <button class="btn-tire-secondary" id="inv-export-btn" style="font-size:0.78rem;padding:6px 14px;">Export CSV</button>
+          </div>
+        </div>
+        <div class="tire-panel-body" style="padding:0;">
+          <div class="tire-table-wrap" style="max-height:420px;overflow-y:auto;border-radius:0;border:none;">
+            <table class="tire-table" id="inv-table">
+              <thead>
+                <tr>
+                  <th>Date Added</th>
+                  <th>Serial No.</th>
+                  <th>Brand</th>
+                  <th>Size</th>
+                  <th>Type</th>
+                  <th>Supplier</th>
+                  <th>Unit Cost</th>
+                  <th>Qty</th>
+                  <th>Status</th>
+                  <th>Location</th>
+                  <th>Assigned Plate</th>
+                  <th>Remarks</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="inv-tbody">
+                <tr class="empty-row"><td colspan="13">No tires in inventory.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         TAB 4 — TIRE HISTORY
+    ═══════════════════════════════════════ -->
+    <div class="tire-tab-panel" id="tab-history">
+
+      <div class="tire-panel">
+        <div class="tire-panel-head">
+          <h3>Full Tire History</h3>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+            <input type="text" id="hist-search" placeholder="Plate, serial, position…" style="border:1px solid #e5e7eb;border-radius:8px;padding:6px 12px;font:inherit;font-size:0.78rem;" />
+            <select id="hist-filter-plate" style="border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;font:inherit;font-size:0.78rem;background:#fff;">
+              <option value="">All Trucks</option>
+            </select>
+            <select id="hist-filter-action" style="border:1px solid #e5e7eb;border-radius:8px;padding:6px 10px;font:inherit;font-size:0.78rem;background:#fff;">
+              <option value="">All Actions</option>
+              <option value="Install">Install</option>
+              <option value="Remove">Remove</option>
+              <option value="Rotate">Rotate</option>
+              <option value="Swap">Swap</option>
+            </select>
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;font-weight:700;color:#374151;">
+              From <input type="date" id="hist-from" style="border:1px solid #e5e7eb;border-radius:8px;padding:5px 9px;font:inherit;font-size:0.78rem;" />
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;font-weight:700;color:#374151;">
+              To <input type="date" id="hist-to" style="border:1px solid #e5e7eb;border-radius:8px;padding:5px 9px;font:inherit;font-size:0.78rem;" />
+            </label>
+            <button class="btn-tire-secondary" id="hist-export-btn" style="font-size:0.78rem;padding:6px 14px;">Export CSV</button>
+          </div>
+        </div>
+        <div class="tire-panel-body" style="padding:0;">
+          <div class="tire-table-wrap" style="max-height:500px;overflow-y:auto;border-radius:0;border:none;">
+            <table class="tire-table" id="hist-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Plate</th>
+                  <th>Action</th>
+                  <th>Position</th>
+                  <th>To Position</th>
+                  <th>Serial No.</th>
+                  <th>Brand</th>
+                  <th>Size</th>
+                  <th>Condition</th>
+                  <th>Odometer</th>
+                  <th>Performed By</th>
+                  <th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody id="hist-tbody">
+                <tr class="empty-row"><td colspan="12">No history records yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         TAB 5 — DISPOSAL / ECOVADIS
+    ═══════════════════════════════════════ -->
+    <div class="tire-tab-panel" id="tab-disposal">
+
+      <div class="ecovadis-note">
+        <p>EcoVadis Compliance: All disposed tires must be logged and turned over to an accredited recycler. Attach the Certificate of Disposal to each record.</p>
+      </div>
+
+      <!-- Log disposal -->
+      <div class="tire-panel">
+        <div class="tire-panel-head">
+          <h3>Log Tire Disposal</h3>
+        </div>
+        <div class="tire-panel-body">
+          <div class="tire-form-grid">
+            <label>
+              Disposal Date
+              <input type="date" id="disp-date" />
+            </label>
+            <label>
+              Serial No.
+              <input type="text" id="disp-serial" placeholder="Tire serial number" />
+            </label>
+            <label>
+              Brand
+              <input type="text" id="disp-brand" placeholder="Brand" />
+            </label>
+            <label>
+              Size
+              <input type="text" id="disp-size" placeholder="e.g. 11R22.5" />
+            </label>
+            <label>
+              Last Assigned Plate
+              <select id="disp-plate">
+                <option value="">— Select —</option>
+              </select>
+            </label>
+            <label>
+              Reason for Disposal
+              <select id="disp-reason">
+                <option value="Worn Out">Worn Out</option>
+                <option value="Sidewall Damage">Sidewall Damage</option>
+                <option value="Blowout">Blowout</option>
+                <option value="Age / Cracking">Age / Cracking</option>
+                <option value="Irreparable Puncture">Irreparable Puncture</option>
+                <option value="Other">Other</option>
+              </select>
+            </label>
+            <label>
+              Recycler / Handler
+              <input type="text" id="disp-recycler" placeholder="Accredited recycler name" />
+            </label>
+            <label>
+              Certificate No.
+              <input type="text" id="disp-cert" placeholder="EcoVadis cert or DR number" />
+            </label>
+            <label>
+              Disposed By
+              <input type="text" id="disp-by" placeholder="Name" />
+            </label>
+            <label class="wide-field">
+              Remarks
+              <input type="text" id="disp-remarks" placeholder="Optional notes" />
+            </label>
+          </div>
+          <div class="tire-form-actions">
+            <button class="btn-tire-primary" id="disp-save-btn">Log Disposal</button>
+            <button class="btn-tire-secondary" id="disp-clear-btn">Clear</button>
+            <span class="tire-form-status" id="disp-status"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tires pending disposal (removed/for disposal status) -->
+      <div class="tire-panel">
+        <div class="tire-panel-head">
+          <h3>Tires Pending Disposal</h3>
+          <span style="font-size:0.78rem;font-weight:700;color:#7e22ce;">From inventory with "For Disposal" status</span>
+        </div>
+        <div class="tire-panel-body" style="padding:0;">
+          <div class="tire-table-wrap" style="max-height:280px;overflow-y:auto;border-radius:0;border:none;">
+            <table class="tire-table" id="disp-pending-table">
+              <thead>
+                <tr>
+                  <th>Serial No.</th>
+                  <th>Brand</th>
+                  <th>Size</th>
+                  <th>Status</th>
+                  <th>Last Plate</th>
+                  <th>Location</th>
+                  <th>Remarks</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="disp-pending-tbody">
+                <tr class="empty-row"><td colspan="8">No tires pending disposal.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Disposal history -->
+      <div class="tire-panel">
+        <div class="tire-panel-head">
+          <h3>Disposal History</h3>
+          <div style="display:flex;gap:0.5rem;align-items:center;">
+            <button class="btn-tire-secondary" id="disp-export-btn" style="font-size:0.78rem;padding:6px 14px;">Export CSV</button>
+          </div>
+        </div>
+        <div class="tire-panel-body" style="padding:0;">
+          <div class="tire-table-wrap" style="max-height:360px;overflow-y:auto;border-radius:0;border:none;">
+            <table class="tire-table" id="disp-hist-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Serial No.</th>
+                  <th>Brand</th>
+                  <th>Size</th>
+                  <th>Plate</th>
+                  <th>Reason</th>
+                  <th>Recycler</th>
+                  <th>Certificate No.</th>
+                  <th>Disposed By</th>
+                  <th>Remarks</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="disp-hist-tbody">
+                <tr class="empty-row"><td colspan="11">No disposal records yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div><!-- /.tire-workspace -->
+
+  <!-- Toast -->
+  <div id="tire-toast"></div>
+
+  <script src="script.js"></script>
+  <script src="tire-monitoring.js?v=20260513"></script>
+</body>
+</html>
