@@ -334,8 +334,8 @@ async function fetchAndMergeDispatchSheetTrips() {
   }
   setDispatchSyncStatus('syncing');
   try {
-    const result = await dispatchSheetsRequest({ action: 'getAllTrips' }, 'GET');
-    const remoteTrips = Array.isArray(result.data) ? result.data.map(sheetRecordToDispatchTrip) : [];
+    const result = await dispatchSheetsRequest({ action: 'getDispatchTrips' }, 'GET');
+    const remoteTrips = Array.isArray(result.trips) ? result.trips.map(sheetRecordToDispatchTrip) : [];
     if (!remoteTrips.length) {
       setDispatchSyncStatus('synced');
       return;
