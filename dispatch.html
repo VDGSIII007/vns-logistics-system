@@ -86,9 +86,9 @@
 
     /* ─── Workspace ─── */
     .dispatch-workspace {
-      max-width: 1600px;
+      max-width: 1800px;
       margin: 0 auto;
-      padding: 1.5rem 2rem 3rem;
+      padding: 1.25rem 1rem 2.5rem;
     }
 
     /* ─── Tab Nav ─── */
@@ -586,7 +586,7 @@
       background: #f9fafb;
       font-weight: 700;
       text-align: left;
-      padding: 9px 11px;
+      padding: 7px 9px;
       border-bottom: 2px solid #e5e7eb;
       white-space: nowrap;
       color: #4b5563;
@@ -598,7 +598,7 @@
       z-index: 2;
     }
     .dispatch-table td {
-      padding: 8px 11px;
+      padding: 5px 9px;
       border-bottom: 1px solid #f3f4f6;
       color: #374151;
       white-space: nowrap;
@@ -1006,7 +1006,6 @@
         <a href="repair.html">Repair Module</a>
         <a href="parts-inventory.html">Parts Inventory</a>
         <a href="cash.html">Cash / PO / Bali</a>
-        <a href="payroll.html">Payroll</a>
         <a href="dispatch.html" class="active-link">Dispatch</a>
         <a href="portal.html" class="nav-cta">Portal</a>
       </div>
@@ -1210,9 +1209,9 @@
           <button class="dbtn dbtn-gray dbtn-sm" onclick="handleDispatchTableCopy()">Copy Selected</button>
         </div>
 
-        <!-- Local save note -->
+        <!-- Sync status note -->
         <div class="sheet-local-note">
-          Edits are saved locally only. Google Sheets sync not enabled yet.
+          Google Sheets sync: <span id="dispatch-sync-status" class="dispatch-sync-status sync-local">Local only</span>. Local storage remains the offline backup.
         </div>
 
         <div class="dispatch-table-wrap"><div class="dispatch-table-scroll">
@@ -1456,7 +1455,7 @@
       <div class="modal-head">
         <div>
           <h2>Edit Trip Details</h2>
-          <div style="font-size:0.75rem;color:#6b7280;margin-top:2px;">Updates local state only. Backend sync not enabled yet.</div>
+          <div style="font-size:0.75rem;color:#6b7280;margin-top:2px;">Changes sync to Google Sheets automatically.</div>
         </div>
         <button class="modal-close" onclick="closeTruckEditModal()" aria-label="Close">✕</button>
       </div>
@@ -1528,7 +1527,7 @@
           </div>
 
         </div>
-        <div id="te-save-note">Saved locally. Backend sync not enabled yet.</div>
+        <div id="te-save-note">Saved. Syncing to Google Sheets&hellip;</div>
       </div>
       <div class="modal-foot">
         <button class="dbtn dbtn-gray" onclick="closeTruckEditModal()">Cancel</button>
@@ -1543,7 +1542,7 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <!-- Dispatch module -->
-  <script src="dispatch.js"></script>
+  <script src="dispatch.js?v=20260512"></script>
   <!-- Shared site script -->
   <script src="script.js"></script>
 </body>

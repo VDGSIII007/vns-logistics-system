@@ -814,7 +814,12 @@ function getUniqueDispatchValues(records, field) {
 }
 
 function applyDispatchSheetFilters(records) {
-  let trips       = filterBySelectedGroup(records);
+  // Drop rows with no plate AND no source AND no destination — nothing meaningful to show
+  let trips = filterBySelectedGroup(records).filter(t =>
+    (t.plate || t.plateNumber || '').trim() ||
+    (t.source || '').trim() ||
+    (t.destination || '').trim()
+  );
   const commodity = document.getElementById('filter-commodity')?.value || '';
   const status    = document.getElementById('filter-status')?.value    || '';
   const truck     = document.getElementById('filter-truck')?.value     || '';
@@ -1068,7 +1073,8 @@ function saveTruckEdit() {
   logActivity(`Edited: ${trips[idx].plate} — ${trips[idx].commodity}`, '#7c3aed');
   renderSheet();
   renderDashboardIfActive();
-  toast('Saved locally. Backend sync not enabled yet.', '#16a34a');
+  toast('Changes saved.', '#16a34a');
+  queueDispatchTripSync(trips[idx]);
 }
 
 /* ══════════════════════════════════════════════════════
