@@ -243,10 +243,11 @@ function isDispatchGoogleSyncConfigured() {
 
 function setDispatchSyncStatus(state, detail = '') {
   const label = {
-    local: 'Local only',
+    live:    'Live — Apps Script',
+    local:   'Local backup only',
     syncing: 'Saving...',
-    synced: 'Saved to Google Sheets',
-    failed: 'Save failed',
+    synced:  'Saved to Google Sheets',
+    failed:  'Save failed',
   }[state] || state;
   const el = document.getElementById('dispatch-sync-status');
   if (el) {
@@ -1160,8 +1161,14 @@ function applyDispatchDashboardData(raw, sourceLabel) {
   renderSheet();
   renderLogs();
 
-  if (sourceLabel === 'live')  setDataStatus(DISPATCH_APP_SCRIPT_URL ? 'live' : 'local');
-  if (sourceLabel === 'stale') setDataStatus('local');
+  if (sourceLabel === 'live') {
+    setDataStatus(DISPATCH_APP_SCRIPT_URL ? 'live' : 'local');
+    setDispatchSyncStatus(DISPATCH_APP_SCRIPT_URL ? 'live' : 'local');
+  }
+  if (sourceLabel === 'stale' || sourceLabel === 'cache') {
+    setDataStatus('local');
+    setDispatchSyncStatus('local');
+  }
 }
 
 async function refreshDispatchDashboard() {
