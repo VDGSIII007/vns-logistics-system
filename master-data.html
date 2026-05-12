@@ -139,6 +139,19 @@
     @keyframes rowSaveFlash { 0%,30% { background:#f0fdf4; } 100% { background: transparent; } }
     tr.row-flash { animation: rowSaveFlash 1.2s ease forwards; }
     .ts-cell { white-space: nowrap; font-size: 11px; color: #6b7280; }
+
+    /* ── Google Sheets sync badge ── */
+    .master-sync-badge {
+      display: inline-flex; align-items: center;
+      border-radius: 999px; padding: 5px 12px;
+      font-size: .78rem; font-weight: 800; white-space: nowrap;
+      border: 1px solid transparent; transition: background .3s, color .3s;
+    }
+    .mss-local   { background: #f3f4f6; color: #6b7280; border-color: #e5e7eb; }
+    .mss-loading { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
+    .mss-synced  { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
+    .mss-failed  { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+    .mss-saving  { background: #fefce8; color: #a16207; border-color: #fef08a; }
   </style>
 </head>
 <body class="master-page">
@@ -218,6 +231,8 @@
               <span>Paste plate number and IMEI list, or seed from the current dispatch truck list.</span>
             </div>
             <div class="truck-tools-actions">
+              <span id="master-sync-status" class="master-sync-badge mss-local">Local backup only</span>
+              <button id="truck-refresh-button" class="btn btn-outline" type="button">&#x21BB; Refresh From Google Sheets</button>
               <button id="truck-bulk-toggle-button" class="btn btn-outline" type="button">Bulk Upload Trucks</button>
               <button id="truck-dispatch-import-button" class="btn btn-outline" type="button">Import From Dispatch List</button>
             </div>
@@ -349,6 +364,6 @@
   </main>
 
   <footer class="footer"><div class="container footer-grid"><div><strong>VNS Logistics</strong><p>Moving Business Forward</p></div><a href="#top">Back to top</a></div></footer>
-  <script src="master-data.js"></script>
+  <script src="master-data.js?v=20260513"></script>
 </body>
 </html>
