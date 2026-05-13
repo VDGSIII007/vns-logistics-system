@@ -3,6 +3,7 @@ const SHEET_NAME = "Saved_Repair_Labor_Requests";
 const FOR_REPAIR_SHEET_NAME = "For_Repair_Trucks";
 const COMPLETED_REPAIRS_SHEET_NAME = "Completed_Repairs";
 const LOG_SHEET_NAME = "Repair_Labor_Request_Status_Log";
+const FOR_REPAIR_TRUCK_LOG_SHEET_NAME = "For_Repair_Truck_Log";
 
 const REPAIR_REQUEST_HEADERS = [
   // Existing live columns. Keep this order so old sheet data stays aligned.
@@ -123,6 +124,25 @@ const COMPLETED_REPAIR_HEADERS = [
   "Remarks",
   "Created_At",
   "Updated_At"
+];
+
+const FOR_REPAIR_TRUCK_LOG_HEADERS = [
+  "Log_ID",
+  "For_Repair_ID",
+  "Plate_Number",
+  "Group_Category",
+  "Truck_Type",
+  "Garage_Location",
+  "Action",
+  "Old_Status",
+  "New_Status",
+  "Repair_Issue",
+  "Start_Date",
+  "Estimated_Finish_Date",
+  "End_Date",
+  "Remarks",
+  "Changed_By",
+  "Changed_At"
 ];
 
 function doPost(e) {
@@ -325,33 +345,70 @@ function saveCompletedRepair(record) {
 
 function saveForRepairTruck(record) {
   const sheet = ensureForRepairTrucksSheet_();
-  const logSheet = ensureStatusLogSheet_();
+  const truckLogSheet = ensureForRepairTruckLogSheet_();
   const headers = getHeaders_(sheet);
   const normalized = normalizeForRepairTruckRow_(record || {});
   const forRepairId = normalized.For_Repair_ID;
 
-  // Read old status before upsert so the log entry captures the transition.
   var oldStatus = "";
+  var isNew = true;
   var existingRow = findRowByKey_(sheet, headers, "For_Repair_ID", forRepairId);
+  var oldRepairIssue = "", oldGarageLocation = "", oldEstimatedFinishDate = "", oldEndDate = "", oldRemarks = "";
+
   if (existingRow > 0) {
-    oldStatus = getCellByHeader_(sheet, headers, existingRow, "Repair_Status");
+    isNew = false;
+    var oldRowValues = sheet.getRange(existingRow, 1, 1, headers.length).getValues()[0];
+    var getOld = function(header) {
+      var ci = headers.indexOf(header);
+      return ci >= 0 ? String(oldRowValues[ci] || "") : "";
+    };
+    oldStatus = getOld("Repair_Status");
+    oldRepairIssue = getOld("Repair_Issue");
+    oldGarageLocation = getOld("Garage_Location");
+    oldEstimatedFinishDate = getOld("Estimated_Finish_Date");
+    oldEndDate = getOld("End_Date");
+    oldRemarks = getOld("Remarks");
   }
 
   upsertByKey_(sheet, headers, "For_Repair_ID", normalized);
 
-  // Log only when status transitions into Completed (skip duplicate log entries).
   var newStatus = String(normalized.Repair_Status || "");
-  if (newStatus.toLowerCase() === "completed" && String(oldStatus).toLowerCase() !== "completed") {
-    appendStatusLog_(logSheet, {
-      linkedRepairId: "",
-      linkedForRepairId: forRepairId,
-      plateNumber: normalized.Plate_Number,
+  var now = new Date();
+
+  if (isNew) {
+    // Rule 1: new record
+    appendForRepairTruckLog_(truckLogSheet, normalized, {
+      action: "Add For Repair Truck",
+      oldStatus: "",
+      newStatus: newStatus,
+      changedAt: now
+    });
+  } else {
+    // Rule 2: existing record — log only if important fields changed
+    var statusChanged = oldStatus.toLowerCase() !== newStatus.toLowerCase();
+    var issueChanged = oldRepairIssue !== String(normalized.Repair_Issue || "");
+    var garageChanged = oldGarageLocation !== String(normalized.Garage_Location || "");
+    var estFinishChanged = oldEstimatedFinishDate !== String(normalized.Estimated_Finish_Date || "");
+    var endDateChanged = oldEndDate !== String(normalized.End_Date || "");
+    var remarksChanged = oldRemarks !== String(normalized.Remarks || "");
+
+    if (statusChanged || issueChanged || garageChanged || estFinishChanged || endDateChanged || remarksChanged) {
+      appendForRepairTruckLog_(truckLogSheet, normalized, {
+        action: "Update For Repair Truck",
+        oldStatus: oldStatus,
+        newStatus: newStatus,
+        changedAt: now
+      });
+    }
+  }
+
+  // Rule 3: Completed transition — guard against duplicate log on re-sync
+  if (newStatus.toLowerCase() === "completed" && oldStatus.toLowerCase() !== "completed") {
+    appendForRepairTruckLog_(truckLogSheet, normalized, {
+      action: "Complete For Repair Truck",
       oldStatus: oldStatus,
       newStatus: "Completed",
-      action: "Complete For Repair Truck",
-      remarks: normalized.Remarks || "",
-      changedBy: "Web User",
-      changedAt: new Date()
+      changedAt: now
     });
   }
 
@@ -368,7 +425,7 @@ function deleteForRepairTruck_(data) {
   }
 
   const sheet = ensureForRepairTrucksSheet_();
-  const logSheet = ensureStatusLogSheet_();
+  const truckLogSheet = ensureForRepairTruckLogSheet_();
   const headers = getHeaders_(sheet);
   const rowIndex = findRowByKey_(sheet, headers, "For_Repair_ID", forRepairId);
 
@@ -377,10 +434,17 @@ function deleteForRepairTruck_(data) {
   }
 
   const now = new Date();
-  const sheetStatus = getCellByHeader_(sheet, headers, rowIndex, "Repair_Status");
-  // Prefer the status captured by the frontend before local mutation; fall back to sheet value.
-  const oldStatus = String(data.oldStatus || "").trim() || String(sheetStatus || "");
-  const plateNumber = getCellByHeader_(sheet, headers, rowIndex, "Plate_Number");
+
+  // Read full old row for log context before mutation.
+  const oldRowValues = sheet.getRange(rowIndex, 1, 1, headers.length).getValues()[0];
+  const getOld = function(header) {
+    var ci = headers.indexOf(header);
+    return ci >= 0 ? String(oldRowValues[ci] || "") : "";
+  };
+
+  const sheetStatus = getOld("Repair_Status");
+  // Prefer status captured by frontend before local mutation; fall back to sheet value.
+  const oldStatus = String(data.oldStatus || "").trim() || sheetStatus;
   const deletedBy = String(data.deletedBy || "Web User");
   const deleteReason = String(data.deleteReason || "");
 
@@ -393,13 +457,22 @@ function deleteForRepairTruck_(data) {
   updateCellIfPresent_(sheet, headers, rowIndex, "Repair_Status", "Deleted");
   updateCellIfPresent_(sheet, headers, rowIndex, "Updated_At", now);
 
-  appendStatusLog_(logSheet, {
-    linkedRepairId: "",
-    linkedForRepairId: forRepairId,
-    plateNumber: plateNumber,
+  // Rule 4: append delete log to For_Repair_Truck_Log
+  appendForRepairTruckLog_(truckLogSheet, {
+    For_Repair_ID: forRepairId,
+    Plate_Number: getOld("Plate_Number"),
+    Group_Category: getOld("Group_Category"),
+    Truck_Type: getOld("Truck_Type"),
+    Garage_Location: getOld("Garage_Location"),
+    Repair_Issue: getOld("Repair_Issue"),
+    Start_Date: getOld("Start_Date"),
+    Estimated_Finish_Date: getOld("Estimated_Finish_Date"),
+    End_Date: getOld("End_Date"),
+    Remarks: getOld("Remarks")
+  }, {
+    action: "Delete For Repair Truck",
     oldStatus: oldStatus,
     newStatus: "Deleted",
-    action: "Delete For Repair Truck",
     remarks: deleteReason,
     changedBy: deletedBy,
     changedAt: now
@@ -510,6 +583,7 @@ function ensureRepairTabs_() {
   ensureForRepairTrucksSheet_();
   ensureCompletedRepairsSheet_();
   ensureStatusLogSheet_();
+  ensureForRepairTruckLogSheet_();
 }
 
 function ensureRepairSheet_() {
@@ -525,6 +599,11 @@ function ensureStatusLogSheet_() {
 function ensureForRepairTrucksSheet_() {
   const ss = getRepairSpreadsheet_();
   return ensureSheetHeaders_(ss, FOR_REPAIR_SHEET_NAME, FOR_REPAIR_HEADERS);
+}
+
+function ensureForRepairTruckLogSheet_() {
+  const ss = getRepairSpreadsheet_();
+  return ensureSheetHeaders_(ss, FOR_REPAIR_TRUCK_LOG_SHEET_NAME, FOR_REPAIR_TRUCK_LOG_HEADERS);
 }
 
 function ensureCompletedRepairsSheet_() {
@@ -712,6 +791,28 @@ function getCellByHeader_(sheet, headers, rowIndex, header) {
   return sheet.getRange(rowIndex, colIndex + 1).getValue();
 }
 
+function appendForRepairTruckLog_(sheet, normalized, opts) {
+  const headers = getHeaders_(sheet);
+  const row = {};
+  row.Log_ID = generateForRepairTruckLogId();
+  row.For_Repair_ID = String(normalized.For_Repair_ID || "");
+  row.Plate_Number = String(normalized.Plate_Number || "");
+  row.Group_Category = String(normalized.Group_Category || "");
+  row.Truck_Type = String(normalized.Truck_Type || "");
+  row.Garage_Location = String(normalized.Garage_Location || "");
+  row.Action = String(opts.action || "");
+  row.Old_Status = String(opts.oldStatus || "");
+  row.New_Status = String(opts.newStatus || "");
+  row.Repair_Issue = String(normalized.Repair_Issue || "");
+  row.Start_Date = normalized.Start_Date || "";
+  row.Estimated_Finish_Date = normalized.Estimated_Finish_Date || "";
+  row.End_Date = normalized.End_Date || "";
+  row.Remarks = opts.remarks !== undefined ? String(opts.remarks) : String(normalized.Remarks || "");
+  row.Changed_By = String(opts.changedBy || "Web User");
+  row.Changed_At = opts.changedAt || new Date();
+  sheet.appendRow(headers.map(function(h) { return row.hasOwnProperty(h) ? row[h] : ""; }));
+}
+
 function appendStatusLog_(sheet, entry) {
   const headers = getHeaders_(sheet);
   const row = {};
@@ -797,6 +898,17 @@ function generateForRepairId() {
 
 function generateStatusLogId() {
   return "RSL-" +
+    Utilities.formatDate(
+      new Date(),
+      "Asia/Manila",
+      "yyyyMMdd-HHmmss"
+    ) +
+    "-" +
+    Math.floor(Math.random() * 1000);
+}
+
+function generateForRepairTruckLogId() {
+  return "FRL-" +
     Utilities.formatDate(
       new Date(),
       "Asia/Manila",
