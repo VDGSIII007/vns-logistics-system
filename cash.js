@@ -87,15 +87,26 @@ function normalizePlate(value) {
   return String(value || "").replace(/\s+/g, "").toUpperCase();
 }
 
+function isNoPlateSelection(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return normalized === "no plate" || normalized === "no plate / not available" || normalized === "not available" || normalized === "n/a";
+}
+
+function getPlateInputValue(id) {
+  const value = $(id)?.value || "";
+  return isNoPlateSelection(value) ? "" : normalizePlate(value);
+}
+
 function normalizeGroup(value) {
   const raw = String(value || "").trim();
   const key = raw.toLowerCase().replace(/\s+/g, " ");
+  const compactKey = key.replace(/[^a-z0-9]/g, "");
   if (!key) return "Needs Update / Unknown";
-  if (key === "general" || key === "general / no plate" || key === "no plate") return "General / No Plate";
+  if (key === "general" || key === "general / no plate" || key === "no plate" || compactKey === "generalnoplate") return "General / No Plate";
   if (key === "bottle" || key === "bottles") return "Bottle";
   if (key === "sugar") return "Sugar";
-  if (key === "preform" || key === "resin" || key === "preform / resin") return "Preform / Resin";
-  if (key === "caps" || key === "crown" || key === "crowns" || key === "caps / crown" || key === "caps / crowns") return "Caps / Crown";
+  if (key === "preform" || key === "resin" || key === "preform / resin" || compactKey === "preformresin") return "Preform / Resin";
+  if (key === "caps" || key === "crown" || key === "crowns" || key === "caps / crown" || key === "caps / crowns" || compactKey === "capscrown" || compactKey === "capscrowns") return "Caps / Crown";
   if (key.includes("unknown") || key.includes("update")) return "Needs Update / Unknown";
   return raw;
 }
@@ -109,11 +120,11 @@ function getTruckGroup(truck) {
 }
 
 function getTruckDriver(truck) {
-  return String(truck?.Current_Driver_Name || truck?.Current_Driver || truck?.driverName || "").trim();
+  return String(truck?.Driver || truck?.Current_Driver_Name || truck?.Current_Driver || truck?.driverName || "").trim();
 }
 
 function getTruckHelper(truck) {
-  return String(truck?.Current_Helper_Name || truck?.Current_Helper || truck?.helperName || "").trim();
+  return String(truck?.Helper || truck?.Current_Helper_Name || truck?.Current_Helper || truck?.helperName || "").trim();
 }
 
 function findTruckByPlate(plate) {
@@ -121,10 +132,18 @@ function findTruckByPlate(plate) {
   return truckMasterCache.find(truck => getTruckPlate(truck) === normalized);
 }
 
+function getTrucksForGroup(group) {
+  if (!String(group || "").trim()) return truckMasterCache;
+  const normalizedGroup = normalizeGroup(group);
+  if (normalizedGroup === "General / No Plate") return [];
+  return truckMasterCache.filter(truck => getTruckGroup(truck) === normalizedGroup);
+}
+
 function loadLocalTruckMaster() {
   const trucks = readJson("vnsTruckMaster", []);
   truckMasterCache = Array.isArray(trucks) ? trucks : [];
-  renderTruckPlateDatalist();
+  renderTruckPlateDatalists();
+  refreshVisiblePlateGroups();
 }
 
 function fetchTruckMaster() {
@@ -136,33 +155,90 @@ function fetchTruckMaster() {
       const trucks = result?.trucks || result?.Truck_Master || [];
       if (result && result.ok && Array.isArray(trucks) && trucks.length) {
         truckMasterCache = trucks;
-        renderTruckPlateDatalist();
+        renderTruckPlateDatalists();
+        refreshVisiblePlateGroups();
       }
     })
     .catch(loadLocalTruckMaster);
 }
 
-function renderTruckPlateDatalist() {
-  const list = $("cash-truck-plates");
+function refreshVisiblePlateGroups() {
+  ["diesel", "budget", "bali"].forEach(prefix => {
+    renderTruckPlateDatalistForPrefix(prefix);
+    const input = $(`${prefix}-plate-number`);
+    if (input && input.value) {
+      if (isNoPlateSelection(input.value)) applyNoPlateToForm(prefix);
+      else applyTruckToForm(prefix);
+    }
+  });
+  renderTruckPlateDatalistForPrefix("filter");
+  renderSavedCashRecords();
+}
+
+function buildPlateOptions(plates, includeNoPlate = false) {
+  const options = plates.map(plate => `<option value="${escapeHtml(plate)}"></option>`);
+  return (includeNoPlate ? ['<option value="No Plate / Not Available"></option>'] : []).concat(options).join("");
+}
+
+function renderTruckPlateDatalists() {
+  ["diesel", "budget", "bali", "filter"].forEach(renderTruckPlateDatalistForPrefix);
+}
+
+function renderTruckPlateDatalistForPrefix(prefix) {
+  const listId = prefix === "filter" ? "cash-truck-plates" : `${prefix}-truck-plates`;
+  const list = $(listId);
   if (!list) return;
-  const plates = [...new Set(truckMasterCache.map(getTruckPlate).filter(Boolean))].sort();
-  list.innerHTML = plates.map(plate => `<option value="${escapeHtml(plate)}"></option>`).join("");
+  const groupValue = prefix === "filter" ? "" : $(`${prefix}-group-category`)?.value || "";
+  const plates = [...new Set(getTrucksForGroup(groupValue).map(getTruckPlate).filter(Boolean))].sort();
+  list.innerHTML = buildPlateOptions(plates, prefix === "bali" && normalizeGroup(groupValue) === "General / No Plate");
+}
+
+function applyNoPlateToForm(prefix) {
+  const plateInput = $(`${prefix}-plate-number`);
+  if (plateInput && prefix === "bali") plateInput.value = "No Plate / Not Available";
+  if (plateInput && prefix !== "bali") plateInput.value = "";
+  setGroupSelectValue(`${prefix}-group-category`, "General / No Plate");
+  renderTruckPlateDatalistForPrefix(prefix);
+}
+
+function applyGroupToPlateOptions(prefix) {
+  const plateInput = $(`${prefix}-plate-number`);
+  const groupEl = $(`${prefix}-group-category`);
+  if (!plateInput || !groupEl) return;
+  const selectedGroup = normalizeGroup(groupEl.value);
+  renderTruckPlateDatalistForPrefix(prefix);
+  if (isNoPlateSelection(plateInput.value) || selectedGroup === "General / No Plate") {
+    applyNoPlateToForm(prefix);
+    return;
+  }
+  const plate = normalizePlate(plateInput.value);
+  if (!plate) return;
+  const truck = findTruckByPlate(plate);
+  if (!truck || getTruckGroup(truck) !== selectedGroup) plateInput.value = "";
 }
 
 function applyTruckToForm(prefix) {
   const plateInput = $(`${prefix}-plate-number`);
-  if (!plateInput || !normalizePlate(plateInput.value)) {
-    setGroupSelectValue(`${prefix}-group-category`, "General / No Plate");
+  if (!plateInput || !normalizePlate(plateInput.value) || isNoPlateSelection(plateInput.value)) {
+    if (plateInput && isNoPlateSelection(plateInput.value)) {
+      applyNoPlateToForm(prefix);
+    }
     return;
   }
+  plateInput.value = normalizePlate(plateInput.value);
   const truck = findTruckByPlate(plateInput?.value);
-  if (!truck) return;
+  if (!truck) {
+    setGroupSelectValue(`${prefix}-group-category`, "Needs Update / Unknown");
+    renderTruckPlateDatalistForPrefix(prefix);
+    return;
+  }
   const groupEl = $(`${prefix}-group-category`);
   const driverEl = $(`${prefix}-driver-name`);
   const helperEl = $(`${prefix}-helper-name`);
   if (groupEl) setGroupSelectValue(groupEl.id, getTruckGroup(truck));
-  if (driverEl && !driverEl.value.trim()) driverEl.value = getTruckDriver(truck);
-  if (helperEl && !helperEl.value.trim()) helperEl.value = getTruckHelper(truck);
+  if (driverEl && getTruckDriver(truck)) driverEl.value = getTruckDriver(truck);
+  if (helperEl && getTruckHelper(truck)) helperEl.value = getTruckHelper(truck);
+  renderTruckPlateDatalistForPrefix(prefix);
 }
 
 function setGroupSelectValue(id, value) {
@@ -184,6 +260,12 @@ function populateCashRoleSelects() {
 function ensureNoPlateGroup(data) {
   if (!data.plateNumber) data.groupCategory = normalizeGroup(data.groupCategory || "General / No Plate");
   return data;
+}
+
+function resolveRecordGroup(record) {
+  if (!record.plateNumber) return "General / No Plate";
+  const truck = findTruckByPlate(record.plateNumber);
+  return truck ? getTruckGroup(truck) : normalizeGroup(record.groupCategory || "Needs Update / Unknown");
 }
 
 function resolveCashPerson(data) {
@@ -216,8 +298,8 @@ function getDieselPOFormData() {
     id: $("diesel-form").dataset.recordId || createId("diesel"),
     type: "Diesel PO",
     date: $("diesel-date").value,
-    plateNumber: normalizePlate($("diesel-plate-number").value),
-    groupCategory: normalizeGroup($("diesel-group-category").value),
+    plateNumber: getPlateInputValue("diesel-plate-number"),
+    groupCategory: resolveRecordGroup({ plateNumber: getPlateInputValue("diesel-plate-number"), groupCategory: $("diesel-group-category").value }),
     personName: $("diesel-person-name").value.trim(),
     personType: $("diesel-person-type").value,
     driverName: $("diesel-driver-name").value.trim(),
@@ -269,6 +351,7 @@ function clearDieselPOForm() {
   delete $("diesel-form").dataset.createdAt;
   $("diesel-message").value = "";
   setStatus("diesel-status", "");
+  renderTruckPlateDatalistForPrefix("diesel");
   applyDieselDepositState();
 }
 
@@ -298,6 +381,7 @@ function loadDieselPOToForm(record) {
   $("diesel-reference").value = record.reference || "";
   $("diesel-remarks").value = record.remarks || "";
   if (!record.groupCategory) applyTruckToForm("diesel");
+  renderTruckPlateDatalistForPrefix("diesel");
   applyDieselDepositState();
 }
 
@@ -346,8 +430,8 @@ function getBudgetFormData() {
     id: $("budget-form").dataset.recordId || createId("budget"),
     type: "Trip Budget",
     date: $("budget-date").value,
-    plateNumber: normalizePlate($("budget-plate-number").value),
-    groupCategory: normalizeGroup($("budget-group-category").value),
+    plateNumber: getPlateInputValue("budget-plate-number"),
+    groupCategory: resolveRecordGroup({ plateNumber: getPlateInputValue("budget-plate-number"), groupCategory: $("budget-group-category").value }),
     personName: $("budget-person-name").value.trim(),
     personType: $("budget-person-type").value,
     driverName: $("budget-driver-name").value.trim(),
@@ -395,6 +479,7 @@ function clearBudgetForm() {
   delete $("budget-form").dataset.createdAt;
   $("budget-message").value = "";
   setStatus("budget-status", "");
+  renderTruckPlateDatalistForPrefix("budget");
 }
 
 function loadBudgetToForm(record) {
@@ -411,6 +496,7 @@ function loadBudgetToForm(record) {
   setGroupSelectValue("budget-group-category", record.groupCategory || "");
   $("budget-status-field").value = record.status || "Draft";
   if (!record.groupCategory) applyTruckToForm("budget");
+  renderTruckPlateDatalistForPrefix("budget");
 }
 
 function generateBudgetViberMessage() {
@@ -447,8 +533,8 @@ function getBaliFormData() {
     id: $("bali-form").dataset.recordId || createId("bali"),
     type: "Bali / Cash Advance",
     date: $("bali-date").value,
-    plateNumber: normalizePlate($("bali-plate-number").value),
-    groupCategory: normalizeGroup($("bali-group-category").value),
+    plateNumber: getPlateInputValue("bali-plate-number"),
+    groupCategory: resolveRecordGroup({ plateNumber: getPlateInputValue("bali-plate-number"), groupCategory: $("bali-group-category").value }),
     driverName: $("bali-driver-name").value.trim(),
     helperName: $("bali-helper-name").value.trim(),
     personType: $("bali-person-type").value,
@@ -495,6 +581,7 @@ function clearBaliForm() {
   delete $("bali-form").dataset.createdAt;
   $("bali-message").value = "";
   setStatus("bali-status", "");
+  renderTruckPlateDatalistForPrefix("bali");
 }
 
 function loadBaliToForm(record) {
@@ -512,6 +599,11 @@ function loadBaliToForm(record) {
   setGroupSelectValue("bali-group-category", record.groupCategory || "");
   $("bali-status-field").value = record.status || "Draft";
   if (!record.groupCategory) applyTruckToForm("bali");
+  if (!record.plateNumber) {
+    $("bali-plate-number").value = "No Plate / Not Available";
+    setGroupSelectValue("bali-group-category", "General / No Plate");
+  }
+  renderTruckPlateDatalistForPrefix("bali");
 }
 
 function generateBaliViberMessage() {
@@ -552,7 +644,7 @@ function applySavedRecordFilters(records) {
   const type = $("filter-type").value;
   const group = $("filter-group")?.value || "";
   const plate = normalizePlate($("filter-plate").value);
-  return records.filter(record => (!from || record.date >= from) && (!to || record.date <= to) && (!type || record.type === type) && (!group || normalizeGroup(record.groupCategory) === group) && (!plate || normalizePlate(record.plateNumber).includes(plate)));
+  return records.filter(record => (!from || record.date >= from) && (!to || record.date <= to) && (!type || record.type === type) && (!group || resolveRecordGroup(record) === group) && (!plate || normalizePlate(record.plateNumber).includes(plate)));
 }
 
 function renderSavedCashRecords() {
@@ -560,7 +652,7 @@ function renderSavedCashRecords() {
   const rows = applySavedRecordFilters(getAllSavedCashRecords()).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   body.innerHTML = rows.length ? rows.map(record => {
     const amount = record.type === "Diesel PO" ? record.amount : record.type === "Trip Budget" ? record.budgetAmount : record.amount;
-    return `<tr><td>${escapeHtml(record.date || "")}</td><td>${escapeHtml(record.type)}</td><td>${escapeHtml(record.plateNumber || "No Plate")}</td><td>${escapeHtml(normalizeGroup(record.groupCategory || (record.plateNumber ? "" : "General / No Plate")))}</td><td>${formatCurrency(amount)}</td><td>${escapeHtml(record.receiverName || resolveCashPerson(record) || "")}</td><td>${escapeHtml(record.status || "")}</td><td class="cash-row-actions"><button data-action="load" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Load</button><button data-action="message" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Message</button><button data-action="delete" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Delete</button></td></tr>`;
+    return `<tr><td>${escapeHtml(record.date || "")}</td><td>${escapeHtml(record.type)}</td><td>${escapeHtml(record.plateNumber || "No Plate")}</td><td>${escapeHtml(resolveRecordGroup(record))}</td><td>${formatCurrency(amount)}</td><td>${escapeHtml(record.receiverName || resolveCashPerson(record) || "")}</td><td>${escapeHtml(record.status || "")}</td><td class="cash-row-actions"><button data-action="load" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Load</button><button data-action="message" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Message</button><button data-action="delete" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Delete</button></td></tr>`;
   }).join("") : '<tr><td colspan="8" class="empty">No saved local records found.</td></tr>';
 }
 
@@ -637,6 +729,8 @@ function wireEvents() {
   $("save-bali-button").addEventListener("click", saveBali); $("generate-bali-button").addEventListener("click", generateBaliViberMessage); $("copy-bali-button").addEventListener("click", copyBaliMessage); $("clear-bali-button").addEventListener("click", clearBaliForm);
   ["diesel", "budget", "bali"].forEach(prefix => {
     const plateInput = $(`${prefix}-plate-number`);
+    const groupInput = $(`${prefix}-group-category`);
+    if (groupInput) groupInput.addEventListener("change", () => applyGroupToPlateOptions(prefix));
     if (plateInput) {
       plateInput.addEventListener("change", () => applyTruckToForm(prefix));
       plateInput.addEventListener("blur", () => applyTruckToForm(prefix));
