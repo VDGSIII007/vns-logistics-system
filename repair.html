@@ -563,8 +563,19 @@
       <div class="nav-links" id="main-nav">
         <a href="index.html">Home</a>
         <a href="portal.html">System Portal</a>
-        <a href="repair.html" class="active-link">Repair & Maintenance</a>
-        <a href="parts-inventory.html">Parts Inventory</a>
+        <details class="nav-modules is-active">
+          <summary>Modules</summary>
+          <div class="nav-dropdown">
+            <a href="dispatch.html">Dispatch</a>
+            <a href="repair.html" class="active-link">Repair & Maintenance</a>
+            <a href="cash.html">Cash / PO / Bali</a>
+            <a href="parts-inventory.html">Parts Inventory</a>
+            <a href="tire-monitoring.html">Tire Monitoring</a>
+            <a href="expenses.html">Expenses</a>
+            <a href="payroll.html">Payroll</a>
+            <a href="master-data.html">Master Data</a>
+          </div>
+        </details>
         <a href="index.html#contact" class="nav-cta">Request Quote</a>
       </div>
     </nav>
@@ -577,6 +588,9 @@
           <p class="eyebrow">Repair & Maintenance</p>
           <h1>Repair & Maintenance Request Module</h1>
           <p>Paste messy Viber repair messages, parse request details, and generate finance-ready payment messages.</p>
+          <div class="module-header-action">
+            <a href="portal.html" class="btn btn-outline">Back to Portal</a>
+          </div>
         </div>
 
         <div class="repair-tabs" role="tablist" aria-label="Repair module sections">

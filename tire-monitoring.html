@@ -348,15 +348,23 @@
       outline: 2px solid #374151;
       outline-offset: -2px;
     }
+    .paper-cell.condition-green { background: #f0fdf4; color: #166534; }
+    .paper-cell.condition-orange { background: #fffbeb; color: #92400e; }
+    .paper-cell.condition-red { background: #fef2f2; color: #991b1b; }
+    .paper-cell.condition-gray { background: #f9fafb; color: #4b5563; }
     .paper-cell-status {
       width: 5px;
       height: 5px;
       border-radius: 50%;
       background: #d1d5db;
     }
-    .paper-cell.status-good .paper-cell-status { background: #16a34a; }
-    .paper-cell.status-monitor .paper-cell-status { background: #d97706; }
-    .paper-cell.status-replace .paper-cell-status { background: #dc2626; }
+    .paper-cell.status-good .paper-cell-status,
+    .paper-cell.condition-green .paper-cell-status { background: #16a34a; }
+    .paper-cell.status-monitor .paper-cell-status,
+    .paper-cell.condition-orange .paper-cell-status { background: #d97706; }
+    .paper-cell.status-replace .paper-cell-status,
+    .paper-cell.condition-red .paper-cell-status { background: #dc2626; }
+    .paper-cell.condition-gray .paper-cell-status { background: #9ca3af; }
     .paper-cell.status-spare .paper-cell-status { background: #2563eb; }
     .paper-cell.status-removed .paper-cell-status { background: #6b7280; }
     .paper-trailer-title {
@@ -456,6 +464,10 @@
     .tire-box.status-spare    { border-color: #2563eb; background: #eff6ff; }
     .tire-box.status-removed  { border-color: #6b7280; background: #f3f4f6; opacity: 0.65; }
     .tire-box.status-empty    { border-color: #d1d5db; background: #f9fafb; }
+    .tire-box.condition-green  { border-color: #16a34a; background: #f0fdf4; }
+    .tire-box.condition-orange { border-color: #d97706; background: #fffbeb; }
+    .tire-box.condition-red    { border-color: #dc2626; background: #fef2f2; }
+    .tire-box.condition-gray   { border-color: #9ca3af; background: #f9fafb; }
 
     .tire-box-pos {
       font-size: 0.65rem;
@@ -468,6 +480,10 @@
     .tire-box.status-monitor .tire-box-pos { color: #92400e; }
     .tire-box.status-replace .tire-box-pos { color: #991b1b; }
     .tire-box.status-spare   .tire-box-pos { color: #1d4ed8; }
+    .tire-box.condition-green  .tire-box-pos { color: #166534; }
+    .tire-box.condition-orange .tire-box-pos { color: #92400e; }
+    .tire-box.condition-red    .tire-box-pos { color: #991b1b; }
+    .tire-box.condition-gray   .tire-box-pos { color: #4b5563; }
 
     .tire-box-serial {
       font-size: 0.5rem;
@@ -503,6 +519,10 @@
     .tire-box.status-replace .tire-box-status-dot { background: #dc2626; }
     .tire-box.status-spare   .tire-box-status-dot { background: #2563eb; }
     .tire-box.status-removed .tire-box-status-dot { background: #6b7280; }
+    .tire-box.condition-green  .tire-box-status-dot { background: #16a34a; }
+    .tire-box.condition-orange .tire-box-status-dot { background: #d97706; }
+    .tire-box.condition-red    .tire-box-status-dot { background: #dc2626; }
+    .tire-box.condition-gray   .tire-box-status-dot { background: #9ca3af; }
 
     /* Dual tire pair */
     .tire-pair {
@@ -545,6 +565,43 @@
     .tld-spare   { border-color: #2563eb; background: #eff6ff; }
     .tld-removed { border-color: #6b7280; background: #f3f4f6; }
     .tld-empty   { border-color: #d1d5db; background: #f9fafb; }
+
+    .inspection-card {
+      margin-top: 1rem;
+      padding: 1rem;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .inspection-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.85rem;
+    }
+    .inspection-title {
+      font-size: 0.9rem;
+      font-weight: 900;
+      color: #111827;
+    }
+    .inspection-subtitle {
+      font-size: 0.76rem;
+      font-weight: 700;
+      color: #6b7280;
+      margin-top: 2px;
+    }
+    .inspection-quick {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+    }
+    .inspection-note {
+      min-height: 18px;
+      color: #92400e;
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
 
     /* ─── Forms ─── */
     .tire-form-grid {
@@ -801,6 +858,126 @@
     }
     #tire-toast.success { background: #065f46; }
     #tire-toast.error   { background: #991b1b; }
+
+    /* Shared UI polish overrides for the Tire Monitoring workspace */
+    .tire-page .master-header {
+      padding: 50px 0 24px;
+      background: linear-gradient(135deg, #fff 0%, #f8fafc 100%);
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .tire-page .master-header h1 {
+      font-size: clamp(2.25rem, 4.3vw, 4rem);
+      letter-spacing: -0.035em;
+    }
+    .tire-page .master-header p:last-child {
+      max-width: 760px;
+      font-size: 0.98rem;
+    }
+    .tire-workspace {
+      width: min(96vw, 1600px);
+      padding: 1.25rem 0 2.75rem;
+    }
+    .tire-kpi-row,
+    .inv-summary-row {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.85rem;
+    }
+    .tire-kpi-card {
+      min-width: 0;
+      min-height: 118px;
+      padding: 1rem;
+      border-radius: 16px;
+      box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+    }
+    .tire-kpi-value {
+      font-size: clamp(1.55rem, 3vw, 2rem);
+    }
+    .tire-kpi-label,
+    .tire-kpi-sub {
+      overflow-wrap: anywhere;
+    }
+    .tire-tabs {
+      width: 100%;
+      gap: 0.45rem;
+      padding: 0.5rem;
+      margin-bottom: 1rem;
+      border-radius: 18px;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+    }
+    .tire-tab-btn {
+      min-height: 42px;
+      padding: 0 15px;
+      border-radius: 12px;
+      white-space: normal;
+      text-align: center;
+    }
+    .tire-panel {
+      border-radius: 18px;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+    }
+    .tire-panel-head {
+      align-items: flex-start;
+      gap: 0.85rem;
+      padding: 1rem 1.15rem;
+    }
+    .tire-panel-head > div {
+      min-width: 0;
+      max-width: 100%;
+    }
+    .truck-selector-strip {
+      align-items: end;
+      gap: 0.7rem;
+      padding: 0.85rem;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+    }
+    .truck-selector-strip label {
+      margin-right: -0.2rem;
+      line-height: 1.2;
+    }
+    .truck-selector-strip select {
+      width: min(340px, 100%);
+      max-width: 100%;
+      min-height: 42px;
+      min-width: min(220px, 100%);
+      border-radius: 12px;
+    }
+    .tire-form-grid label,
+    .truck-selector-strip label {
+      min-width: 0;
+    }
+    .tire-form-grid input,
+    .tire-form-grid select,
+    .tire-form-grid textarea,
+    .tire-panel-head input,
+    .tire-panel-head select {
+      min-width: 0;
+      min-height: 40px;
+    }
+    @media (max-width: 760px) {
+      .tire-page .master-header {
+        padding: 38px 0 20px;
+      }
+      .tire-tabs {
+        align-items: stretch;
+      }
+      .tire-tab-btn {
+        flex: 1 1 170px;
+      }
+      .truck-selector-strip {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+      .truck-selector-strip select,
+      .truck-selector-strip .btn-tire-secondary {
+        width: 100%;
+      }
+      .tire-form-grid .wide-field {
+        grid-column: 1;
+      }
+    }
   </style>
 </head>
 <body class="tire-page">
@@ -811,9 +988,20 @@
       <div class="nav-links" id="main-nav">
         <a href="index.html">Home</a>
         <a href="portal.html">System Portal</a>
-        <a href="master-data.html">Master Data</a>
-        <a href="tire-monitoring.html" class="active-link">Tire Monitoring</a>
-        <a href="portal.html" class="nav-cta">Back to Portal</a>
+        <details class="nav-modules is-active">
+          <summary>Modules</summary>
+          <div class="nav-dropdown">
+            <a href="dispatch.html">Dispatch</a>
+            <a href="repair.html">Repair & Maintenance</a>
+            <a href="cash.html">Cash / PO / Bali</a>
+            <a href="parts-inventory.html">Parts Inventory</a>
+            <a href="tire-monitoring.html" class="active-link">Tire Monitoring</a>
+            <a href="expenses.html">Expenses</a>
+            <a href="payroll.html">Payroll</a>
+            <a href="master-data.html">Master Data</a>
+          </div>
+        </details>
+        <a href="index.html#contact" class="nav-cta">Request Quote</a>
       </div>
     </nav>
   </header>
@@ -823,6 +1011,9 @@
       <p class="eyebrow">Fleet Operations</p>
       <h1>Tire Monitoring</h1>
       <p>Tire lifecycle tracking for installations, inventory, truck layouts, history, and EcoVadis disposal records.</p>
+      <div class="module-header-action">
+        <a href="portal.html" class="btn btn-outline">Back to Portal</a>
+      </div>
     </div>
   </section>
 
@@ -904,12 +1095,74 @@
             </div>
           </div>
           <div class="tire-legend">
-            <div class="tire-legend-item"><div class="tire-legend-dot tld-good"></div> Good</div>
-            <div class="tire-legend-item"><div class="tire-legend-dot tld-monitor"></div> Monitor</div>
-            <div class="tire-legend-item"><div class="tire-legend-dot tld-replace"></div> Replace</div>
-            <div class="tire-legend-item"><div class="tire-legend-dot tld-spare"></div> Spare</div>
-            <div class="tire-legend-item"><div class="tire-legend-dot tld-removed"></div> Removed</div>
-            <div class="tire-legend-item"><div class="tire-legend-dot tld-empty"></div> No Data</div>
+            <div class="tire-legend-item"><div class="tire-legend-dot tld-good"></div> Good / Green</div>
+            <div class="tire-legend-item"><div class="tire-legend-dot tld-monitor"></div> Warning / Orange</div>
+            <div class="tire-legend-item"><div class="tire-legend-dot tld-replace"></div> Repair or Replace / Red</div>
+            <div class="tire-legend-item"><div class="tire-legend-dot tld-empty"></div> Unknown / Gray</div>
+          </div>
+          <div class="inspection-card">
+            <div class="inspection-head">
+              <div>
+                <div class="inspection-title" id="inspect-position-label">Select a tire position</div>
+                <div class="inspection-subtitle" id="inspect-serial">No tire selected</div>
+              </div>
+              <div class="inspection-quick">
+                <button class="btn-tire-secondary" type="button" id="inspect-good-btn">Mark Good</button>
+                <button class="btn-tire-secondary" type="button" id="inspect-warning-btn">Mark Warning</button>
+                <button class="btn-tire-secondary" type="button" id="inspect-repair-btn">Mark For Repair</button>
+                <button class="btn-tire-danger" type="button" id="inspect-replace-btn">Mark Replace</button>
+              </div>
+            </div>
+            <div class="tire-form-grid">
+              <label>
+                Inspection Date
+                <input type="date" id="inspect-date" />
+              </label>
+              <label>
+                Condition Status
+                <select id="inspect-condition">
+                  <option value="Good">Good</option>
+                  <option value="Warning">Warning</option>
+                  <option value="For Repair">For Repair</option>
+                  <option value="Replace">Replace</option>
+                  <option value="Unknown">Unknown</option>
+                </select>
+              </label>
+              <label>
+                Tread Check
+                <input type="text" id="inspect-tread" placeholder="e.g. ok, worn, piso test not safe" />
+              </label>
+              <label>
+                Damage Type
+                <input type="text" id="inspect-damage" placeholder="e.g. may tama, uneven wear" />
+              </label>
+              <label>
+                Action Needed
+                <input type="text" id="inspect-action" placeholder="Continue Use / Monitor / Repair / Replace" />
+              </label>
+              <label>
+                Next Check Date
+                <input type="date" id="inspect-next-check" />
+              </label>
+              <label>
+                Inspector Name
+                <input type="text" id="inspect-inspector" />
+              </label>
+              <label>
+                Photo Link
+                <input type="url" id="inspect-photo" placeholder="https://..." />
+              </label>
+              <label class="wide-field">
+                Remarks
+                <input type="text" id="inspect-remarks" />
+              </label>
+            </div>
+            <div class="inspection-note" id="inspect-note"></div>
+            <div class="tire-form-actions">
+              <button class="btn-tire-primary" type="button" id="inspect-save-btn">Save Inspection</button>
+              <button class="btn-tire-secondary" type="button" id="inspect-clear-btn">Clear</button>
+              <span class="tire-form-status" id="inspect-status"></span>
+            </div>
           </div>
         </div>
       </div>
@@ -986,10 +1239,10 @@
               Condition After
               <select id="chg-condition">
                 <option value="Good">Good</option>
-                <option value="Monitor">Monitor</option>
+                <option value="Warning">Warning</option>
+                <option value="For Repair">For Repair</option>
                 <option value="Replace">Replace</option>
-                <option value="Removed">Removed</option>
-                <option value="Spare">Spare</option>
+                <option value="Unknown">Unknown</option>
               </select>
             </label>
             <label>

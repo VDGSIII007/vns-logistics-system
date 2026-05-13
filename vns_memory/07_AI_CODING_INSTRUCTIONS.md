@@ -1,4 +1,4 @@
-# AI Coding Instructions
+﻿# AI Coding Instructions
 
 These instructions are for Codex, VS Code AI tools, Antigravity, local LLMs, and any future coding agent working on the VNS Logistics project.
 
@@ -61,6 +61,32 @@ Internal tools should be practical:
 - Export or copy options where useful
 - Mobile should not break, but desktop operations can be primary
 
+## Agent Workflow
+
+When planning or changing user-facing screens, include a dedicated **UI/UX Agent** in the workflow before implementation.
+
+### UI/UX Agent
+
+Purpose:
+
+- Review existing pages as practical VNS operations tools, not decorative demos.
+- Make the interface look more professional while preserving the flat HTML/CSS/JS structure.
+- Fix headers, module titles, navigation, cards, tables, forms, and buttons when they no longer fit their containers.
+- Check desktop and mobile layouts for wrapping, overflow, cramped spacing, and overlapping text.
+- Improve visual hierarchy, spacing, typography, alignment, status badges, and action placement.
+- Keep screens fast for dispatch, repair, payroll, cash, expenses, inventory, and management workflows.
+
+Required checks:
+
+- Header text and module titles must fit without clipping or awkward overflow.
+- Primary actions should be obvious and reachable.
+- Tables and forms should remain readable on smaller screens.
+- Shared styling should live in `styles.css` unless a page truly needs a local exception.
+- UI polish must not break existing JavaScript behavior, storage keys, exports, or Apps Script integration points.
+
+Handoff expectation:
+
+- The UI/UX Agent should identify affected files, summarize the visual fixes, and request browser verification after implementation.
 ## Data Guidelines
 
 Use consistent naming:
@@ -123,3 +149,4 @@ Preferred simple backend path:
 4. POST module records to Apps Script.
 5. Add CSV export as backup.
 6. Later consider authentication and a real database if needed.
+

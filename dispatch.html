@@ -1003,11 +1003,20 @@
       <div class="nav-links" id="main-nav">
         <a href="index.html">Home</a>
         <a href="portal.html">System Portal</a>
-        <a href="repair.html">Repair Module</a>
-        <a href="parts-inventory.html">Parts Inventory</a>
-        <a href="cash.html">Cash / PO / Bali</a>
-        <a href="dispatch.html" class="active-link">Dispatch</a>
-        <a href="portal.html" class="nav-cta">Portal</a>
+        <details class="nav-modules is-active">
+          <summary>Modules</summary>
+          <div class="nav-dropdown">
+            <a href="dispatch.html" class="active-link">Dispatch</a>
+            <a href="repair.html">Repair & Maintenance</a>
+            <a href="cash.html">Cash / PO / Bali</a>
+            <a href="parts-inventory.html">Parts Inventory</a>
+            <a href="tire-monitoring.html">Tire Monitoring</a>
+            <a href="expenses.html">Expenses</a>
+            <a href="payroll.html">Payroll</a>
+            <a href="master-data.html">Master Data</a>
+          </div>
+        </details>
+        <a href="index.html#contact" class="nav-cta">Request Quote</a>
       </div>
     </nav>
   </header>
@@ -1022,6 +1031,7 @@
       </div>
       <div class="dispatch-banner-right">
         <span class="data-status-badge dsb-loading" id="data-status-badge">Loading…</span>
+        <a href="portal.html" class="dbtn dbtn-dark">Back to Portal</a>
         <button class="dbtn dbtn-dark" onclick="refreshDispatchDashboard()">↻ Refresh</button>
       </div>
     </div>
