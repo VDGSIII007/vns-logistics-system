@@ -29,7 +29,11 @@ const TIRE_CHANGE_HEADERS = [
 const TIRE_POSITION_HEADERS = [
   "Position_ID","Plate_Number","Truck_Type","Truck_Make","Tire_Position",
   "Current_Tire_Serial","Brand","Tire_Size","Status","Installed_Date",
-  "Odometer_Installed","Updated_At"
+  "Odometer_Installed","Updated_At",
+  "Inspection_Date","Condition_Status","Condition_Color","Tread_Check",
+  "Damage_Type","Action_Needed","Next_Check_Date","Inspector_Name",
+  "Photo_Link","Replacement_Required","Repair_Required","Removed_Tire_Serial",
+  "Replacement_Tire_Serial","Remarks"
 ];
 
 const TIRE_DISPOSAL_HEADERS = [

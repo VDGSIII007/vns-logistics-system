@@ -70,8 +70,8 @@ function toTireChangeLogRecord(r) {
     Truck_Make: '',
     Tire_Position: r.position || '',
     Action_Type: r.action || '',
-    Old_Tire_Serial: '',
-    New_Tire_Serial: r.serial || '',
+    Old_Tire_Serial: r.oldSerial || '',
+    New_Tire_Serial: r.newSerial || r.serial || '',
     Brand: r.brand || '',
     Tire_Size: r.size || '',
     Reason: r.condition || '',
@@ -102,6 +102,40 @@ function toTireDisposalRecord(r) {
     Disposed_By: r.disposedBy || '',
     Remarks: r.remarks || '',
     Encoded_At: r.createdAt || ''
+  };
+}
+
+function toTirePositionRecord(plate, position, info) {
+  const trucks = getTrucks();
+  const truck = findTruckByPlate(trucks, plate);
+  const condition = getConditionInfo(info);
+  return {
+    Position_ID: normalizePlate(plate) + '-' + position,
+    Plate_Number: normalizePlate(plate),
+    Truck_Type: getTruckTypeKey(truck) || '',
+    Truck_Make: getTruckMake(truck) || '',
+    Tire_Position: position || '',
+    Current_Tire_Serial: info.serial || info.Current_Tire_Serial || '',
+    Brand: info.brand || info.Brand || '',
+    Tire_Size: info.size || info.Tire_Size || '',
+    Status: condition.status,
+    Installed_Date: info.installedDate || info.Installed_Date || '',
+    Odometer_Installed: info.odometerInstalled || info.Odometer_Installed || '',
+    Updated_At: info.updatedAt || info.Updated_At || new Date().toISOString(),
+    Inspection_Date: info.inspectionDate || info.Inspection_Date || '',
+    Condition_Status: condition.status,
+    Condition_Color: condition.color,
+    Tread_Check: info.treadCheck || info.Tread_Check || '',
+    Damage_Type: info.damageType || info.Damage_Type || '',
+    Action_Needed: info.actionNeeded || info.Action_Needed || condition.action,
+    Next_Check_Date: info.nextCheckDate || info.Next_Check_Date || '',
+    Inspector_Name: info.inspectorName || info.Inspector_Name || '',
+    Photo_Link: info.photoLink || info.Photo_Link || '',
+    Replacement_Required: info.replacementRequired || info.Replacement_Required || (condition.status === 'Replace' ? 'Yes' : ''),
+    Repair_Required: info.repairRequired || info.Repair_Required || (condition.status === 'For Repair' ? 'Yes' : ''),
+    Removed_Tire_Serial: info.removedTireSerial || info.Removed_Tire_Serial || '',
+    Replacement_Tire_Serial: info.replacementTireSerial || info.Replacement_Tire_Serial || '',
+    Remarks: info.remarks || info.Remarks || ''
   };
 }
 
@@ -244,6 +278,9 @@ function getTruckPlate(truck) {
 function getTruckTypeKey(truck) {
   return String(truck?.Truck_Type || truck?.truckType || '').trim();
 }
+function getTruckMake(truck) {
+  return String(truck?.Truck_Make || truck?.truckMake || '').trim();
+}
 function getTruckGroup(truck) {
   return String(truck?.Group_Category || truck?.groupCategory || '').trim() || 'Unknown / Needs Update';
 }
@@ -284,7 +321,10 @@ function uid() {
 const STATUS_CSS = {
   'Good':        'tsb-good',
   'Monitor':     'tsb-monitor',
+  'Warning':     'tsb-monitor',
+  'For Repair':  'tsb-replace',
   'Replace':     'tsb-replace',
+  'Unknown':     'tsb-removed',
   'Spare':       'tsb-spare',
   'Removed':     'tsb-removed',
   'For Disposal':'tsb-disposal',
@@ -298,6 +338,48 @@ function statusBadge(status) {
 }
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+const CONDITION_RULES = {
+  'Good':       { status: 'Good',       color: 'Green',  action: 'Continue Use',       css: 'condition-green' },
+  'Warning':    { status: 'Warning',    color: 'Orange', action: 'Monitor',            css: 'condition-orange' },
+  'For Repair': { status: 'For Repair', color: 'Red',    action: 'Vulcanize / Repair', colorCss: 'condition-red', css: 'condition-red' },
+  'Replace':    { status: 'Replace',    color: 'Red',    action: 'Replace Tire',       css: 'condition-red' },
+  'Unknown':    { status: 'Unknown',    color: 'Gray',   action: 'Inspect',            css: 'condition-gray' },
+};
+let selectedInspection = null;
+
+function normalizeConditionStatus(status, info = {}) {
+  const raw = String(status || info.Condition_Status || info.conditionStatus || info.status || '').trim();
+  if (!raw || raw === 'empty') return info.serial ? 'Unknown' : 'Unknown';
+  const lower = raw.toLowerCase();
+  if (lower === 'monitor' || lower === 'warning') return 'Warning';
+  if (lower === 'for repair' || lower === 'repair') return 'For Repair';
+  if (lower === 'replace' || lower === 'for replacement') return 'Replace';
+  if (lower === 'good' || lower === 'installed' || lower === 'spare') return 'Good';
+  return 'Unknown';
+}
+
+function getConditionInfo(info = {}) {
+  const status = normalizeConditionStatus(info.Condition_Status || info.conditionStatus || info.status, info);
+  const rule = CONDITION_RULES[status] || CONDITION_RULES.Unknown;
+  return {
+    status: rule.status,
+    color: info.Condition_Color || info.conditionColor || rule.color,
+    action: info.Action_Needed || info.actionNeeded || rule.action,
+    css: rule.css
+  };
+}
+
+function applyConditionToPosition(info, status) {
+  const rule = CONDITION_RULES[normalizeConditionStatus(status)] || CONDITION_RULES.Unknown;
+  info.status = rule.status;
+  info.conditionStatus = rule.status;
+  info.conditionColor = rule.color;
+  info.actionNeeded = rule.action;
+  info.replacementRequired = rule.status === 'Replace' ? 'Yes' : '';
+  info.repairRequired = rule.status === 'For Repair' ? 'Yes' : '';
+  return info;
 }
 
 /* ─── Toast ────────────────────────────────────── */
@@ -514,15 +596,14 @@ function buildPaperSide(title, rows, truckPos, plate) {
 
 function buildPaperCell(pos, truckPos, plate) {
   const info = truckPos[pos] || {};
-  const status = info.status || 'empty';
+  const condition = getConditionInfo(info);
   const serial = info.serial || '';
-  const statusClass = 'status-' + status.toLowerCase().replace(/\s+/g, '');
   const cell = document.createElement('button');
   cell.type = 'button';
-  cell.className = 'paper-cell ' + statusClass;
-  cell.title = `Position ${pos}${serial ? ' | ' + serial : ''}${status ? ' | ' + status : ''}`;
+  cell.className = 'paper-cell ' + condition.css;
+  cell.title = `Position ${pos}${serial ? ' | ' + serial : ''} | ${condition.status}`;
   cell.innerHTML = `<span>${esc(pos)}</span><span class="paper-cell-status"></span>`;
-  cell.addEventListener('click', () => openChangeTabForPosition(plate, pos, info));
+  cell.addEventListener('click', () => selectInspectionPosition(plate, pos, info));
   return cell;
 }
 
@@ -588,14 +669,13 @@ function buildSideBox(positions, truckPos, plate) {
 
 function buildTireBox(pos, truckPos, plate) {
   const info   = truckPos[pos] || {};
-  const status = info.status || 'empty';
+  const condition = getConditionInfo(info);
   const serial = info.serial || '';
   const brand  = info.brand  || '';
 
   const box = document.createElement('div');
-  const statusClass = 'status-' + status.toLowerCase().replace(/\s+/g, '');
-  box.className = 'tire-box ' + statusClass;
-  box.title = `Position ${pos}${serial ? ' | ' + serial : ''}${brand ? ' | ' + brand : ''}${status ? ' | ' + status : ''}`;
+  box.className = 'tire-box ' + condition.css;
+  box.title = `Position ${pos}${serial ? ' | ' + serial : ''}${brand ? ' | ' + brand : ''} | ${condition.status}`;
 
   box.innerHTML = `
     <div class="tire-box-pos">${esc(pos)}</div>
@@ -604,24 +684,7 @@ function buildTireBox(pos, truckPos, plate) {
     <div class="tire-box-brand">${esc(brand || '')}</div>
   `;
 
-  box.addEventListener('click', () => {
-    // Switch to Change tab, pre-fill plate and position
-    document.querySelectorAll('.tire-tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tire-tab-panel').forEach(p => p.classList.remove('active'));
-    document.querySelector('[data-tab="change"]').classList.add('active');
-    document.getElementById('tab-change').classList.add('active');
-    renderChangeTab();
-    setTimeout(() => {
-      const plateSel = document.getElementById('chg-plate');
-      plateSel.value = plate;
-      populatePositionSelect('chg-position', plate);
-      populatePositionSelect('chg-to-position', plate);
-      document.getElementById('chg-position').value = pos;
-      if (serial) document.getElementById('chg-serial').value = serial;
-      if (brand)  document.getElementById('chg-brand').value  = brand;
-      if (info.size) document.getElementById('chg-size').value = info.size;
-    }, 50);
-  });
+  box.addEventListener('click', () => selectInspectionPosition(plate, pos, info));
 
   return box;
 }
@@ -629,6 +692,152 @@ function buildTireBox(pos, truckPos, plate) {
 /* ══════════════════════════════════════════════════
    TAB 2 — TIRE CHANGE / INSTALLATION
 ══════════════════════════════════════════════════ */
+function selectInspectionPosition(plate, position, info = {}) {
+  const normalizedPlate = normalizePlate(plate);
+  const condition = getConditionInfo(info);
+  selectedInspection = { plate: normalizedPlate, position };
+  document.getElementById('inspect-position-label').textContent = normalizedPlate + ' / Position ' + position;
+  document.getElementById('inspect-serial').textContent = info.serial || 'No tire serial';
+  document.getElementById('inspect-date').value = info.inspectionDate || info.Inspection_Date || new Date().toISOString().split('T')[0];
+  document.getElementById('inspect-condition').value = condition.status;
+  document.getElementById('inspect-tread').value = info.treadCheck || info.Tread_Check || '';
+  document.getElementById('inspect-damage').value = info.damageType || info.Damage_Type || '';
+  document.getElementById('inspect-action').value = info.actionNeeded || info.Action_Needed || condition.action;
+  document.getElementById('inspect-next-check').value = info.nextCheckDate || info.Next_Check_Date || '';
+  document.getElementById('inspect-inspector').value = info.inspectorName || info.Inspector_Name || '';
+  document.getElementById('inspect-photo').value = info.photoLink || info.Photo_Link || '';
+  document.getElementById('inspect-remarks').value = info.remarks || info.Remarks || '';
+  updateInspectionNote(info, condition.status);
+}
+
+function updateInspectionNote(info = {}, status) {
+  const note = document.getElementById('inspect-note');
+  if (!note) return;
+  const installedDate = info.installedDate || info.Installed_Date || '';
+  note.textContent = status === 'Good' && !installedDate ? 'Existing tire / install date unknown' : '';
+}
+
+function getSelectedPositionInfo() {
+  if (!selectedInspection) return {};
+  const posStatus = getPositionStatus();
+  return posStatus[selectedInspection.plate]?.[selectedInspection.position] || {};
+}
+
+function setInspectionCondition(status) {
+  const rule = CONDITION_RULES[normalizeConditionStatus(status)] || CONDITION_RULES.Unknown;
+  document.getElementById('inspect-condition').value = rule.status;
+  document.getElementById('inspect-action').value = rule.action;
+  updateInspectionNote(getSelectedPositionInfo(), rule.status);
+  if (rule.status === 'Replace') saveInspection(true);
+}
+
+function saveInspection(promptReplacement = false) {
+  const statusEl = document.getElementById('inspect-status');
+  if (!selectedInspection) {
+    statusEl.textContent = 'Select a tire position first.';
+    statusEl.className = 'tire-form-status error';
+    return;
+  }
+
+  const posStatus = getPositionStatus();
+  const plate = selectedInspection.plate;
+  const position = selectedInspection.position;
+  if (!posStatus[plate]) posStatus[plate] = {};
+  const existing = posStatus[plate][position] || {};
+  const rule = CONDITION_RULES[normalizeConditionStatus(document.getElementById('inspect-condition').value)] || CONDITION_RULES.Unknown;
+  const now = new Date().toISOString();
+
+  const updated = applyConditionToPosition({
+    ...existing,
+    inspectionDate: document.getElementById('inspect-date').value,
+    treadCheck: document.getElementById('inspect-tread').value.trim(),
+    damageType: document.getElementById('inspect-damage').value.trim(),
+    actionNeeded: document.getElementById('inspect-action').value.trim() || rule.action,
+    nextCheckDate: document.getElementById('inspect-next-check').value,
+    inspectorName: document.getElementById('inspect-inspector').value.trim(),
+    photoLink: document.getElementById('inspect-photo').value.trim(),
+    remarks: document.getElementById('inspect-remarks').value.trim(),
+    updatedAt: now
+  }, rule.status);
+
+  if (rule.status === 'Replace' && promptReplacement) {
+    const replacementSerial = prompt('Replacement tire serial:');
+    if (replacementSerial && replacementSerial.trim()) {
+      handleTireReplacement(plate, position, updated, replacementSerial.trim());
+      return;
+    }
+  }
+
+  posStatus[plate][position] = updated;
+  savePositionStatus(posStatus);
+  statusEl.textContent = 'Inspection saved. Syncing...';
+  statusEl.className = 'tire-form-status';
+  syncTireRecord('saveTirePosition', toTirePositionRecord(plate, position, updated), statusEl);
+  renderSchematic(plate, null);
+  updateKPIs();
+  showToast('Inspection saved.', 'success');
+}
+
+function handleTireReplacement(plate, position, info, replacementSerial) {
+  const posStatus = getPositionStatus();
+  if (!posStatus[plate]) posStatus[plate] = {};
+  const oldSerial = info.serial || '';
+  const today = new Date().toISOString().split('T')[0];
+  const now = new Date().toISOString();
+  const updated = applyConditionToPosition({
+    ...info,
+    serial: replacementSerial,
+    installedDate: today,
+    inspectionDate: info.inspectionDate || today,
+    removedTireSerial: oldSerial,
+    replacementTireSerial: replacementSerial,
+    updatedAt: now
+  }, 'Good');
+
+  posStatus[plate][position] = updated;
+  savePositionStatus(posStatus);
+
+  const changeRecord = {
+    id: uid(), date: today, plate, action: 'Replaced', position,
+    oldSerial, newSerial: replacementSerial, serial: replacementSerial,
+    brand: updated.brand || '', size: updated.size || '',
+    condition: 'Replace / damaged / worn',
+    performedBy: updated.inspectorName || '',
+    remarks: updated.remarks || 'Replacement from tire inspection board.',
+    createdAt: now
+  };
+  const logs = getChangeLogs();
+  logs.push(changeRecord);
+  saveChangeLogs(logs);
+  if (oldSerial) markInventoryStatus(oldSerial, 'For Disposal', plate);
+  markInventoryStatus(replacementSerial, 'Installed', plate);
+
+  const statusEl = document.getElementById('inspect-status');
+  statusEl.textContent = 'Replacement saved. Syncing...';
+  statusEl.className = 'tire-form-status';
+  syncTireRecord('saveTireChangeLog', toTireChangeLogRecord(changeRecord), statusEl);
+  syncTireRecord('saveTirePosition', toTirePositionRecord(plate, position, updated));
+
+  if (oldSerial && confirm('Mark removed tire for disposal log now?')) {
+    const disposal = {
+      id: uid(), date: today, serial: oldSerial, brand: info.brand || '',
+      size: info.size || '', plate, reason: 'Replace / damaged / worn',
+      recycler: '', certNo: '', disposedBy: updated.inspectorName || '',
+      remarks: 'Prepared from tire replacement inspection.', createdAt: now
+    };
+    const disposals = getDisposalLogs();
+    disposals.push(disposal);
+    saveDisposalLogs(disposals);
+    syncTireRecord('saveTireDisposal', toTireDisposalRecord(disposal));
+  }
+
+  selectInspectionPosition(plate, position, updated);
+  renderSchematic(plate, null);
+  renderChangeLogTable();
+  updateKPIs();
+  showToast('Replacement saved. Position is now Good.', 'success');
+}
+
 function renderChangeTab() {
   populateTruckSelects();
   renderChangeLogTable();
@@ -779,19 +988,23 @@ function updatePositionStatus(record) {
   const posStatus = getPositionStatus();
   const normalizedPlate = normalizePlate(record.plate);
   if (!posStatus[normalizedPlate]) posStatus[normalizedPlate] = {};
-
-  const trucks   = getTrucks();
-  const truck    = findTruckByPlate(trucks, normalizedPlate);
+  const now = new Date().toISOString();
 
   if (record.action === 'Install') {
-    posStatus[normalizedPlate][record.position] = {
+    posStatus[normalizedPlate][record.position] = applyConditionToPosition({
       serial: record.serial, brand: record.brand,
-      size: record.size, status: record.condition,
-    };
+      size: record.size, installedDate: record.date,
+      inspectionDate: record.date, inspectorName: record.performedBy,
+      remarks: record.remarks, updatedAt: now
+    }, record.condition);
     // Mark inventory tire as Installed
     markInventoryStatus(record.serial, 'Installed', normalizedPlate);
   } else if (record.action === 'Remove') {
-    posStatus[normalizedPlate][record.position] = { serial: '', brand: '', size: '', status: 'empty' };
+    posStatus[normalizedPlate][record.position] = applyConditionToPosition({
+      serial: '', brand: '', size: '',
+      inspectionDate: record.date, inspectorName: record.performedBy,
+      remarks: record.remarks, updatedAt: now
+    }, 'Unknown');
     // Mark inventory tire as Returned
     markInventoryStatus(record.serial, 'Returned', '');
   } else if (record.action === 'Rotate' || record.action === 'Swap') {
@@ -803,24 +1016,30 @@ function updatePositionStatus(record) {
     }
     // Update condition
     if (record.position) {
-      posStatus[normalizedPlate][record.position] = {
+      posStatus[normalizedPlate][record.position] = applyConditionToPosition({
         ...(posStatus[normalizedPlate][record.position] || {}),
-        status: record.condition,
-      };
+        inspectionDate: record.date,
+        inspectorName: record.performedBy,
+        remarks: record.remarks,
+        updatedAt: now
+      }, record.condition);
     }
   } else {
     // Generic update
-    if (posStatus[record.plate][record.position]) {
-      posStatus[record.plate][record.position].status = record.condition;
-    } else {
-      posStatus[record.plate][record.position] = {
-        serial: record.serial, brand: record.brand,
-        size: record.size, status: record.condition,
-      };
-    }
+    posStatus[normalizedPlate][record.position] = applyConditionToPosition({
+      ...(posStatus[normalizedPlate][record.position] || {}),
+      serial: record.serial, brand: record.brand,
+      size: record.size, inspectionDate: record.date,
+      inspectorName: record.performedBy,
+      remarks: record.remarks,
+      updatedAt: now
+    }, record.condition);
   }
 
   savePositionStatus(posStatus);
+  if (record.position && posStatus[normalizedPlate][record.position]) {
+    syncTireRecord('saveTirePosition', toTirePositionRecord(normalizedPlate, record.position, posStatus[normalizedPlate][record.position]));
+  }
 }
 
 function markInventoryStatus(serial, status, assignedPlate) {
@@ -1192,9 +1411,10 @@ function updateKPIs() {
   let good = 0, monitor = 0, replace = 0;
   Object.values(posStatus).forEach(truckPos => {
     Object.values(truckPos).forEach(pos => {
-      if (pos.status === 'Good')    good++;
-      if (pos.status === 'Monitor') monitor++;
-      if (pos.status === 'Replace') replace++;
+      const condition = getConditionInfo(pos).status;
+      if (condition === 'Good') good++;
+      if (condition === 'Warning') monitor++;
+      if (condition === 'For Repair' || condition === 'Replace') replace++;
     });
   });
 
@@ -1269,6 +1489,29 @@ document.addEventListener('DOMContentLoaded', () => {
     if (plate) renderSchematic(plate, null);
   });
   document.getElementById('layout-group-select').addEventListener('change', renderLayoutTab);
+  document.getElementById('inspect-good-btn').addEventListener('click', () => setInspectionCondition('Good'));
+  document.getElementById('inspect-warning-btn').addEventListener('click', () => setInspectionCondition('Warning'));
+  document.getElementById('inspect-repair-btn').addEventListener('click', () => setInspectionCondition('For Repair'));
+  document.getElementById('inspect-replace-btn').addEventListener('click', () => setInspectionCondition('Replace'));
+  document.getElementById('inspect-save-btn').addEventListener('click', () => {
+    saveInspection(document.getElementById('inspect-condition').value === 'Replace');
+  });
+  document.getElementById('inspect-clear-btn').addEventListener('click', () => {
+    selectedInspection = null;
+    document.getElementById('inspect-position-label').textContent = 'Select a tire position';
+    document.getElementById('inspect-serial').textContent = 'No tire selected';
+    ['inspect-date','inspect-tread','inspect-damage','inspect-action','inspect-next-check','inspect-inspector','inspect-photo','inspect-remarks'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('inspect-condition').value = 'Unknown';
+    document.getElementById('inspect-note').textContent = '';
+    document.getElementById('inspect-status').textContent = '';
+  });
+  document.getElementById('inspect-condition').addEventListener('change', function () {
+    const rule = CONDITION_RULES[normalizeConditionStatus(this.value)] || CONDITION_RULES.Unknown;
+    document.getElementById('inspect-action').value = rule.action;
+    updateInspectionNote(getSelectedPositionInfo(), rule.status);
+  });
 
   /* ── Change tab ── */
   document.getElementById('chg-plate').addEventListener('change', function () {
