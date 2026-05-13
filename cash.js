@@ -12,31 +12,32 @@ function cashPost(payload) {
 }
 
 function toCashSheetRecord(record) {
+  const clean = ensureNoPlateGroup({ ...record });
   return {
-    Cash_ID: record.id,
-    Date: record.date || '',
+    Cash_ID: clean.id,
+    Date: clean.date || '',
     Time: '',
-    Sender: record.plateNumber || '',
-    Plate_Number: record.plateNumber || '',
-    Group_Category: record.groupCategory || '',
-    Transaction_Type: record.type || '',
-    Person_Name: record.personName || record.driverName || record.receiverName || '',
-    Role: record.personType || '',
-    GCash_Number: record.depositNumber || '',
-    Amount: String(record.amount || record.budgetAmount || 0),
-    PO_Number: record.poNumber || record.shipmentNumber || '',
-    Liters: String(record.liters || ''),
-    Fuel_Station: record.fuelStation || '',
+    Sender: clean.plateNumber || '',
+    Plate_Number: clean.plateNumber || '',
+    Group_Category: clean.groupCategory || '',
+    Transaction_Type: clean.type || '',
+    Person_Name: resolveCashPerson(clean),
+    Role: resolveCashRole(clean),
+    GCash_Number: clean.depositNumber || '',
+    Amount: String(clean.amount || clean.budgetAmount || 0),
+    PO_Number: clean.poNumber || clean.shipmentNumber || '',
+    Liters: String(clean.liters || ''),
+    Fuel_Station: clean.fuelStation || '',
     Route: record.route || (record.source && record.destination ? record.source + ' → ' + record.destination : ''),
     Balance_After_Payroll: '',
-    Review_Status: record.status || '',
+    Review_Status: clean.status || '',
     Encoded_By: '',
-    Remarks: record.remarks || record.reason || '',
-    Created_At: record.createdAt || '',
-    Updated_At: record.updatedAt || '',
-    Deleted_At: record.deletedAt || '',
-    Deleted_By: record.deletedBy || '',
-    Is_Deleted: record.isDeleted ? 'TRUE' : ''
+    Remarks: clean.remarks || clean.reason || '',
+    Created_At: clean.createdAt || '',
+    Updated_At: clean.updatedAt || '',
+    Deleted_At: clean.deletedAt || '',
+    Deleted_By: clean.deletedBy || '',
+    Is_Deleted: clean.isDeleted ? 'TRUE' : ''
   };
 }
 
@@ -51,6 +52,7 @@ const DIESEL_KEY = "vnsDieselPOEntries";
 const BUDGET_KEY = "vnsTripBudgets";
 const BALI_KEY = "vnsBaliCashAdvances";
 let truckMasterCache = [];
+const CASH_ROLE_OPTIONS = ["Driver", "Helper", "Mechanic", "Tireman", "Dispatcher", "Shop / Supplier", "Office", "Other"];
 
 function $(id) { return document.getElementById(id); }
 
@@ -89,6 +91,7 @@ function normalizeGroup(value) {
   const raw = String(value || "").trim();
   const key = raw.toLowerCase().replace(/\s+/g, " ");
   if (!key) return "Needs Update / Unknown";
+  if (key === "general" || key === "general / no plate" || key === "no plate") return "General / No Plate";
   if (key === "bottle" || key === "bottles") return "Bottle";
   if (key === "sugar") return "Sugar";
   if (key === "preform" || key === "resin" || key === "preform / resin") return "Preform / Resin";
@@ -148,6 +151,10 @@ function renderTruckPlateDatalist() {
 
 function applyTruckToForm(prefix) {
   const plateInput = $(`${prefix}-plate-number`);
+  if (!plateInput || !normalizePlate(plateInput.value)) {
+    setGroupSelectValue(`${prefix}-group-category`, "General / No Plate");
+    return;
+  }
   const truck = findTruckByPlate(plateInput?.value);
   if (!truck) return;
   const groupEl = $(`${prefix}-group-category`);
@@ -164,6 +171,27 @@ function setGroupSelectValue(id, value) {
   const normalized = normalizeGroup(value);
   const option = Array.from(el.options).find(opt => opt.value === normalized || opt.textContent === normalized);
   el.value = option ? option.value : "";
+}
+
+function populateCashRoleSelects() {
+  document.querySelectorAll(".cash-role-select").forEach(select => {
+    const current = select.value;
+    select.innerHTML = CASH_ROLE_OPTIONS.map(role => `<option>${escapeHtml(role)}</option>`).join("");
+    select.value = current && CASH_ROLE_OPTIONS.includes(current) ? current : "Driver";
+  });
+}
+
+function ensureNoPlateGroup(data) {
+  if (!data.plateNumber) data.groupCategory = normalizeGroup(data.groupCategory || "General / No Plate");
+  return data;
+}
+
+function resolveCashPerson(data) {
+  return String(data.personName || data.driverName || data.receiverName || "").trim();
+}
+
+function resolveCashRole(data) {
+  return String(data.personType || "").trim();
 }
 
 function escapeHtml(value) {
@@ -190,6 +218,8 @@ function getDieselPOFormData() {
     date: $("diesel-date").value,
     plateNumber: normalizePlate($("diesel-plate-number").value),
     groupCategory: normalizeGroup($("diesel-group-category").value),
+    personName: $("diesel-person-name").value.trim(),
+    personType: $("diesel-person-type").value,
     driverName: $("diesel-driver-name").value.trim(),
     helperName: $("diesel-helper-name").value.trim(),
     fuelStation: $("diesel-fuel-station").value.trim(),
@@ -212,7 +242,9 @@ function getDieselPOFormData() {
 }
 
 function validateDieselPO(data) {
-  if (!data.date || !data.plateNumber || !data.fuelStation || !data.amount || !data.poNumber) return "Date, Plate Number, Fuel Station, Diesel Amount, and PO Number are required.";
+  if (!data.date || !data.amount) return "Date and Diesel Amount are required.";
+  if (!data.plateNumber && (!resolveCashPerson(data) || !resolveCashRole(data))) return "Person Name and Role are required when Plate Number is blank.";
+  if (data.plateNumber && (!data.fuelStation || !data.poNumber)) return "Fuel Station and PO Number are required when Plate Number is selected.";
   if (data.depositNeeded === "Yes" && (!data.receiverName || !data.depositNumber)) return "Receiver Name and Account / Number are required when Deposit Needed is Yes.";
   return "";
 }
@@ -247,6 +279,8 @@ function loadDieselPOToForm(record) {
   $("diesel-date").value = record.date || "";
   $("diesel-plate-number").value = record.plateNumber || "";
   setGroupSelectValue("diesel-group-category", record.groupCategory || "");
+  $("diesel-person-name").value = record.personName || "";
+  $("diesel-person-type").value = record.personType || "Driver";
   $("diesel-driver-name").value = record.driverName || "";
   $("diesel-helper-name").value = record.helperName || "";
   $("diesel-fuel-station").value = record.fuelStation || "";
@@ -270,9 +304,11 @@ function loadDieselPOToForm(record) {
 function generateDieselPOViberMessage() {
   const d = getDieselPOFormData();
   $("diesel-message").value = [
-    `Plate: ${d.plateNumber}`,
+    `Plate: ${d.plateNumber || "No Plate"}`,
     "Diesel PO Request",
     "",
+    `Person: ${resolveCashPerson(d) || "-"}`,
+    `Role: ${resolveCashRole(d) || "-"}`,
     `Driver: ${d.driverName || "-"}`,
     `Helper: ${d.helperName || "-"}`,
     "",
@@ -312,6 +348,8 @@ function getBudgetFormData() {
     date: $("budget-date").value,
     plateNumber: normalizePlate($("budget-plate-number").value),
     groupCategory: normalizeGroup($("budget-group-category").value),
+    personName: $("budget-person-name").value.trim(),
+    personType: $("budget-person-type").value,
     driverName: $("budget-driver-name").value.trim(),
     helperName: $("budget-helper-name").value.trim(),
     budgetAmount: Number($("budget-amount").value) || 0,
@@ -331,7 +369,9 @@ function getBudgetFormData() {
 }
 
 function validateBudget(data) {
-  if (!data.date || !data.plateNumber || !data.budgetAmount || !data.depositTo || !data.receiverName || !data.depositNumber) return "Date, Plate Number, Budget Amount, Deposit To, Receiver Name, and Number are required.";
+  if (!data.date || !data.budgetAmount) return "Date and Budget Amount are required.";
+  if (!data.plateNumber && (!resolveCashPerson(data) || !resolveCashRole(data))) return "Person Name and Role are required when Plate Number is blank.";
+  if (data.plateNumber && (!data.depositTo || !data.receiverName || !data.depositNumber)) return "Deposit To, Receiver Name, and Number are required when Plate Number is selected.";
   return "";
 }
 
@@ -361,12 +401,13 @@ function loadBudgetToForm(record) {
   switchCashTab("budget-tab");
   $("budget-form").dataset.recordId = record.id;
   $("budget-form").dataset.createdAt = record.createdAt || "";
-  ["date","plateNumber","driverName","helperName","source","destination","shipmentNumber","depositTo","receiverName","depositNumber","status","reference","remarks"].forEach(key => {
+  ["date","plateNumber","personName","driverName","helperName","source","destination","shipmentNumber","depositTo","receiverName","depositNumber","status","reference","remarks"].forEach(key => {
     const id = `budget-${key.replace(/[A-Z]/g, m => `-${m.toLowerCase()}`)}`;
     if ($(id)) $(id).value = record[key] || "";
   });
   $("budget-amount").value = record.budgetAmount || "";
   $("budget-type").value = record.budgetType || "Trip Budget";
+  $("budget-person-type").value = record.personType || "Driver";
   setGroupSelectValue("budget-group-category", record.groupCategory || "");
   $("budget-status-field").value = record.status || "Draft";
   if (!record.groupCategory) applyTruckToForm("budget");
@@ -375,9 +416,11 @@ function loadBudgetToForm(record) {
 function generateBudgetViberMessage() {
   const d = getBudgetFormData();
   $("budget-message").value = [
-    `Plate: ${d.plateNumber}`,
+    `Plate: ${d.plateNumber || "No Plate"}`,
     "Trip Budget Request",
     "",
+    `Person: ${resolveCashPerson(d) || "-"}`,
+    `Role: ${resolveCashRole(d) || "-"}`,
     `Driver: ${d.driverName || "-"}`,
     `Helper: ${d.helperName || "-"}`,
     "",
@@ -427,7 +470,8 @@ function getBaliFormData() {
 }
 
 function validateBali(data) {
-  if (!data.date || !data.plateNumber || !data.personType || !data.personName || !data.amount || !data.depositTo || !data.receiverName || !data.depositNumber) return "Date, Plate Number, Person Type, Person Name, Bali Amount, Deposit To, Receiver Name, and Number are required.";
+  if (!data.date || !data.personType || !data.personName || !data.amount) return "Date, Person Type, Person Name, and Bali Amount are required.";
+  if (data.plateNumber && (!data.depositTo || !data.receiverName || !data.depositNumber)) return "Deposit To, Receiver Name, and Number are required when Plate Number is selected.";
   return "";
 }
 
@@ -473,7 +517,7 @@ function loadBaliToForm(record) {
 function generateBaliViberMessage() {
   const d = getBaliFormData();
   $("bali-message").value = [
-    `Plate: ${d.plateNumber}`,
+    `Plate: ${d.plateNumber || "No Plate"}`,
     "Bali / Cash Advance Request",
     "",
     `Driver: ${d.driverName || "-"}`,
@@ -516,7 +560,7 @@ function renderSavedCashRecords() {
   const rows = applySavedRecordFilters(getAllSavedCashRecords()).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   body.innerHTML = rows.length ? rows.map(record => {
     const amount = record.type === "Diesel PO" ? record.amount : record.type === "Trip Budget" ? record.budgetAmount : record.amount;
-    return `<tr><td>${escapeHtml(record.date || "")}</td><td>${escapeHtml(record.type)}</td><td>${escapeHtml(record.plateNumber || "")}</td><td>${escapeHtml(normalizeGroup(record.groupCategory))}</td><td>${formatCurrency(amount)}</td><td>${escapeHtml(record.receiverName || "")}</td><td>${escapeHtml(record.status || "")}</td><td class="cash-row-actions"><button data-action="load" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Load</button><button data-action="message" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Message</button><button data-action="delete" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Delete</button></td></tr>`;
+    return `<tr><td>${escapeHtml(record.date || "")}</td><td>${escapeHtml(record.type)}</td><td>${escapeHtml(record.plateNumber || "No Plate")}</td><td>${escapeHtml(normalizeGroup(record.groupCategory || (record.plateNumber ? "" : "General / No Plate")))}</td><td>${formatCurrency(amount)}</td><td>${escapeHtml(record.receiverName || resolveCashPerson(record) || "")}</td><td>${escapeHtml(record.status || "")}</td><td class="cash-row-actions"><button data-action="load" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Load</button><button data-action="message" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Message</button><button data-action="delete" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Delete</button></td></tr>`;
   }).join("") : '<tr><td colspan="8" class="empty">No saved local records found.</td></tr>';
 }
 
@@ -608,6 +652,7 @@ function wireEvents() {
   });
 }
 
+populateCashRoleSelects();
 wireEvents();
 applyDieselDepositState();
 fetchTruckMaster();
