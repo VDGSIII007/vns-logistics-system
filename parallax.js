@@ -23,7 +23,7 @@
 
   function registerParallax(selector, speed, direction = 'y') {
     document.querySelectorAll(selector).forEach(el => {
-      parallaxElements.push({ el, speed, direction });
+      parallaxElements.push({ el, speed, direction, centerY: 0 });
     });
   }
 
@@ -75,6 +75,21 @@
 
   /* ---------- Sticky Header Shrink ---------- */
   const header = document.querySelector('.site-header');
+  const scrollVideoSection = document.getElementById('video-scroll') || document.getElementById('video-scroll-pier');
+
+  function refreshParallaxMetrics() {
+    parallaxElements.forEach(item => {
+      const rect = item.el.getBoundingClientRect();
+      item.centerY = rect.top + window.scrollY + rect.height / 2;
+    });
+  }
+
+  function isVideoScrollActive(scrollY) {
+    if (!scrollVideoSection) return false;
+    const top = scrollVideoSection.offsetTop - window.innerHeight;
+    const bottom = scrollVideoSection.offsetTop + scrollVideoSection.offsetHeight;
+    return scrollY >= top && scrollY <= bottom;
+  }
 
   /* ---------- Main Scroll Handler ---------- */
   let ticking = false;
@@ -84,13 +99,15 @@
     ticking = true;
     requestAnimationFrame(() => {
       const scrollY = window.scrollY;
+      const viewCenter = scrollY + window.innerHeight / 2;
+      const skipDecorativeParallax = isVideoScrollActive(scrollY);
 
       // Parallax transforms
-      parallaxElements.forEach(({ el, speed }) => {
-        const rect = el.getBoundingClientRect();
-        const center = rect.top + rect.height / 2;
-        const viewCenter = window.innerHeight / 2;
-        const offset = (center - viewCenter) * speed;
+      parallaxElements.forEach(({ el, speed, centerY }) => {
+        if (skipDecorativeParallax && !el.closest('.parallax-image-divider')) return;
+        const distance = centerY - viewCenter;
+        if (Math.abs(distance) > window.innerHeight * 1.4) return;
+        const offset = distance * speed;
         el.style.transform = `translate3d(0, ${offset}px, 0)`;
       });
 
@@ -103,6 +120,15 @@
     });
   }
 
+  refreshParallaxMetrics();
+  window.addEventListener('resize', () => {
+    refreshParallaxMetrics();
+    onScroll();
+  }, { passive: true });
+  window.addEventListener('load', () => {
+    refreshParallaxMetrics();
+    onScroll();
+  });
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
 

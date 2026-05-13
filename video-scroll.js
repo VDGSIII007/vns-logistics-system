@@ -1,34 +1,38 @@
 /* ======================================================================
-   VNS Logistics — Canvas Scroll Animation (Optimized)
+   VNS Logistics — Canvas Scroll Animation (Smooth rAF Loop)
    Draws pre-extracted frames to a canvas, bound to scroll position.
-   Uses GSAP ScrollTrigger only — no Lenis (conflicts with parallax.js).
+   Uses GSAP ScrollTrigger for progress; rAF loop for smooth interpolation.
    ====================================================================== */
 
 (function () {
   'use strict';
 
-  gsap.registerPlugin(ScrollTrigger);
-
-  const FRAME_COUNT = 96;
+  const FRAME_COUNT = 160;
+  const section = document.getElementById('video-scroll');
   const canvas = document.getElementById('scroll-canvas');
   if (!canvas) return;
+  if (!section || section.offsetParent === null || getComputedStyle(section).display === 'none') return;
+  if (!window.gsap || !window.ScrollTrigger) return;
+
+  gsap.registerPlugin(ScrollTrigger);
 
   const ctx = canvas.getContext('2d');
   const frames = [];
   let loadedCount = 0;
-  let currentFrame = -1;
+  let scrollReady = false;
+
+  let targetFrame = 0;
+  let currentFrame = 0;
+  let lastDrawnFrame = -1;
 
   function framePath(i) {
-    return `frames/frame_${String(i).padStart(4, '0')}.webp`;
+    return `frames/frame_${String(i).padStart(4, '0')}.png`;
   }
 
   function drawFrame(index) {
-    if (index === currentFrame) return;
     const img = frames[index];
     if (!img || !img.complete) return;
-    currentFrame = index;
 
-    // Use 1x resolution for performance
     const w = canvas.offsetWidth;
     const h = canvas.offsetHeight;
     if (canvas.width !== w || canvas.height !== h) {
@@ -36,57 +40,73 @@
       canvas.height = h;
     }
 
-    // Cover-fit
-    const scale = Math.max(w / img.width, h / img.height);
-    const dw = img.width * scale;
-    const dh = img.height * scale;
+    const iw = img.naturalWidth || img.width;
+    const ih = img.naturalHeight || img.height;
+    if (!iw || !ih) return;
+
+    const scale = Math.max(w / iw, h / ih);
+    const dw = iw * scale;
+    const dh = ih * scale;
     ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    lastDrawnFrame = index;
+  }
+
+  function animate() {
+    currentFrame += (targetFrame - currentFrame) * 0.12;
+    const frameIndex = Math.round(currentFrame);
+    if (frameIndex !== lastDrawnFrame && frames[frameIndex] && frames[frameIndex].complete) {
+      drawFrame(frameIndex);
+    }
+    requestAnimationFrame(animate);
   }
 
   function preloadFrames() {
     for (let i = 0; i < FRAME_COUNT; i++) {
       const img = new Image();
       img.src = framePath(i);
-      img.onload = () => {
+      img.onload = function () {
         loadedCount++;
         if (loadedCount === 1) drawFrame(0);
-        if (loadedCount === FRAME_COUNT) setupScroll();
+        if (!scrollReady && loadedCount >= Math.min(12, FRAME_COUNT)) setupScroll();
       };
       frames.push(img);
     }
   }
 
   function setupScroll() {
+    scrollReady = true;
     const tl = gsap.timeline({
       scrollTrigger: {
-        trigger: '.video-scroll-section',
+        trigger: '#video-scroll',
         start: 'top top',
         end: 'bottom bottom',
-        pin: '.video-scroll-sticky',
+        pin: '#video-scroll .video-scroll-sticky',
         scrub: 0.5,
-        onUpdate: (self) => {
-          const idx = Math.min(FRAME_COUNT - 1, Math.floor(self.progress * FRAME_COUNT));
-          drawFrame(idx);
+        onUpdate: function (self) {
+          targetFrame = Math.round(self.progress * (FRAME_COUNT - 1));
         }
       }
     });
 
-    // Text overlays sequentially
-    const texts = document.querySelectorAll('.video-text');
-    texts.forEach((text, i) => {
-      // Fade in and slide right
-      tl.fromTo(text, 
-        { opacity: 0, x: -60 }, 
+    const texts = document.querySelectorAll('#video-scroll .video-text');
+    texts.forEach(function (text) {
+      tl.fromTo(text,
+        { opacity: 0, x: -60 },
         { opacity: 1, x: 0, duration: 1 }
       )
-      // Hold for a moment, then fade out and slide right
-      .to(text, 
-        { opacity: 0, x: 60, duration: 1 }, 
-        "+=1.5"
+      .to(text,
+        { opacity: 0, x: 60, duration: 1 },
+        '+=1.5'
       );
     });
   }
 
-  window.addEventListener('resize', () => { currentFrame = -1; drawFrame(Math.max(0, currentFrame)); });
+  window.addEventListener('resize', function () {
+    lastDrawnFrame = -1;
+    var idx = Math.max(0, Math.min(Math.round(currentFrame), FRAME_COUNT - 1));
+    drawFrame(idx);
+  });
+
+  animate();
   preloadFrames();
 })();

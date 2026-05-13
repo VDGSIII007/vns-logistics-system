@@ -72,7 +72,7 @@ body.parallax-page{opacity:1}
 .hero-bg-image{position:absolute;inset:0;background:url(images/hero-truck.png) center 60%/cover no-repeat;opacity:.06;pointer-events:none;z-index:0}
 .fleet-bg-image{position:absolute;inset:0;background:url(images/fleet-yard.png) center/cover no-repeat;opacity:.1;pointer-events:none;z-index:0;mix-blend-mode:overlay}
 /* ===== Scroll-Bound Video ===== */
-.video-scroll-section{height:300vh;position:relative}
+.video-scroll-section{height:380vh;position:relative}
 .video-scroll-sticky{width:100%;height:100vh;position:relative;overflow:hidden}
 .video-scroll-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .video-scroll-overlay{position:absolute;inset:0;background:linear-gradient(135deg,rgba(0,0,0,.55) 0%,rgba(0,0,0,.2) 50%,rgba(0,0,0,.45) 100%);pointer-events:none}
@@ -981,9 +981,324 @@ body.payroll-page{
   min-height:44px;
   padding:0 18px;
 }
+
+/* VNS UI polish: shared header, portal, and operations layout */
+.site-header{
+  background:rgba(255,255,255,.94);
+  border-bottom:1px solid rgba(229,231,235,.9);
+}
+.nav-shell{
+  min-height:64px;
+  height:64px;
+  gap:22px;
+}
+.brand{
+  min-width:0;
+  gap:10px;
+}
+.brand-mark{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:44px;
+  min-height:34px;
+  padding:7px 10px;
+  border-radius:9px;
+  line-height:1;
+  box-shadow:0 8px 20px rgba(215,25,32,.2);
+}
+.brand-text{
+  font-size:.95rem;
+  letter-spacing:.06em;
+  white-space:nowrap;
+}
+.nav-links{
+  gap:8px;
+  font-size:.87rem;
+  line-height:1;
+}
+.nav-links a{
+  display:inline-flex;
+  align-items:center;
+  min-height:38px;
+  padding:0 10px;
+  border-radius:999px;
+  white-space:nowrap;
+}
+.nav-links a:hover,
+.nav-links a.active-link{
+  background:#fff5f5;
+  color:var(--red);
+}
+.nav-cta{
+  min-height:40px;
+  padding:0 16px!important;
+  box-shadow:0 10px 22px rgba(215,25,32,.2);
+}
+.nav-links .nav-cta:hover{
+  background:var(--red-dark);
+  color:#fff!important;
+}
+.nav-modules{
+  position:relative;
+  display:inline-flex;
+  align-items:center;
+}
+.nav-modules summary{
+  list-style:none;
+  display:inline-flex;
+  align-items:center;
+  min-height:38px;
+  padding:0 12px;
+  border-radius:999px;
+  color:#313131;
+  cursor:pointer;
+  user-select:none;
+  white-space:nowrap;
+}
+.nav-modules summary::-webkit-details-marker{
+  display:none;
+}
+.nav-modules summary::after{
+  content:"";
+  width:7px;
+  height:7px;
+  margin-left:8px;
+  border-right:2px solid currentColor;
+  border-bottom:2px solid currentColor;
+  transform:translateY(-2px) rotate(45deg);
+}
+.nav-modules[open] summary,
+.nav-modules.is-active summary,
+.nav-modules summary:hover{
+  background:#fff5f5;
+  color:var(--red);
+}
+.nav-dropdown{
+  position:absolute;
+  top:calc(100% + 12px);
+  right:0;
+  z-index:70;
+  width:260px;
+  padding:8px;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:18px;
+  box-shadow:0 24px 60px rgba(15,23,42,.14);
+}
+.nav-dropdown a{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  min-height:40px;
+  padding:0 12px;
+  border-radius:12px;
+  color:#1f2937;
+  font-size:.86rem;
+  line-height:1.2;
+}
+.nav-dropdown a.active-link::after{
+  content:"Active";
+  align-self:center;
+  border-radius:999px;
+  padding:4px 7px;
+  background:#fff0f0;
+  color:var(--red);
+  font-size:.64rem;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.module-header-action{
+  margin-top:18px;
+}
+.module-header-action .btn{
+  min-height:42px;
+  padding:0 18px;
+}
+.repair-page,
+.inventory-page,
+.cash-page{
+  background:#fafafa;
+}
+.repair-page > .container,
+.inventory-page > .container,
+.cash-header .container{
+  width:min(1500px,96vw);
+}
+.repair-page .section-heading,
+.inventory-header,
+.cash-header{
+  max-width:none;
+  margin:0 0 24px;
+  padding:44px 0 24px;
+}
+.repair-page .section-heading h1,
+.inventory-header h1,
+.cash-header h1{
+  margin:0;
+  max-width:960px;
+  font-size:clamp(2.1rem,4.2vw,3.75rem);
+  line-height:1.03;
+  letter-spacing:-.035em;
+}
+.repair-page .section-heading p:not(.eyebrow),
+.inventory-header p:not(.eyebrow),
+.cash-header p:not(.eyebrow){
+  max-width:820px;
+  margin:14px 0 0;
+  color:#4b5563;
+  font-size:1rem;
+  font-weight:700;
+  line-height:1.55;
+}
+.inventory-page > .section-pad,
+.cash-header.section-pad{
+  padding-top:0;
+  padding-bottom:0;
+}
+.repair-page.section-pad{
+  padding-top:0;
+}
+.inventory-summary,
+.cash-summary{
+  margin-top:0;
+}
+.menu-toggle{
+  min-height:40px;
+  padding:0 14px;
+  border-radius:10px;
+  cursor:pointer;
+}
+.header-scrolled .nav-shell{
+  height:58px;
+  min-height:58px;
+}
+.section-pad{
+  padding:82px 0;
+}
+.portal-hero{
+  min-height:auto;
+  align-items:flex-start;
+  padding:44px 0 32px;
+  background:linear-gradient(135deg,#fff 0,#fff7f7 100%);
+  border-bottom:1px solid var(--line);
+}
+.portal-hero .hero-copy{
+  max-width:920px;
+}
+.portal-hero h1{
+  font-size:clamp(2.15rem,4.2vw,3.8rem);
+  line-height:1.03;
+  max-width:720px;
+}
+.portal-hero .hero-subtitle{
+  max-width:760px;
+  margin:18px 0 0;
+  font-size:1rem;
+  font-weight:700;
+}
+.portal-section{
+  background:#fafafa;
+}
+.portal-section .section-heading{
+  max-width:none;
+  margin-bottom:22px;
+}
+.portal-section .section-heading h2{
+  font-size:clamp(1.65rem,3vw,2.55rem);
+  letter-spacing:-.025em;
+  line-height:1.08;
+}
+.portal-section .portal-grid{
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:16px;
+  margin-top:24px;
+  align-items:stretch;
+}
+.portal-card{
+  display:flex;
+  flex-direction:column;
+  min-height:174px;
+  padding:22px;
+  border-radius:18px;
+  box-shadow:0 12px 32px rgba(15,23,42,.05);
+  border-color:#e1e5ec;
+}
+.portal-card-primary{
+  border-color:#e1e5ec;
+}
+.portal-card-primary::before{
+  content:"";
+  width:38px;
+  height:4px;
+  border-radius:999px;
+  background:var(--red);
+  margin-bottom:18px;
+}
+.portal-card h3{
+  margin:0 0 8px;
+  color:#111827;
+  font-size:1.12rem;
+  line-height:1.2;
+  letter-spacing:-.01em;
+}
+.portal-card p{
+  margin:0;
+  color:#5b6472;
+  font-size:.91rem;
+  line-height:1.5;
+}
+.portal-card:hover{
+  transform:translateY(-2px);
+  border-color:#f2b6ba;
+  box-shadow:0 18px 44px rgba(15,23,42,.08);
+}
+.module-tabs,
+.payroll-tabs,
+.inventory-tabs,
+.master-tabs{
+  max-width:100%;
+}
+.module-tab,
+.payroll-tab-button,
+.payroll-tab-btn,
+.inventory-tab,
+.master-tab{
+  min-width:0;
+  max-width:100%;
+  overflow-wrap:anywhere;
+}
+.module-table th,
+.module-table td{
+  overflow-wrap:anywhere;
+}
+.video-scroll-sticky{
+  contain:layout paint;
+}
+.video-scroll-bg{
+  transform:translateZ(0);
+  will-change:transform;
+  background:#111;
+}
+.video-text{
+  will-change:transform,opacity;
+}
 @media(max-width:1200px){
   .repair-page .garage-dashboard-row{
     grid-template-columns:repeat(2,minmax(180px,1fr));
+  }
+}
+@media(max-width:1100px){
+  .portal-section .portal-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .nav-links{
+    gap:4px;
+    font-size:.82rem;
+  }
+  .nav-links a{
+    padding-inline:8px;
   }
 }
 @media(max-width:768px){
@@ -1006,5 +1321,91 @@ body.payroll-page{
   .repair-page .saved-records-action-buttons .btn,
   .repair-page .garage-refresh-actions .btn{
     width:100%;
+  }
+}
+@media(max-width:940px){
+  .nav-shell{
+    height:auto;
+    min-height:62px;
+    padding:10px 0;
+  }
+  .header-scrolled .nav-shell{
+    height:auto;
+    min-height:62px;
+  }
+  .nav-links{
+    top:calc(100% + 8px);
+    left:0;
+    right:0;
+    width:min(92vw,520px);
+    margin:auto;
+    padding:12px;
+    gap:6px;
+    border-radius:18px;
+  }
+  .nav-links a{
+    justify-content:space-between;
+    min-height:44px;
+    padding:0 14px;
+  }
+  .nav-links .nav-cta{
+    justify-content:center;
+    margin-top:4px;
+  }
+  .nav-modules{
+    display:block;
+    width:100%;
+  }
+  .nav-modules summary{
+    justify-content:space-between;
+    min-height:44px;
+    padding:0 14px;
+  }
+  .nav-dropdown{
+    position:static;
+    width:100%;
+    margin:6px 0 4px;
+    box-shadow:none;
+    border-radius:14px;
+    background:#fafafa;
+  }
+  .nav-dropdown a{
+    min-height:42px;
+  }
+  .section-pad{
+    padding:66px 0;
+  }
+  .portal-hero{
+    padding:34px 0 28px;
+  }
+  .repair-page .section-heading,
+  .inventory-header,
+  .cash-header{
+    padding:34px 0 20px;
+  }
+  .repair-page .section-heading h1,
+  .inventory-header h1,
+  .cash-header h1{
+    font-size:clamp(2rem,10vw,3rem);
+  }
+}
+@media(max-width:700px){
+  .portal-section .portal-grid{
+    grid-template-columns:1fr;
+  }
+  .portal-card{
+    min-height:0;
+  }
+}
+@media(max-width:620px){
+  .brand-mark{
+    min-width:40px;
+    min-height:32px;
+  }
+  .brand-text{
+    font-size:.88rem;
+  }
+  .portal-hero h1{
+    font-size:clamp(2rem,10vw,3rem);
   }
 }
