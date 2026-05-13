@@ -1,5 +1,7 @@
 const CASH_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyu1N444S_vthjIoxcy081CdDZJuy6EwHt5ktKU42U4qNY_HL4F2HHKEQl6HDSZZItf/exec";
 const CASH_SYNC_KEY       = "vns-cash-sync-2026-Jay";
+const MASTER_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbySWpFu-ZwtsC4uGK4uNgZSRlHUzS4bAMX4X0vAQjt-iuF7pbgT3loFGU2fU2YL4rq6pQ/exec";
+const MASTER_SYNC_KEY       = "vns-truck-sync-2026-Jay";
 
 function cashPost(payload) {
   return fetch(CASH_APP_SCRIPT_URL, {
@@ -16,7 +18,7 @@ function toCashSheetRecord(record) {
     Time: '',
     Sender: record.plateNumber || '',
     Plate_Number: record.plateNumber || '',
-    Group_Category: '',
+    Group_Category: record.groupCategory || '',
     Transaction_Type: record.type || '',
     Person_Name: record.personName || record.driverName || record.receiverName || '',
     Role: record.personType || '',
@@ -31,13 +33,16 @@ function toCashSheetRecord(record) {
     Encoded_By: '',
     Remarks: record.remarks || record.reason || '',
     Created_At: record.createdAt || '',
-    Updated_At: record.updatedAt || ''
+    Updated_At: record.updatedAt || '',
+    Deleted_At: record.deletedAt || '',
+    Deleted_By: record.deletedBy || '',
+    Is_Deleted: record.isDeleted ? 'TRUE' : ''
   };
 }
 
-function syncCashSilent(record, statusId) {
+function syncCashSilent(record, statusId, action = 'saveEntry') {
   setStatus(statusId, 'Saved locally. Syncing…', 'success');
-  cashPost({ action: 'saveEntry', record: toCashSheetRecord(record) })
+  cashPost({ action, record: toCashSheetRecord(record) })
     .then(res => setStatus(statusId, (res && res.ok) ? 'Saved and synced.' : 'Saved locally. Sync failed.', (res && res.ok) ? 'success' : 'warning'))
     .catch(() => setStatus(statusId, 'Saved locally. Sync failed.', 'warning'));
 }
@@ -45,6 +50,7 @@ function syncCashSilent(record, statusId) {
 const DIESEL_KEY = "vnsDieselPOEntries";
 const BUDGET_KEY = "vnsTripBudgets";
 const BALI_KEY = "vnsBaliCashAdvances";
+let truckMasterCache = [];
 
 function $(id) { return document.getElementById(id); }
 
@@ -79,6 +85,87 @@ function normalizePlate(value) {
   return String(value || "").replace(/\s+/g, "").toUpperCase();
 }
 
+function normalizeGroup(value) {
+  const raw = String(value || "").trim();
+  const key = raw.toLowerCase().replace(/\s+/g, " ");
+  if (!key) return "Needs Update / Unknown";
+  if (key === "bottle" || key === "bottles") return "Bottle";
+  if (key === "sugar") return "Sugar";
+  if (key === "preform" || key === "resin" || key === "preform / resin") return "Preform / Resin";
+  if (key === "caps" || key === "crown" || key === "crowns" || key === "caps / crown" || key === "caps / crowns") return "Caps / Crown";
+  if (key.includes("unknown") || key.includes("update")) return "Needs Update / Unknown";
+  return raw;
+}
+
+function getTruckPlate(truck) {
+  return normalizePlate(truck?.Plate_Number || truck?.plateNumber || truck?.plate || "");
+}
+
+function getTruckGroup(truck) {
+  return normalizeGroup(truck?.Group_Category || truck?.groupCategory || "");
+}
+
+function getTruckDriver(truck) {
+  return String(truck?.Current_Driver_Name || truck?.Current_Driver || truck?.driverName || "").trim();
+}
+
+function getTruckHelper(truck) {
+  return String(truck?.Current_Helper_Name || truck?.Current_Helper || truck?.helperName || "").trim();
+}
+
+function findTruckByPlate(plate) {
+  const normalized = normalizePlate(plate);
+  return truckMasterCache.find(truck => getTruckPlate(truck) === normalized);
+}
+
+function loadLocalTruckMaster() {
+  const trucks = readJson("vnsTruckMaster", []);
+  truckMasterCache = Array.isArray(trucks) ? trucks : [];
+  renderTruckPlateDatalist();
+}
+
+function fetchTruckMaster() {
+  loadLocalTruckMaster();
+  const url = `${MASTER_APP_SCRIPT_URL}?action=getAllMasterData&syncKey=${encodeURIComponent(MASTER_SYNC_KEY)}`;
+  fetch(url)
+    .then(response => response.json())
+    .then(result => {
+      const trucks = result?.trucks || result?.Truck_Master || [];
+      if (result && result.ok && Array.isArray(trucks) && trucks.length) {
+        truckMasterCache = trucks;
+        renderTruckPlateDatalist();
+      }
+    })
+    .catch(loadLocalTruckMaster);
+}
+
+function renderTruckPlateDatalist() {
+  const list = $("cash-truck-plates");
+  if (!list) return;
+  const plates = [...new Set(truckMasterCache.map(getTruckPlate).filter(Boolean))].sort();
+  list.innerHTML = plates.map(plate => `<option value="${escapeHtml(plate)}"></option>`).join("");
+}
+
+function applyTruckToForm(prefix) {
+  const plateInput = $(`${prefix}-plate-number`);
+  const truck = findTruckByPlate(plateInput?.value);
+  if (!truck) return;
+  const groupEl = $(`${prefix}-group-category`);
+  const driverEl = $(`${prefix}-driver-name`);
+  const helperEl = $(`${prefix}-helper-name`);
+  if (groupEl) setGroupSelectValue(groupEl.id, getTruckGroup(truck));
+  if (driverEl && !driverEl.value.trim()) driverEl.value = getTruckDriver(truck);
+  if (helperEl && !helperEl.value.trim()) helperEl.value = getTruckHelper(truck);
+}
+
+function setGroupSelectValue(id, value) {
+  const el = $(id);
+  if (!el) return;
+  const normalized = normalizeGroup(value);
+  const option = Array.from(el.options).find(opt => opt.value === normalized || opt.textContent === normalized);
+  el.value = option ? option.value : "";
+}
+
 function escapeHtml(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
@@ -102,6 +189,7 @@ function getDieselPOFormData() {
     type: "Diesel PO",
     date: $("diesel-date").value,
     plateNumber: normalizePlate($("diesel-plate-number").value),
+    groupCategory: normalizeGroup($("diesel-group-category").value),
     driverName: $("diesel-driver-name").value.trim(),
     helperName: $("diesel-helper-name").value.trim(),
     fuelStation: $("diesel-fuel-station").value.trim(),
@@ -130,6 +218,8 @@ function validateDieselPO(data) {
 }
 
 function saveDieselPO() {
+  const isEditing = Boolean($("diesel-form").dataset.recordId);
+  applyTruckToForm("diesel");
   const data = getDieselPOFormData();
   const error = validateDieselPO(data);
   if (error) return setStatus("diesel-status", error, "warning");
@@ -138,7 +228,7 @@ function saveDieselPO() {
   $("diesel-form").dataset.recordId = data.id;
   $("diesel-form").dataset.createdAt = data.createdAt;
   refreshAllCashData();
-  syncCashSilent(data, "diesel-status");
+  syncCashSilent(data, "diesel-status", isEditing ? "updateEntry" : "saveEntry");
 }
 
 function clearDieselPOForm() {
@@ -156,6 +246,7 @@ function loadDieselPOToForm(record) {
   $("diesel-form").dataset.createdAt = record.createdAt || "";
   $("diesel-date").value = record.date || "";
   $("diesel-plate-number").value = record.plateNumber || "";
+  setGroupSelectValue("diesel-group-category", record.groupCategory || "");
   $("diesel-driver-name").value = record.driverName || "";
   $("diesel-helper-name").value = record.helperName || "";
   $("diesel-fuel-station").value = record.fuelStation || "";
@@ -172,6 +263,7 @@ function loadDieselPOToForm(record) {
   $("diesel-status-field").value = record.status || "Draft";
   $("diesel-reference").value = record.reference || "";
   $("diesel-remarks").value = record.remarks || "";
+  if (!record.groupCategory) applyTruckToForm("diesel");
   applyDieselDepositState();
 }
 
@@ -219,6 +311,7 @@ function getBudgetFormData() {
     type: "Trip Budget",
     date: $("budget-date").value,
     plateNumber: normalizePlate($("budget-plate-number").value),
+    groupCategory: normalizeGroup($("budget-group-category").value),
     driverName: $("budget-driver-name").value.trim(),
     helperName: $("budget-helper-name").value.trim(),
     budgetAmount: Number($("budget-amount").value) || 0,
@@ -243,6 +336,8 @@ function validateBudget(data) {
 }
 
 function saveBudget() {
+  const isEditing = Boolean($("budget-form").dataset.recordId);
+  applyTruckToForm("budget");
   const data = getBudgetFormData();
   const error = validateBudget(data);
   if (error) return setStatus("budget-status", error, "warning");
@@ -251,7 +346,7 @@ function saveBudget() {
   $("budget-form").dataset.recordId = data.id;
   $("budget-form").dataset.createdAt = data.createdAt;
   refreshAllCashData();
-  syncCashSilent(data, "budget-status");
+  syncCashSilent(data, "budget-status", isEditing ? "updateEntry" : "saveEntry");
 }
 
 function clearBudgetForm() {
@@ -272,7 +367,9 @@ function loadBudgetToForm(record) {
   });
   $("budget-amount").value = record.budgetAmount || "";
   $("budget-type").value = record.budgetType || "Trip Budget";
+  setGroupSelectValue("budget-group-category", record.groupCategory || "");
   $("budget-status-field").value = record.status || "Draft";
+  if (!record.groupCategory) applyTruckToForm("budget");
 }
 
 function generateBudgetViberMessage() {
@@ -308,6 +405,7 @@ function getBaliFormData() {
     type: "Bali / Cash Advance",
     date: $("bali-date").value,
     plateNumber: normalizePlate($("bali-plate-number").value),
+    groupCategory: normalizeGroup($("bali-group-category").value),
     driverName: $("bali-driver-name").value.trim(),
     helperName: $("bali-helper-name").value.trim(),
     personType: $("bali-person-type").value,
@@ -334,6 +432,8 @@ function validateBali(data) {
 }
 
 function saveBali() {
+  const isEditing = Boolean($("bali-form").dataset.recordId);
+  applyTruckToForm("bali");
   const data = getBaliFormData();
   const error = validateBali(data);
   if (error) return setStatus("bali-status", error, "warning");
@@ -342,7 +442,7 @@ function saveBali() {
   $("bali-form").dataset.recordId = data.id;
   $("bali-form").dataset.createdAt = data.createdAt;
   refreshAllCashData();
-  syncCashSilent(data, "bali-status");
+  syncCashSilent(data, "bali-status", isEditing ? "updateEntry" : "saveEntry");
 }
 
 function clearBaliForm() {
@@ -365,7 +465,9 @@ function loadBaliToForm(record) {
   $("bali-current-balance").value = record.currentBalance || "";
   $("bali-amount").value = record.amount || "";
   $("bali-deposit-to").value = record.depositTo || "GCash";
+  setGroupSelectValue("bali-group-category", record.groupCategory || "");
   $("bali-status-field").value = record.status || "Draft";
+  if (!record.groupCategory) applyTruckToForm("bali");
 }
 
 function generateBaliViberMessage() {
@@ -397,15 +499,16 @@ function generateBaliViberMessage() {
 function copyBaliMessage() { navigator.clipboard?.writeText($("bali-message").value); setStatus("bali-status", "Bali message copied.", "success"); }
 
 function getAllSavedCashRecords() {
-  return readJson(DIESEL_KEY).concat(readJson(BUDGET_KEY), readJson(BALI_KEY));
+  return readJson(DIESEL_KEY).concat(readJson(BUDGET_KEY), readJson(BALI_KEY)).filter(record => !record.isDeleted);
 }
 
 function applySavedRecordFilters(records) {
   const from = $("filter-date-from").value;
   const to = $("filter-date-to").value;
   const type = $("filter-type").value;
+  const group = $("filter-group")?.value || "";
   const plate = normalizePlate($("filter-plate").value);
-  return records.filter(record => (!from || record.date >= from) && (!to || record.date <= to) && (!type || record.type === type) && (!plate || normalizePlate(record.plateNumber).includes(plate)));
+  return records.filter(record => (!from || record.date >= from) && (!to || record.date <= to) && (!type || record.type === type) && (!group || normalizeGroup(record.groupCategory) === group) && (!plate || normalizePlate(record.plateNumber).includes(plate)));
 }
 
 function renderSavedCashRecords() {
@@ -413,8 +516,8 @@ function renderSavedCashRecords() {
   const rows = applySavedRecordFilters(getAllSavedCashRecords()).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   body.innerHTML = rows.length ? rows.map(record => {
     const amount = record.type === "Diesel PO" ? record.amount : record.type === "Trip Budget" ? record.budgetAmount : record.amount;
-    return `<tr><td>${escapeHtml(record.date || "")}</td><td>${escapeHtml(record.type)}</td><td>${escapeHtml(record.plateNumber || "")}</td><td>${formatCurrency(amount)}</td><td>${escapeHtml(record.receiverName || "")}</td><td>${escapeHtml(record.status || "")}</td><td class="cash-row-actions"><button data-action="load" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Load</button><button data-action="message" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Message</button><button data-action="delete" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Delete</button></td></tr>`;
-  }).join("") : '<tr><td colspan="7" class="empty">No saved local records found.</td></tr>';
+    return `<tr><td>${escapeHtml(record.date || "")}</td><td>${escapeHtml(record.type)}</td><td>${escapeHtml(record.plateNumber || "")}</td><td>${escapeHtml(normalizeGroup(record.groupCategory))}</td><td>${formatCurrency(amount)}</td><td>${escapeHtml(record.receiverName || "")}</td><td>${escapeHtml(record.status || "")}</td><td class="cash-row-actions"><button data-action="load" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Load</button><button data-action="message" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Message</button><button data-action="delete" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Delete</button></td></tr>`;
+  }).join("") : '<tr><td colspan="8" class="empty">No saved local records found.</td></tr>';
 }
 
 function getRecordStore(type) {
@@ -432,8 +535,26 @@ function loadSavedCashRecord(type, id) {
 function deleteSavedCashRecord(type, id) {
   if (!confirm("Delete this local record?")) return;
   const [key, records] = getRecordStore(type);
-  writeJson(key, records.filter(item => item.id !== id));
+  const now = new Date().toISOString();
+  let deletedRecord = null;
+  const updated = records.map(item => {
+    if (item.id !== id) return item;
+    deletedRecord = { ...item, isDeleted: true, deletedAt: now, deletedBy: "", updatedAt: now };
+    return deletedRecord;
+  });
+  writeJson(key, updated);
   refreshAllCashData();
+  if (!deletedRecord) return;
+  const statusId = getStatusIdForType(type);
+  cashPost({ action: "deleteEntry", cashId: deletedRecord.id, deletedBy: "" })
+    .then(res => setStatus(statusId, (res && res.ok) ? "Deleted locally and synced." : "Deleted locally. Google Sheets delete sync failed.", (res && res.ok) ? "success" : "warning"))
+    .catch(() => setStatus(statusId, "Deleted locally. Google Sheets delete sync failed.", "warning"));
+}
+
+function getStatusIdForType(type) {
+  if (type === "Diesel PO") return "diesel-status";
+  if (type === "Trip Budget") return "budget-status";
+  return "bali-status";
 }
 
 function generateSavedCashRecordMessage(type, id) {
@@ -445,9 +566,9 @@ function generateSavedCashRecordMessage(type, id) {
 }
 
 function updateCashSummary() {
-  const diesel = readJson(DIESEL_KEY);
-  const budgets = readJson(BUDGET_KEY);
-  const bali = readJson(BALI_KEY);
+  const diesel = readJson(DIESEL_KEY).filter(item => !item.isDeleted);
+  const budgets = readJson(BUDGET_KEY).filter(item => !item.isDeleted);
+  const bali = readJson(BALI_KEY).filter(item => !item.isDeleted);
   $("summary-diesel-amount").textContent = formatCurrency(diesel.reduce((sum, item) => sum + (Number(item.amount) || 0), 0));
   $("summary-diesel-count").textContent = String(diesel.length);
   $("summary-budget-amount").textContent = formatCurrency(budgets.reduce((sum, item) => sum + (Number(item.budgetAmount) || 0), 0));
@@ -470,7 +591,14 @@ function wireEvents() {
   $("diesel-deposit-needed").addEventListener("change", applyDieselDepositState);
   $("save-budget-button").addEventListener("click", saveBudget); $("generate-budget-button").addEventListener("click", generateBudgetViberMessage); $("copy-budget-button").addEventListener("click", copyBudgetMessage); $("clear-budget-button").addEventListener("click", clearBudgetForm);
   $("save-bali-button").addEventListener("click", saveBali); $("generate-bali-button").addEventListener("click", generateBaliViberMessage); $("copy-bali-button").addEventListener("click", copyBaliMessage); $("clear-bali-button").addEventListener("click", clearBaliForm);
-  ["filter-date-from", "filter-date-to", "filter-type", "filter-plate"].forEach(id => $(id).addEventListener("input", renderSavedCashRecords));
+  ["diesel", "budget", "bali"].forEach(prefix => {
+    const plateInput = $(`${prefix}-plate-number`);
+    if (plateInput) {
+      plateInput.addEventListener("change", () => applyTruckToForm(prefix));
+      plateInput.addEventListener("blur", () => applyTruckToForm(prefix));
+    }
+  });
+  ["filter-date-from", "filter-date-to", "filter-type", "filter-group", "filter-plate"].forEach(id => $(id).addEventListener("input", renderSavedCashRecords));
   $("saved-records-body").addEventListener("click", event => {
     const button = event.target.closest("button[data-action]");
     if (!button) return;
@@ -482,4 +610,5 @@ function wireEvents() {
 
 wireEvents();
 applyDieselDepositState();
+fetchTruckMaster();
 refreshAllCashData();

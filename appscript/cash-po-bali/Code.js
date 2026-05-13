@@ -18,7 +18,8 @@ const CASH_HEADERS = [
   "Cash_ID","Date","Time","Sender","Plate_Number","Group_Category",
   "Transaction_Type","Person_Name","Role","GCash_Number","Amount",
   "PO_Number","Liters","Fuel_Station","Route","Balance_After_Payroll",
-  "Review_Status","Encoded_By","Remarks","Created_At","Updated_At"
+  "Review_Status","Encoded_By","Remarks","Created_At","Updated_At",
+  "Deleted_At","Deleted_By","Is_Deleted"
 ];
 
 // ============================================================
@@ -33,9 +34,11 @@ function doGet(e) {
     if (!validateKey_(e.parameter && e.parameter.syncKey)) {
       return jsonResponse_({ ok: false, error: "Unauthorized." });
     }
-    ensureAllTabs_();
-    if (action === "listEntries")  return jsonResponse_({ ok: true, entries: readRecords_("Cash_PO_Bali_Log", CASH_HEADERS) });
-    if (action === "ensureTabs")   return jsonResponse_(ensureAllTabs_());
+    if (action === "listEntries")  {
+      withLock_(ensureAllTabs_);
+      return jsonResponse_({ ok: true, entries: readRecords_("Cash_PO_Bali_Log", CASH_HEADERS, e.parameter && e.parameter.includeDeleted === "true") });
+    }
+    if (action === "ensureTabs")   return jsonResponse_(withLock_(ensureAllTabs_));
     return jsonResponse_({ ok: false, error: "Unknown action: " + action });
   } catch (err) {
     return jsonResponse_({ ok: false, error: err.message });
@@ -54,6 +57,13 @@ function doPost(e) {
     return jsonResponse_({ ok: false, error: "Unauthorized." });
   }
 
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (lockErr) {
+    return jsonResponse_({ ok: false, error: "System busy. Please try again." });
+  }
+
   try {
     ensureAllTabs_();
     switch (body.action) {
@@ -61,6 +71,10 @@ function doPost(e) {
         return jsonResponse_({ ok: true, result: upsertRecord_("Cash_PO_Bali_Log", CASH_HEADERS, "Cash_ID", body.record || {}) });
       case "batchSaveEntries":
         return jsonResponse_(batchUpsertRecords_("Cash_PO_Bali_Log", CASH_HEADERS, "Cash_ID", body.records || []));
+      case "updateEntry":
+        return jsonResponse_({ ok: true, result: updateRecord_("Cash_PO_Bali_Log", CASH_HEADERS, "Cash_ID", body.record || {}) });
+      case "deleteEntry":
+        return jsonResponse_({ ok: true, result: softDeleteRecord_("Cash_PO_Bali_Log", CASH_HEADERS, "Cash_ID", body.cashId || (body.record && body.record.Cash_ID), body.deletedBy || "") });
       case "ensureTabs":
         return jsonResponse_(ensureAllTabs_());
       default:
@@ -68,6 +82,8 @@ function doPost(e) {
     }
   } catch (err) {
     return jsonResponse_({ ok: false, error: err.message });
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -98,7 +114,7 @@ function ensureSheet_(ss, name, headers) {
 // ============================================================
 // Data helpers
 // ============================================================
-function readRecords_(sheetName, headers) {
+function readRecords_(sheetName, headers, includeDeleted) {
   var ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet || sheet.getLastRow() < 2) return [];
@@ -110,7 +126,8 @@ function readRecords_(sheetName, headers) {
       var obj = {};
       actual.forEach(function(h, i) { if (h) obj[h] = cellStr_(row[i]); });
       return obj;
-    });
+    })
+    .filter(function(obj) { return includeDeleted || String(obj.Is_Deleted || "").toUpperCase() !== "TRUE"; });
 }
 
 function upsertRecord_(sheetName, headers, keyField, record) {
@@ -177,6 +194,53 @@ function batchUpsertRecords_(sheetName, headers, keyField, records) {
   return { ok: true, imported: imported, updated: updated, skipped: skipped, total: Object.keys(existMap).length + imported };
 }
 
+function updateRecord_(sheetName, headers, keyField, record) {
+  var keyValue = String(record[keyField] || "").trim();
+  if (!keyValue) return { skipped: true, reason: "Empty key" };
+  var ss     = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet  = ss.getSheetByName(sheetName);
+  if (!sheet) throw new Error("Sheet not found: " + sheetName);
+  var actual = getHeaders_(sheet);
+  var rowIdx = findRowByKey_(sheet, actual, keyField, keyValue);
+  if (rowIdx < 0) return upsertRecord_(sheetName, headers, keyField, record);
+  record.Updated_At = new Date().toISOString();
+  var rowValues = actual.map(function(h) { return record[h] !== undefined ? String(record[h] || "") : ""; });
+  sheet.getRange(rowIdx, 1, 1, actual.length).setValues([rowValues]);
+  return { updated: true, key: keyValue };
+}
+
+function softDeleteRecord_(sheetName, headers, keyField, keyValue, deletedBy) {
+  keyValue = String(keyValue || "").trim();
+  if (!keyValue) return { skipped: true, reason: "Empty key" };
+  var ss     = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet  = ss.getSheetByName(sheetName);
+  if (!sheet) throw new Error("Sheet not found: " + sheetName);
+  var actual = getHeaders_(sheet);
+  var rowIdx = findRowByKey_(sheet, actual, keyField, keyValue);
+  if (rowIdx < 0) return { skipped: true, reason: "Not found", key: keyValue };
+  var now = new Date().toISOString();
+  setCellIfColumn_(sheet, actual, rowIdx, "Is_Deleted", "TRUE");
+  setCellIfColumn_(sheet, actual, rowIdx, "Deleted_At", now);
+  setCellIfColumn_(sheet, actual, rowIdx, "Deleted_By", deletedBy || "");
+  setCellIfColumn_(sheet, actual, rowIdx, "Updated_At", now);
+  return { deleted: true, key: keyValue };
+}
+
+function findRowByKey_(sheet, actual, keyField, keyValue) {
+  var keyIdx = actual.indexOf(keyField);
+  if (keyIdx === -1 || sheet.getLastRow() < 2) return -1;
+  var keys = sheet.getRange(2, keyIdx + 1, sheet.getLastRow() - 1, 1).getValues();
+  for (var i = 0; i < keys.length; i++) {
+    if (String(keys[i][0] || "").trim() === keyValue) return i + 2;
+  }
+  return -1;
+}
+
+function setCellIfColumn_(sheet, actual, rowIdx, field, value) {
+  var idx = actual.indexOf(field);
+  if (idx !== -1) sheet.getRange(rowIdx, idx + 1).setValue(value);
+}
+
 function getHeaders_(sheet) {
   var lastCol = sheet.getLastColumn();
   if (!lastCol) return [];
@@ -190,6 +254,20 @@ function cellStr_(value) {
 }
 
 function validateKey_(key) { return key === SYNC_KEY; }
+
+function withLock_(fn) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (lockErr) {
+    throw new Error("System busy. Please try again.");
+  }
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
 
 function jsonResponse_(data) {
   return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
