@@ -325,9 +325,36 @@ function saveCompletedRepair(record) {
 
 function saveForRepairTruck(record) {
   const sheet = ensureForRepairTrucksSheet_();
+  const logSheet = ensureStatusLogSheet_();
   const headers = getHeaders_(sheet);
   const normalized = normalizeForRepairTruckRow_(record || {});
+  const forRepairId = normalized.For_Repair_ID;
+
+  // Read old status before upsert so the log entry captures the transition.
+  var oldStatus = "";
+  var existingRow = findRowByKey_(sheet, headers, "For_Repair_ID", forRepairId);
+  if (existingRow > 0) {
+    oldStatus = getCellByHeader_(sheet, headers, existingRow, "Repair_Status");
+  }
+
   upsertByKey_(sheet, headers, "For_Repair_ID", normalized);
+
+  // Log only when status transitions into Completed (skip duplicate log entries).
+  var newStatus = String(normalized.Repair_Status || "");
+  if (newStatus.toLowerCase() === "completed" && String(oldStatus).toLowerCase() !== "completed") {
+    appendStatusLog_(logSheet, {
+      linkedRepairId: "",
+      linkedForRepairId: forRepairId,
+      plateNumber: normalized.Plate_Number,
+      oldStatus: oldStatus,
+      newStatus: "Completed",
+      action: "Complete For Repair Truck",
+      remarks: normalized.Remarks || "",
+      changedBy: "Web User",
+      changedAt: new Date()
+    });
+  }
+
   return jsonResponse({
     success: true,
     message: "For repair truck saved successfully."
