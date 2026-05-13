@@ -530,6 +530,7 @@
     .category-repair-parts { background: #fee2e2; color: #b91c1c; }
     .category-labor { background: #f3f4f6; color: #374151; }
     .category-equipment { background: #ecfeff; color: #0e7490; }
+    [data-manual-form="Completed Repair"] { display: none !important; }
 
     @media (max-width: 768px) {
       .saved-records-actions-panel {
@@ -579,12 +580,12 @@
         </div>
 
         <div class="repair-tabs" role="tablist" aria-label="Repair module sections">
-          <button class="repair-tab-button active" type="button" data-repair-tab="repair-truck-tab">Repair Truck In/Out</button>
-          <button class="repair-tab-button" type="button" data-repair-tab="repair-entry-tab">Inventory & Repair Request Entry</button>
+          <button class="repair-tab-button active" type="button" data-repair-tab="repair-entry-tab">Inventory & Repair Request Entry</button>
+          <button class="repair-tab-button" type="button" data-repair-tab="repair-truck-tab">Repair Truck In/Out</button>
           <button class="repair-tab-button" type="button" data-repair-tab="saved-repairs-tab">Saved Repairs</button>
         </div>
 
-        <div id="repair-truck-tab" class="garage-monitoring repair-tab-panel active">
+        <div id="repair-truck-tab" class="garage-monitoring repair-tab-panel">
           <div class="table-actions">
             <div>
               <h2>Garage / For Repair Monitoring</h2>
@@ -701,6 +702,7 @@
               </label>
               <label class="wide-field"><span>Repair Issue</span><textarea rows="3" data-for-repair-field="repairIssue" placeholder="Describe repair issue"></textarea></label>
               <label><span>Start Date</span><input type="date" data-for-repair-field="startDate"></label>
+              <label><span>Estimated Finish Date</span><input type="date" data-for-repair-field="estimatedFinishDate"></label>
               <label><span>End Date</span><input type="date" data-for-repair-field="endDate"></label>
               <label>
                 <span>Repair Status</span>
@@ -728,6 +730,7 @@
                     <th>Garage Location</th>
                     <th>Repair Issue</th>
                     <th>Start Date</th>
+                    <th>Estimated Finish</th>
                     <th>End Date</th>
                     <th>Repair Status</th>
                     <th>Remarks</th>
@@ -735,37 +738,36 @@
                   </tr>
                 </thead>
                 <tbody id="for-repair-local-body">
-                  <tr><td colspan="8" class="empty">No for repair trucks added yet.</td></tr>
+                  <tr><td colspan="9" class="empty">No for repair trucks added yet.</td></tr>
                 </tbody>
               </table>
             </div>
           </section>
         </div>
 
-        <section id="repair-entry-tab" class="repair-entry-section repair-tab-panel">
+        <section id="repair-entry-tab" class="repair-entry-section repair-tab-panel active">
           <div class="section-heading-block">
             <h2>Inventory & Repair Request Entry</h2>
             <p>Create repair, labor, equipment, and parts requests from Viber messages or manual input.</p>
           </div>
 
           <div class="module-tabs" role="tablist" aria-label="Repair input modes">
-            <button class="module-tab active" type="button" id="viber-tab" data-tab-target="viber-panel" role="tab" aria-selected="true">Viber Message Parser</button>
-            <button class="module-tab" type="button" id="manual-tab" data-tab-target="manual-panel" role="tab" aria-selected="false">Manual User Input</button>
+            <button class="module-tab active" type="button" id="manual-tab" data-tab-target="manual-panel" role="tab" aria-selected="true">Manual User Input</button>
+            <button class="module-tab" type="button" id="viber-tab" data-tab-target="viber-panel" role="tab" aria-selected="false">Viber Message Parser</button>
           </div>
 
-          <div id="viber-panel" class="tab-panel active" role="tabpanel" aria-labelledby="viber-tab">
+          <div id="viber-panel" class="tab-panel" role="tabpanel" aria-labelledby="viber-tab" hidden>
         <div class="repair-panel">
           <label class="field-label" for="request-type-select">Request Type</label>
           <select id="request-type-select" class="repair-type-select">
             <option value="Auto Detect">Auto Detect</option>
             <option value="Parts Request">Parts Request</option>
             <option value="Labor Payment Request">Labor Payment Request</option>
-            <option value="Completed Repair">Completed Repair</option>
-            <option value="Repair Monitoring Update">Repair Monitoring Update</option>
-            <option value="Safety Equipment Request">Safety Equipment Request</option>
+            <option value="Safety Equipment Request">Equipment Request</option>
+            <option value="Repair Monitoring Update">Other Repair Request</option>
           </select>
           <label class="field-label">Viber Message Input</label>
-          <textarea id="repair-input" rows="14" placeholder="Paste Viber repair, labor, equipment, or completed repair message here..."></textarea>
+          <textarea id="repair-input" rows="14" placeholder="Paste Viber repair, labor, equipment, or repair update message here..."></textarea>
           <div class="button-group">
             <button id="parse-button" class="btn btn-primary">Parse Message</button>
             <button id="example-button" class="btn btn-outline" type="button">Example</button>
@@ -833,17 +835,16 @@
 
         </div>
 
-          <div id="manual-panel" class="tab-panel" role="tabpanel" aria-labelledby="manual-tab" hidden>
+          <div id="manual-panel" class="tab-panel active" role="tabpanel" aria-labelledby="manual-tab">
           <form id="manual-entry-form" class="manual-entry-form simple-manual-form">
             <div class="manual-form-switch">
               <label>
                 <span>Request Type</span>
                 <select id="manual-request-type" data-manual-field="requestType">
                   <option value="Parts Request">Parts Request</option>
-                  <option value="Equipment Request">Equipment Request</option>
                   <option value="Labor Payment Request">Labor Payment Request</option>
-                  <option value="Completed Repair">Completed Repair</option>
-                  <option value="Repair Monitoring Update">Repair Monitoring Update</option>
+                  <option value="Equipment Request">Equipment Request</option>
+                  <option value="Repair Monitoring Update">Other Repair Request</option>
                 </select>
               </label>
             </div>
@@ -968,6 +969,9 @@
               </div>
               <div class="manual-fields">
                 <label><span>Date Finished</span><input type="date" data-completed-field="dateFinished"></label>
+                <input type="hidden" data-completed-field="completedRepairId">
+                <input type="hidden" data-completed-field="linkedRepairId">
+                <input type="hidden" data-completed-field="linkedForRepairId">
                 <label><span>Group</span><select data-completed-field="plateGroup" data-plate-group-select="completed"></select></label>
                 <label><span>Plate Number</span><select data-completed-field="plateNumber" data-plate-select="completed"></select></label>
                 <label>
@@ -992,8 +996,12 @@
                 <label><span>Parts / Item Name</span><input type="text" data-completed-field="item"></label>
                 <label><span>Quantity</span><input type="number" step="0.01" data-completed-field="quantity"></label>
                 <label><span>Unit Cost</span><input type="number" step="0.01" data-completed-field="unitCost"></label>
+                <label><span>Labor Cost</span><input type="number" step="0.01" data-completed-field="laborCost"></label>
+                <label><span>Parts Cost</span><input type="number" step="0.01" data-completed-field="partsCost"></label>
                 <label><span>Total Amount</span><input type="number" step="0.01" data-completed-field="totalCost"></label>
                 <label><span>Approval Status</span><select data-completed-field="approvalStatus"><option value="Not required">Not required</option><option value="Pending">Pending</option><option value="Approved">Approved</option><option value="Rejected">Rejected</option></select></label>
+                <label><span>Payment Status</span><select data-completed-field="paymentStatus"><option value="Unpaid">Unpaid</option><option value="For Deposit">For Deposit</option><option value="Paid">Paid</option><option value="N/A">N/A</option></select></label>
+                <label><span>Payee</span><input type="text" data-completed-field="payee"></label>
                 <label class="wide-field"><span>Remarks</span><textarea rows="4" data-completed-field="remarks"></textarea></label>
               </div>
             </section>
@@ -1068,9 +1076,7 @@
                   <option value="Parts Request">Parts Request</option>
                   <option value="Equipment Request">Equipment Request</option>
                   <option value="Labor Payment Request">Labor Payment Request</option>
-                  <option value="Completed Repair">Completed Repair</option>
-                  <option value="Repair Monitoring Update">Repair Monitoring Update</option>
-                  <option value="Safety Equipment Request">Safety Equipment Request</option>
+                  <option value="Repair Monitoring Update">Other Repair Request</option>
                 </select>
               </label>
               <label>

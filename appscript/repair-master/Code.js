@@ -1,6 +1,8 @@
 const SPREADSHEET_ID = "1A_yPDhfXuRVuJy8kWL0uPBhIcJkg4mgLlv-cF-4tFq0";
-const SHEET_NAME = "Repair_Requests";
-const LOG_SHEET_NAME = "Repair_Status_Log";
+const SHEET_NAME = "Saved_Repair_Labor_Requests";
+const FOR_REPAIR_SHEET_NAME = "For_Repair_Trucks";
+const COMPLETED_REPAIRS_SHEET_NAME = "Completed_Repairs";
+const LOG_SHEET_NAME = "Repair_Labor_Request_Status_Log";
 
 const REPAIR_REQUEST_HEADERS = [
   // Existing live columns. Keep this order so old sheet data stays aligned.
@@ -50,20 +52,73 @@ const REPAIR_REQUEST_HEADERS = [
   "Shop_Name",
   "Approval_Status",
   "Cost_Remarks",
-  "Approved_Cost"
+  "Approved_Cost",
+  // Soft-delete columns — appended to the right only, never inserted mid-sheet.
+  "Is_Deleted",
+  "Deleted_At",
+  "Deleted_By",
+  "Delete_Reason"
 ];
 
 const STATUS_LOG_HEADERS = [
-  "Log_ID",
-  "Request_ID",
-  "Action",
+  "Status_Log_ID",
+  "Linked_Repair_ID",
+  "Linked_For_Repair_ID",
+  "Plate_Number",
   "Old_Status",
   "New_Status",
+  "Action",
+  "Remarks",
+  "Changed_By",
+  "Changed_At",
+  "Log_ID",
+  "Request_ID",
   "Old_Payment_Status",
   "New_Payment_Status",
   "Updated_By",
-  "Updated_At",
-  "Remarks"
+  "Updated_At"
+];
+
+const FOR_REPAIR_HEADERS = [
+  "For_Repair_ID",
+  "Plate_Number",
+  "Group_Category",
+  "Truck_Type",
+  "Garage_Location",
+  "Repair_Issue",
+  "Start_Date",
+  "Estimated_Finish_Date",
+  "End_Date",
+  "Repair_Status",
+  "Remarks",
+  "Created_At",
+  "Updated_At"
+];
+
+const COMPLETED_REPAIR_HEADERS = [
+  "Completed_Repair_ID",
+  "Linked_Repair_ID",
+  "Linked_For_Repair_ID",
+  "Date_Finished",
+  "Group_Category",
+  "Plate_Number",
+  "Truck_Type",
+  "Driver",
+  "Mechanic_Worker",
+  "Shop_Name",
+  "Work_Done",
+  "Parts_Item_Name",
+  "Quantity",
+  "Unit_Cost",
+  "Labor_Cost",
+  "Parts_Cost",
+  "Total_Amount",
+  "Approval_Status",
+  "Payment_Status",
+  "Payee",
+  "Remarks",
+  "Created_At",
+  "Updated_At"
 ];
 
 function doPost(e) {
@@ -72,6 +127,18 @@ function doPost(e) {
 
     if (data.action === "updateStatus") {
       return updateStatus(data);
+    }
+
+    if (data.action === "saveCompletedRepair") {
+      return saveCompletedRepair(data.record || {});
+    }
+
+    if (data.action === "saveForRepairTruck") {
+      return saveForRepairTruck(data.record || {});
+    }
+
+    if (data.action === "deleteRepairRequest") {
+      return deleteRepairRequest_(data);
     }
 
     const sheet = ensureRepairSheet_();
@@ -117,7 +184,7 @@ function doGet(e) {
   const action = e && e.parameter && e.parameter.action;
 
   if (action === "list") {
-    return listRepairRecords();
+    return listRepairRecords(e);
   }
 
   if (action === "garageTrucks") {
@@ -170,18 +237,16 @@ function updateStatus(data) {
     updateCellIfPresent_(sheet, headers, i + 1, "Proof_Of_Payment", firstNonBlank_(data.Proof_Of_Payment, data.proofOfPayment));
     updateCellIfPresent_(sheet, headers, i + 1, "Last_Updated", new Date());
 
-    logSheet.appendRow([
-      generateLogId(),
-      requestId,
-      "STATUS_UPDATE",
-      beforeStatus,
-      firstNonBlank_(data.Status, data.status, beforeStatus),
-      beforePaymentStatus,
-      firstNonBlank_(data.Payment_Status, data.paymentStatus, beforePaymentStatus),
-      data.Updated_By || data.updatedBy || "Web User",
-      new Date(),
-      data.Remarks || data.remarks || ""
-    ]);
+    appendStatusLog_(logSheet, {
+      linkedRepairId: requestId,
+      plateNumber: data.Plate_Number || data.plateNumber || "",
+      oldStatus: beforeStatus,
+      newStatus: firstNonBlank_(data.Status, data.status, beforeStatus),
+      action: "STATUS_UPDATE",
+      remarks: data.Remarks || data.remarks || "",
+      changedBy: data.Updated_By || data.updatedBy || "Web User",
+      changedAt: new Date()
+    });
 
     return jsonResponse({
       success: true,
@@ -195,8 +260,120 @@ function updateStatus(data) {
   });
 }
 
-function listRepairRecords() {
+function saveCompletedRepair(record) {
+  const now = new Date();
+  const completedSheet = ensureCompletedRepairsSheet_();
+  const repairSheet = ensureRepairSheet_();
+  const forRepairSheet = ensureForRepairTrucksSheet_();
+  const logSheet = ensureStatusLogSheet_();
+  const completedHeaders = getHeaders_(completedSheet);
+  const completed = normalizeCompletedRepairRow_(record || {});
+
+  upsertByKey_(completedSheet, completedHeaders, "Completed_Repair_ID", completed);
+
+  const linkedRepairId = completed.Linked_Repair_ID;
+  const linkedForRepairId = completed.Linked_For_Repair_ID;
+  let oldStatus = "";
+
+  if (linkedRepairId) {
+    const repairHeaders = getHeaders_(repairSheet);
+    const repairRow = findRowByKey_(repairSheet, repairHeaders, "Request_ID", linkedRepairId);
+    if (repairRow > 0) {
+      oldStatus = getCellByHeader_(repairSheet, repairHeaders, repairRow, "Repair_Status") || getCellByHeader_(repairSheet, repairHeaders, repairRow, "Status");
+      updateCellIfPresent_(repairSheet, repairHeaders, repairRow, "Repair_Status", "Completed");
+      updateCellIfPresent_(repairSheet, repairHeaders, repairRow, "Status", "Completed");
+      updateCellIfPresent_(repairSheet, repairHeaders, repairRow, "Date_Finished", completed.Date_Finished);
+      updateCellIfPresent_(repairSheet, repairHeaders, repairRow, "Last_Updated", now);
+    }
+  }
+
+  if (linkedForRepairId) {
+    const forRepairHeaders = getHeaders_(forRepairSheet);
+    const forRepairRow = findRowByKey_(forRepairSheet, forRepairHeaders, "For_Repair_ID", linkedForRepairId);
+    if (forRepairRow > 0) {
+      updateCellIfPresent_(forRepairSheet, forRepairHeaders, forRepairRow, "Repair_Status", "Completed");
+      updateCellIfPresent_(forRepairSheet, forRepairHeaders, forRepairRow, "End_Date", completed.Date_Finished);
+      updateCellIfPresent_(forRepairSheet, forRepairHeaders, forRepairRow, "Updated_At", now);
+    }
+  }
+
+  appendStatusLog_(logSheet, {
+    linkedRepairId: linkedRepairId,
+    linkedForRepairId: linkedForRepairId,
+    plateNumber: completed.Plate_Number,
+    oldStatus: oldStatus,
+    newStatus: "Completed",
+    action: "Completed Repair",
+    remarks: completed.Remarks,
+    changedBy: "Web User",
+    changedAt: now
+  });
+
+  return jsonResponse({
+    success: true,
+    message: "Completed repair saved successfully."
+  });
+}
+
+function saveForRepairTruck(record) {
+  const sheet = ensureForRepairTrucksSheet_();
+  const headers = getHeaders_(sheet);
+  const normalized = normalizeForRepairTruckRow_(record || {});
+  upsertByKey_(sheet, headers, "For_Repair_ID", normalized);
+  return jsonResponse({
+    success: true,
+    message: "For repair truck saved successfully."
+  });
+}
+
+function deleteRepairRequest_(data) {
+  const requestId = String(data.requestId || data.Request_ID || "").trim();
+  if (!requestId) {
+    return jsonResponse({ success: false, message: "requestId is required." });
+  }
+
+  const sheet = ensureRepairSheet_();
+  const logSheet = ensureStatusLogSheet_();
+  const headers = getHeaders_(sheet);
+  const rowIndex = findRowByKey_(sheet, headers, "Request_ID", requestId);
+
+  if (rowIndex < 0) {
+    return jsonResponse({ success: false, message: "Request_ID not found: " + requestId });
+  }
+
+  const now = new Date();
+  const oldStatus = getCellByHeader_(sheet, headers, rowIndex, "Status");
+  const plateNumber = getCellByHeader_(sheet, headers, rowIndex, "Plate_Number");
+  const deletedBy = String(data.deletedBy || "Web User");
+  const deleteReason = String(data.deleteReason || "");
+
+  updateCellIfPresent_(sheet, headers, rowIndex, "Is_Deleted", "TRUE");
+  updateCellIfPresent_(sheet, headers, rowIndex, "Deleted_At", now);
+  updateCellIfPresent_(sheet, headers, rowIndex, "Deleted_By", deletedBy);
+  if (deleteReason) {
+    updateCellIfPresent_(sheet, headers, rowIndex, "Delete_Reason", deleteReason);
+  }
+  updateCellIfPresent_(sheet, headers, rowIndex, "Status", "Deleted");
+  updateCellIfPresent_(sheet, headers, rowIndex, "Last_Updated", now);
+
+  appendStatusLog_(logSheet, {
+    linkedRepairId: requestId,
+    linkedForRepairId: "",
+    plateNumber: plateNumber,
+    oldStatus: oldStatus,
+    newStatus: "Deleted",
+    action: "Delete Repair Request",
+    remarks: deleteReason,
+    changedBy: deletedBy,
+    changedAt: now
+  });
+
+  return jsonResponse({ success: true, message: "Repair request deleted and logged." });
+}
+
+function listRepairRecords(e) {
   try {
+    const includeDeleted = e && e.parameter && e.parameter.includeDeleted === "true";
     const sheet = ensureRepairSheet_();
     const values = sheet.getDataRange().getValues();
 
@@ -208,6 +385,7 @@ function listRepairRecords() {
     }
 
     const headers = values[0];
+    const isDeletedCol = headers.indexOf("Is_Deleted");
     const rows = values.slice(1);
     const records = rows
       .filter(function(row) { return row.some(function(cell) { return cell !== ""; }); })
@@ -217,6 +395,10 @@ function listRepairRecords() {
           obj[header] = row[index] || "";
         });
         return obj;
+      })
+      .filter(function(obj) {
+        if (includeDeleted) return true;
+        return String(obj.Is_Deleted || "").toUpperCase() !== "TRUE";
       });
 
     return jsonResponse({
@@ -243,6 +425,8 @@ function testEnsureRepairTabs() {
 
 function ensureRepairTabs_() {
   ensureRepairSheet_();
+  ensureForRepairTrucksSheet_();
+  ensureCompletedRepairsSheet_();
   ensureStatusLogSheet_();
 }
 
@@ -254,6 +438,16 @@ function ensureRepairSheet_() {
 function ensureStatusLogSheet_() {
   const ss = getRepairSpreadsheet_();
   return ensureSheetHeaders_(ss, LOG_SHEET_NAME, STATUS_LOG_HEADERS);
+}
+
+function ensureForRepairTrucksSheet_() {
+  const ss = getRepairSpreadsheet_();
+  return ensureSheetHeaders_(ss, FOR_REPAIR_SHEET_NAME, FOR_REPAIR_HEADERS);
+}
+
+function ensureCompletedRepairsSheet_() {
+  const ss = getRepairSpreadsheet_();
+  return ensureSheetHeaders_(ss, COMPLETED_REPAIRS_SHEET_NAME, COMPLETED_REPAIR_HEADERS);
 }
 
 function ensureSheetHeaders_(ss, sheetName, expectedHeaders) {
@@ -348,6 +542,112 @@ function normalizeRepairRow_(row) {
   };
 }
 
+function normalizeCompletedRepairRow_(row) {
+  const now = new Date();
+  const quantity = firstNonBlank_(row.Quantity, row.quantity);
+  const unitCost = firstNonBlank_(row.Unit_Cost, row.unitCost);
+  const laborCost = firstNonBlank_(row.Labor_Cost, row.laborCost);
+  const partsCost = firstNonBlank_(row.Parts_Cost, row.partsCost, row.Total_Amount, row.totalAmount, row.Total_Cost, row.totalCost);
+  const totalAmount = firstNonBlank_(row.Total_Amount, row.totalAmount, row.Total_Cost, row.totalCost, row.Final_Cost, row.finalCost, partsCost);
+  return {
+    Completed_Repair_ID: firstNonBlank_(row.Completed_Repair_ID, row.completedRepairId, generateCompletedRepairId()),
+    Linked_Repair_ID: firstNonBlank_(row.Linked_Repair_ID, row.linkedRepairId, row.Request_ID, row.requestId),
+    Linked_For_Repair_ID: firstNonBlank_(row.Linked_For_Repair_ID, row.linkedForRepairId, row.For_Repair_ID, row.forRepairId),
+    Date_Finished: firstNonBlank_(row.Date_Finished, row.dateFinished, now),
+    Group_Category: firstNonBlank_(row.Group_Category, row.groupCategory, row.plateGroup),
+    Plate_Number: firstNonBlank_(row.Plate_Number, row.plateNumber),
+    Truck_Type: firstNonBlank_(row.Truck_Type, row.truckType),
+    Driver: firstNonBlank_(row.Driver, row.driver),
+    Mechanic_Worker: firstNonBlank_(row.Mechanic_Worker, row.mechanicWorker, row.Mechanic, row.mechanic),
+    Shop_Name: firstNonBlank_(row.Shop_Name, row.shopName),
+    Work_Done: firstNonBlank_(row.Work_Done, row.workDone, row.Repair_Issue, row.repairIssue),
+    Parts_Item_Name: firstNonBlank_(row.Parts_Item_Name, row.partsItemName, row.Repair_Parts, row.item),
+    Quantity: quantity,
+    Unit_Cost: unitCost,
+    Labor_Cost: laborCost,
+    Parts_Cost: partsCost,
+    Total_Amount: totalAmount,
+    Approval_Status: firstNonBlank_(row.Approval_Status, row.approvalStatus),
+    Payment_Status: firstNonBlank_(row.Payment_Status, row.paymentStatus),
+    Payee: firstNonBlank_(row.Payee, row.payee),
+    Remarks: firstNonBlank_(row.Remarks, row.remarks),
+    Created_At: firstNonBlank_(row.Created_At, row.createdAt, now),
+    Updated_At: now
+  };
+}
+
+function normalizeForRepairTruckRow_(row) {
+  const now = new Date();
+  return {
+    For_Repair_ID: firstNonBlank_(row.For_Repair_ID, row.forRepairId, generateForRepairId()),
+    Plate_Number: firstNonBlank_(row.Plate_Number, row.plateNumber),
+    Group_Category: firstNonBlank_(row.Group_Category, row.groupCategory, row.plateGroup),
+    Truck_Type: firstNonBlank_(row.Truck_Type, row.truckType),
+    Garage_Location: firstNonBlank_(row.Garage_Location, row.garageLocation),
+    Repair_Issue: firstNonBlank_(row.Repair_Issue, row.repairIssue),
+    Start_Date: firstNonBlank_(row.Start_Date, row.startDate),
+    Estimated_Finish_Date: firstNonBlank_(row.Estimated_Finish_Date, row.estimatedFinishDate),
+    End_Date: firstNonBlank_(row.End_Date, row.endDate),
+    Repair_Status: firstNonBlank_(row.Repair_Status, row.repairStatus, "For Repair"),
+    Remarks: firstNonBlank_(row.Remarks, row.remarks),
+    Created_At: firstNonBlank_(row.Created_At, row.createdAt, now),
+    Updated_At: now
+  };
+}
+
+function upsertByKey_(sheet, headers, keyField, record) {
+  const keyValue = String(record[keyField] || "").trim();
+  if (!keyValue) throw new Error(keyField + " is required.");
+  const rowIndex = findRowByKey_(sheet, headers, keyField, keyValue);
+  const values = headers.map(function(header) {
+    return record.hasOwnProperty(header) ? record[header] : "";
+  });
+  if (rowIndex > 0) {
+    sheet.getRange(rowIndex, 1, 1, headers.length).setValues([values]);
+    return { updated: true, key: keyValue };
+  }
+  sheet.appendRow(values);
+  return { created: true, key: keyValue };
+}
+
+function findRowByKey_(sheet, headers, keyField, keyValue) {
+  const keyCol = headers.indexOf(keyField);
+  if (keyCol === -1 || !keyValue || sheet.getLastRow() < 2) return -1;
+  const values = sheet.getRange(2, keyCol + 1, sheet.getLastRow() - 1, 1).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || "") === String(keyValue)) return i + 2;
+  }
+  return -1;
+}
+
+function getCellByHeader_(sheet, headers, rowIndex, header) {
+  const colIndex = headers.indexOf(header);
+  if (colIndex === -1 || rowIndex < 1) return "";
+  return sheet.getRange(rowIndex, colIndex + 1).getValue();
+}
+
+function appendStatusLog_(sheet, entry) {
+  const headers = getHeaders_(sheet);
+  const row = {};
+  row.Status_Log_ID = generateStatusLogId();
+  row.Log_ID = row.Status_Log_ID;
+  row.Linked_Repair_ID = entry.linkedRepairId || "";
+  row.Linked_For_Repair_ID = entry.linkedForRepairId || "";
+  row.Plate_Number = entry.plateNumber || "";
+  row.Old_Status = entry.oldStatus || "";
+  row.New_Status = entry.newStatus || "";
+  row.Action = entry.action || "";
+  row.Remarks = entry.remarks || "";
+  row.Changed_By = entry.changedBy || "";
+  row.Changed_At = entry.changedAt || new Date();
+  row.Request_ID = entry.linkedRepairId || "";
+  row.Updated_By = entry.changedBy || "";
+  row.Updated_At = entry.changedAt || new Date();
+  sheet.appendRow(headers.map(function(header) {
+    return row.hasOwnProperty(header) ? row[header] : "";
+  }));
+}
+
 function updateCellIfPresent_(sheet, headers, rowIndex, header, value) {
   const colIndex = headers.indexOf(header);
   if (colIndex === -1 || value === undefined) return;
@@ -378,6 +678,39 @@ function generateRequestId() {
 
 function generateLogId() {
   return "LOG-" +
+    Utilities.formatDate(
+      new Date(),
+      "Asia/Manila",
+      "yyyyMMdd-HHmmss"
+    ) +
+    "-" +
+    Math.floor(Math.random() * 1000);
+}
+
+function generateCompletedRepairId() {
+  return "CR-" +
+    Utilities.formatDate(
+      new Date(),
+      "Asia/Manila",
+      "yyyyMMdd-HHmmss"
+    ) +
+    "-" +
+    Math.floor(Math.random() * 1000);
+}
+
+function generateForRepairId() {
+  return "FR-" +
+    Utilities.formatDate(
+      new Date(),
+      "Asia/Manila",
+      "yyyyMMdd-HHmmss"
+    ) +
+    "-" +
+    Math.floor(Math.random() * 1000);
+}
+
+function generateStatusLogId() {
+  return "RSL-" +
     Utilities.formatDate(
       new Date(),
       "Asia/Manila",

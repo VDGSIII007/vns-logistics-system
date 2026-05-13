@@ -115,6 +115,8 @@ let savedParsedRequestSignature = '';
 let savedParsedRowKeys = new Set();
 const REPAIR_CHANGE_REQUESTS_KEY = 'vnsRepairChangeRequests';
 const REPAIR_PAYMENT_UPDATES_KEY = 'vnsRepairPaymentUpdates';
+const REPAIR_DELETED_IDS_KEY = 'vnsRepairDeletedIds';
+const FOR_REPAIR_TRUCKS_KEY = 'vnsForRepairTrucks';
 const TRUCK_MASTER_KEY = 'vnsTruckMaster';
 const LEGACY_TRUCK_MASTER_KEY = 'vnsTruckMasterfile';
 const REPAIR_PLATE_GROUPS = [
@@ -125,6 +127,10 @@ const REPAIR_PLATE_GROUPS = [
   { value: 'Caps / Crown', label: 'Caps / Crown' },
   { value: 'Unknown / Needs Update', label: 'Needs Update / Unknown' }
 ];
+
+function createRepairLocalId(prefix) {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function initRepairTabs() {
   const buttons = document.querySelectorAll('.repair-tab-button');
@@ -920,7 +926,13 @@ function buildRepairTable(rows) {
     return;
   }
 
-  tableBody.innerHTML = rows.map(row => `
+  const displayRows = rows.map(row => (
+    row.requestType === 'Completed Repair'
+      ? { ...row, requestType: 'Repair Monitoring Update' }
+      : row
+  ));
+
+  tableBody.innerHTML = displayRows.map(row => `
     <tr
       data-supplier="${escapeHtml(row.supplier)}"
       data-remarks="${escapeHtml(row.remarks)}"
@@ -938,9 +950,8 @@ function buildRepairTable(rows) {
         <select data-field="requestType">
           <option value="Parts Request"${row.requestType === 'Parts Request' ? ' selected' : ''}>Parts Request</option>
           <option value="Labor Payment Request"${row.requestType === 'Labor Payment Request' ? ' selected' : ''}>Labor Payment Request</option>
-          <option value="Completed Repair"${row.requestType === 'Completed Repair' ? ' selected' : ''}>Completed Repair</option>
-          <option value="Repair Monitoring Update"${row.requestType === 'Repair Monitoring Update' ? ' selected' : ''}>Repair Monitoring Update</option>
-          <option value="Safety Equipment Request"${row.requestType === 'Safety Equipment Request' ? ' selected' : ''}>Safety Equipment Request</option>
+          <option value="Safety Equipment Request"${row.requestType === 'Safety Equipment Request' ? ' selected' : ''}>Equipment Request</option>
+          <option value="Repair Monitoring Update"${row.requestType === 'Repair Monitoring Update' ? ' selected' : ''}>Other Repair Request</option>
         </select>
       </td>
       <td>${escapeHtml(row.date)}</td>
@@ -1408,7 +1419,7 @@ function getForRepairLocalValue(field) {
 
 function loadLocalForRepairTrucks() {
   try {
-    localForRepairTrucks = JSON.parse(localStorage.getItem('vnsForRepairTrucks') || '[]');
+    localForRepairTrucks = JSON.parse(localStorage.getItem(FOR_REPAIR_TRUCKS_KEY) || '[]');
   } catch (error) {
     localForRepairTrucks = [];
   }
@@ -1420,13 +1431,47 @@ function renderForRepairTrucks() {
 }
 
 function saveLocalForRepairTrucks() {
-  localStorage.setItem('vnsForRepairTrucks', JSON.stringify(localForRepairTrucks));
+  localStorage.setItem(FOR_REPAIR_TRUCKS_KEY, JSON.stringify(localForRepairTrucks));
 }
 
 function saveForRepairTruck(record) {
+  record.forRepairId = record.forRepairId || createRepairLocalId('for_repair');
+  record.createdAt = record.createdAt || new Date().toISOString();
+  record.updatedAt = new Date().toISOString();
   localForRepairTrucks.unshift(record);
   saveLocalForRepairTrucks();
   renderLocalForRepairTrucks();
+  syncForRepairTruck(record);
+}
+
+async function syncForRepairTruck(record) {
+  try {
+    await fetch(REPAIR_WEB_APP_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'saveForRepairTruck',
+        record: {
+          For_Repair_ID: record.forRepairId,
+          Plate_Number: record.plateNumber || '',
+          Group_Category: record.groupCategory || '',
+          Truck_Type: record.truckType || '',
+          Garage_Location: record.garageLocation || '',
+          Repair_Issue: record.repairIssue || '',
+          Start_Date: record.startDate || '',
+          Estimated_Finish_Date: record.estimatedFinishDate || '',
+          End_Date: record.endDate || '',
+          Repair_Status: record.repairStatus || '',
+          Remarks: record.remarks || '',
+          Created_At: record.createdAt || '',
+          Updated_At: record.updatedAt || ''
+        }
+      })
+    });
+  } catch (error) {
+    console.warn('Unable to sync for repair truck.', error);
+  }
 }
 
 function deleteForRepairTruck(index) {
@@ -1436,10 +1481,30 @@ function deleteForRepairTruck(index) {
   if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'For repair unit deleted.';
 }
 
+function completeForRepairTruck(index) {
+  const record = localForRepairTrucks[index];
+  if (!record) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const completedDate = window.prompt('Completion date:', record.endDate || today);
+  if (completedDate === null) return;
+
+  const updatedRecord = {
+    ...record,
+    endDate: completedDate || today,
+    repairStatus: 'Completed',
+    updatedAt: new Date().toISOString()
+  };
+  localForRepairTrucks[index] = updatedRecord;
+  saveLocalForRepairTrucks();
+  renderLocalForRepairTrucks();
+  syncForRepairTruck(updatedRecord);
+  if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'For repair unit marked completed. Syncing to Google Sheets...';
+}
+
 function renderLocalForRepairTrucks() {
   if (!forRepairLocalBody) return;
   if (!localForRepairTrucks.length) {
-    forRepairLocalBody.innerHTML = '<tr><td colspan="8" class="empty">No for repair trucks added yet.</td></tr>';
+    forRepairLocalBody.innerHTML = '<tr><td colspan="9" class="empty">No for repair trucks added yet.</td></tr>';
     return;
   }
 
@@ -1449,10 +1514,16 @@ function renderLocalForRepairTrucks() {
       <td>${escapeHtml(truncateRecordValue(record.garageLocation, 28))}</td>
       <td>${escapeHtml(truncateRecordValue(record.repairIssue))}</td>
       <td>${escapeHtml(truncateRecordValue(record.startDate, 18))}</td>
+      <td>${escapeHtml(truncateRecordValue(record.estimatedFinishDate, 18))}</td>
       <td>${escapeHtml(truncateRecordValue(record.endDate, 18))}</td>
       <td>${escapeHtml(truncateRecordValue(record.repairStatus, 24))}</td>
       <td>${escapeHtml(truncateRecordValue(record.remarks))}</td>
-      <td><button class="details-button" type="button" data-for-repair-delete="${index}">Delete</button></td>
+      <td>
+        <div class="change-request-actions">
+          <button class="details-button action-mini-button" type="button" data-for-repair-complete="${index}">Complete</button>
+          <button class="details-button action-mini-button" type="button" data-for-repair-delete="${index}">Delete</button>
+        </div>
+      </td>
     </tr>
   `).join('');
 }
@@ -1876,7 +1947,7 @@ function buildPaymentStatusActions(record, recordIndex) {
         <button class="more-actions-button action-mini-button" type="button" data-more-actions="${recordIndex}" aria-expanded="false">More</button>
         <div class="more-actions-menu" data-more-menu="${recordIndex}" hidden>
           <button class="request-edit-button" type="button" data-change-request="edit" data-record-index="${recordIndex}">Request Edit</button>
-          <button class="request-delete-button" type="button" data-change-request="delete" data-record-index="${recordIndex}">Request Delete</button>
+          <button class="request-delete-button" type="button" data-change-request="delete" data-record-index="${recordIndex}">Delete</button>
         </div>
       </div>
       ${hasPaymentUpdate ? `<span class="payment-updated-indicator" title="${escapeHtml(updatedTitle)}">Updated</span>` : ''}
@@ -1892,6 +1963,20 @@ function readRepairChangeRequests() {
   } catch (error) {
     return [];
   }
+}
+
+function readRepairDeletedIds() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(REPAIR_DELETED_IDS_KEY) || '[]'));
+  } catch (error) {
+    return new Set();
+  }
+}
+
+function addRepairDeletedId(id) {
+  const ids = readRepairDeletedIds();
+  ids.add(String(id));
+  localStorage.setItem(REPAIR_DELETED_IDS_KEY, JSON.stringify([...ids]));
 }
 
 function readRepairPaymentUpdates() {
@@ -1976,13 +2061,49 @@ function saveRepairChangeRequest(record, requestType, reason) {
 function requestSavedRepairChange(recordIndex, requestType, button) {
   const record = savedRepairRecords[recordIndex];
   if (!record || !recordsStatus) return;
-  const label = requestType === 'delete' ? 'delete' : 'edit';
-  const reason = window.prompt(`Reason for ${label} request? This will not change the saved repair record.`);
+  const reason = window.prompt('Reason for edit request? This will not change the saved repair record.');
   if (reason === null) return;
   saveRepairChangeRequest(record, requestType, reason);
   const rowStatus = button?.closest('.change-request-actions')?.querySelector(`[data-row-status="${recordIndex}"]`);
-  if (rowStatus) rowStatus.textContent = `${label === 'delete' ? 'Delete' : 'Edit'} request saved`;
-  recordsStatus.textContent = `${label === 'delete' ? 'Delete' : 'Edit'} request saved to ${REPAIR_CHANGE_REQUESTS_KEY}. Saved record was not changed.`;
+  if (rowStatus) rowStatus.textContent = 'Edit request saved';
+  recordsStatus.textContent = `Edit request saved to ${REPAIR_CHANGE_REQUESTS_KEY}. Saved record was not changed.`;
+}
+
+async function deleteRepairRecordLocal(recordIndex) {
+  const record = savedRepairRecords[recordIndex];
+  if (!record || !recordsStatus) return;
+  const recordId = getRepairRecordId(record);
+  if (!recordId) {
+    recordsStatus.textContent = 'Cannot delete: record has no ID.';
+    return;
+  }
+  if (!window.confirm('Delete this repair request? This will hide it but keep a log.')) return;
+  const reason = window.prompt('Reason for delete? (optional)') ?? '';
+
+  // Save locally first — row disappears immediately
+  addRepairDeletedId(recordId);
+  recordsStatus.textContent = 'Deleted locally. Syncing delete to Google Sheet...';
+  renderSavedRecords();
+
+  // Sync to Google Sheets (no-cors — success = no network error)
+  try {
+    await fetch(REPAIR_WEB_APP_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'deleteRepairRequest',
+        requestId: recordId,
+        deletedBy: 'Web User',
+        deleteReason: reason
+      })
+    });
+    console.log('[Repair] Delete sync success:', recordId);
+    recordsStatus.textContent = 'Deleted and logged in Google Sheet.';
+  } catch (error) {
+    console.error('[Repair] Delete sync failed:', error);
+    recordsStatus.textContent = 'Deleted locally. Google Sheet delete sync failed.';
+  }
 }
 
 function updateRecordsSummary(records) {
@@ -2065,7 +2186,11 @@ function filterSavedRecords(records) {
   const dateTo = normalizeDateForFilter(recordsDateToFilter?.value || '');
   const dateFilterActive = Boolean(dateFrom || dateTo);
 
-  const alignedRecords = records.filter(record => !isMisalignedSavedRecord(record));
+  const deletedIds = readRepairDeletedIds();
+  const alignedRecords = records.filter(record =>
+    !isMisalignedSavedRecord(record) &&
+    !deletedIds.has(getRepairRecordId(record))
+  );
   hiddenMisalignedRecordCount = records.length - alignedRecords.length;
 
   return alignedRecords.filter(record => {
@@ -2671,11 +2796,24 @@ function initRepairPlateDropdowns() {
       plateField.dataset.plateSelectBound = 'true';
       plateField.addEventListener('change', () => {
         handleManualPlateOption(prefix);
+        setGroupFromSelectedPlate(prefix);
         setTruckTypeFromMasterfile(prefix);
         if (prefix === 'records') renderSavedRecords();
       });
     }
   });
+}
+
+function setGroupFromSelectedPlate(prefix) {
+  const plateField = getRepairPlateField(prefix);
+  const groupField = getRepairPlateGroupField(prefix);
+  if (!plateField || !groupField || !plateField.value || plateField.value === '__manual__') return;
+  const truckInfo = getTruckInfoByPlate(plateField.value);
+  if (!truckInfo?.groupCategory) return;
+  groupField.value = normalizeTruckGroup(truckInfo.groupCategory);
+  populateRepairPlateSelect(prefix);
+  const refreshedPlateField = getRepairPlateField(prefix);
+  if (refreshedPlateField) refreshedPlateField.value = truckInfo.plateNumber;
 }
 
 function setTruckTypeFromMasterfile(prefix) {
@@ -2692,6 +2830,62 @@ function setTruckTypeFromMasterfile(prefix) {
   }
 }
 
+function setSimpleManualValue(prefix, field, value) {
+  const input = getSimpleManualField(prefix, field);
+  if (!input) return;
+  if (input.tagName === 'SELECT' && value && !Array.from(input.options).some(option => option.value === value)) {
+    input.add(new Option(value, value));
+  }
+  input.value = value || '';
+}
+
+function switchToManualCompletedForm() {
+  document.querySelector('[data-repair-tab="repair-entry-tab"]')?.click();
+  document.getElementById('manual-tab')?.click();
+  if (manualRequestTypeSelect) {
+    manualRequestTypeSelect.value = 'Completed Repair';
+    setManualFormVisibility();
+  }
+}
+
+function openCompletedRepairFromRecord(recordIndex) {
+  const record = savedRepairRecords[recordIndex];
+  if (!record) return;
+  switchToManualCompletedForm();
+  const plateNumber = normalizePlateNumber(getRecordValue(record, 'Plate_Number'));
+  const truckInfo = getTruckInfoByPlate(plateNumber);
+  const today = new Date().toISOString().slice(0, 10);
+  setSimpleManualValue('completed', 'completedRepairId', createRepairLocalId('completed_repair'));
+  setSimpleManualValue('completed', 'linkedRepairId', getRecordValue(record, 'Request_ID'));
+  setSimpleManualValue('completed', 'linkedForRepairId', findForRepairIdForPlate(plateNumber));
+  setSimpleManualValue('completed', 'dateFinished', today);
+  setSimpleManualValue('completed', 'plateGroup', truckInfo?.groupCategory || getRecordValue(record, 'Group_Category'));
+  populateRepairPlateSelect('completed');
+  setSimpleManualValue('completed', 'plateNumber', plateNumber);
+  setSimpleManualValue('completed', 'truckType', truckInfo?.truckType || getRecordValue(record, 'Truck_Type'));
+  setSimpleManualValue('completed', 'driver', getRecordValue(record, 'Driver'));
+  setSimpleManualValue('completed', 'mechanic', getRecordValue(record, 'Mechanic'));
+  setSimpleManualValue('completed', 'shopName', getRecordValue(record, 'Shop_Name'));
+  setSimpleManualValue('completed', 'workDone', getRecordValue(record, 'Work_Done'));
+  setSimpleManualValue('completed', 'item', getRecordValue(record, 'Repair_Parts'));
+  setSimpleManualValue('completed', 'quantity', getRecordValue(record, 'Quantity'));
+  setSimpleManualValue('completed', 'unitCost', getRecordValue(record, 'Unit_Cost'));
+  setSimpleManualValue('completed', 'laborCost', getRecordValue(record, 'Labor_Cost'));
+  setSimpleManualValue('completed', 'partsCost', getRecordValue(record, 'Parts_Cost'));
+  setSimpleManualValue('completed', 'totalCost', getRepairPaymentValue(record, 'finalCost') || getOriginalTotalCost(record));
+  setSimpleManualValue('completed', 'approvalStatus', getRecordValue(record, 'Approval_Status') || getRecordValue(record, 'Status'));
+  setSimpleManualValue('completed', 'paymentStatus', getRepairPaymentValue(record, 'paymentStatus') || getRecordValue(record, 'Payment_Status'));
+  setSimpleManualValue('completed', 'payee', getRecordValue(record, 'Payee'));
+  setSimpleManualValue('completed', 'remarks', getRecordValue(record, 'Remarks'));
+  if (manualSaveStatus) manualSaveStatus.textContent = 'Completed Repair form filled from saved record. Review final fields, then Save.';
+}
+
+function findForRepairIdForPlate(plateNumber) {
+  const normalized = normalizePlateNumber(plateNumber);
+  const match = localForRepairTrucks.find(record => normalizePlateNumber(record.plateNumber) === normalized && !/completed/i.test(record.repairStatus || ''));
+  return match?.forRepairId || '';
+}
+
 function updateManualTotalFromQuantity(prefix) {
   const quantityField = getSimpleManualField(prefix, 'quantity');
   const unitCostField = getSimpleManualField(prefix, 'unitCost');
@@ -2706,7 +2900,11 @@ function updateManualTotalFromQuantity(prefix) {
 }
 
 function setManualFormVisibility() {
-  const requestType = getActiveManualType();
+  let requestType = getActiveManualType();
+  if (requestType === 'Completed Repair') {
+    requestType = 'Parts Request';
+    if (manualRequestTypeSelect) manualRequestTypeSelect.value = requestType;
+  }
   manualRequestCards.forEach(card => {
     const active = card.dataset.manualForm === requestType;
     card.classList.toggle('active', active);
@@ -2762,6 +2960,9 @@ function collectManualEntryRow() {
   if (requestType === 'Completed Repair') {
     return applyRequestTypeRules({
       requestType,
+      completedRepairId: getSimpleManualValue('completed', 'completedRepairId'),
+      linkedRepairId: getSimpleManualValue('completed', 'linkedRepairId'),
+      linkedForRepairId: getSimpleManualValue('completed', 'linkedForRepairId'),
       date: getSimpleManualValue('completed', 'dateFinished'),
       dateFinished: getSimpleManualValue('completed', 'dateFinished'),
       plateNumber: getSimpleManualValue('completed', 'plateNumber'),
@@ -2772,11 +2973,14 @@ function collectManualEntryRow() {
       item: getSimpleManualValue('completed', 'item'),
       quantity: getSimpleManualValue('completed', 'quantity'),
       unitCost: getSimpleManualValue('completed', 'unitCost'),
-      partsCost: getSimpleManualValue('completed', 'totalCost'),
+      laborCost: getSimpleManualValue('completed', 'laborCost'),
+      partsCost: getSimpleManualValue('completed', 'partsCost') || getSimpleManualValue('completed', 'totalCost'),
       mechanic: getSimpleManualValue('completed', 'mechanic'),
       shopName: getSimpleManualValue('completed', 'shopName'),
       totalCost: getSimpleManualValue('completed', 'totalCost'),
       approvalStatus: getSimpleManualValue('completed', 'approvalStatus'),
+      paymentStatus: getSimpleManualValue('completed', 'paymentStatus'),
+      payee: getSimpleManualValue('completed', 'payee'),
       remarks: getSimpleManualValue('completed', 'remarks')
     });
   }
@@ -2924,11 +3128,11 @@ async function saveRepairRows(rows, sourceMessage, statusElement, emptyMessage, 
     return false;
   }
 
-  console.log('Payload to send:', dataToSend);
+  console.log('[Repair] Syncing', dataToSend.length, 'record(s) to Google Sheet...');
   if (statusElement === saveStatus) {
-    setParsedSaveStatus('Saving request...', 'save-status-saving');
+    setParsedSaveStatus('Saved locally. Syncing to Google Sheet...', 'save-status-saving');
   } else {
-    statusElement.textContent = 'Saving...';
+    statusElement.textContent = 'Saved locally. Syncing to Google Sheet...';
   }
 
   try {
@@ -2940,21 +3144,92 @@ async function saveRepairRows(rows, sourceMessage, statusElement, emptyMessage, 
       },
       body: JSON.stringify(dataToSend)
     });
+    console.log('[Repair] Sync success:', dataToSend.length, 'record(s) sent.');
     if (statusElement === saveStatus) {
-      setParsedSaveStatus(successMessage, 'save-status-success');
+      setParsedSaveStatus('Saved locally and synced to Google Sheet.', 'save-status-success');
     } else {
-      statusElement.textContent = successMessage;
+      statusElement.textContent = 'Saved locally and synced to Google Sheet.';
     }
     loadSavedRepairRecords();
     return true;
   } catch (error) {
+    console.error('[Repair] Sync failed:', error);
     if (statusElement === saveStatus) {
-      setParsedSaveStatus('Error sending request. Please check your connection.', 'save-status-error');
+      setParsedSaveStatus('Saved locally. Google Sheet sync failed.', 'save-status-error');
     } else {
-      statusElement.textContent = 'Error sending request. Please check your connection.';
+      statusElement.textContent = 'Saved locally. Google Sheet sync failed.';
     }
     return false;
   }
+}
+
+function buildCompletedRepairPayload(row) {
+  const now = new Date().toISOString();
+  return {
+    Completed_Repair_ID: row.completedRepairId || createRepairLocalId('completed_repair'),
+    Linked_Repair_ID: row.linkedRepairId || '',
+    Linked_For_Repair_ID: row.linkedForRepairId || '',
+    Date_Finished: row.dateFinished || row.date || '',
+    Group_Category: row.plateGroup || getTruckInfoByPlate(row.plateNumber)?.groupCategory || '',
+    Plate_Number: row.plateNumber || '',
+    Truck_Type: row.truckType || '',
+    Driver: row.driver || '',
+    Mechanic_Worker: row.mechanic || '',
+    Shop_Name: row.shopName || '',
+    Work_Done: row.workDone || '',
+    Parts_Item_Name: row.item || '',
+    Quantity: row.quantity || '',
+    Unit_Cost: row.unitCost || '',
+    Labor_Cost: row.laborCost || '',
+    Parts_Cost: row.partsCost || '',
+    Total_Amount: row.totalCost || '',
+    Approval_Status: row.approvalStatus || '',
+    Payment_Status: row.paymentStatus || '',
+    Payee: row.payee || '',
+    Remarks: row.remarks || '',
+    Created_At: now,
+    Updated_At: now
+  };
+}
+
+async function saveCompletedRepairRecord(row, statusElement) {
+  if (!row || (!row.plateNumber && !row.workDone && !row.linkedRepairId)) {
+    statusElement.textContent = 'No completed repair record to save.';
+    return false;
+  }
+  statusElement.textContent = 'Saving completed repair...';
+  try {
+    await fetch(REPAIR_WEB_APP_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'saveCompletedRepair',
+        record: buildCompletedRepairPayload(row)
+      })
+    });
+    markLocalForRepairCompleted(row.linkedForRepairId, row.dateFinished);
+    statusElement.textContent = 'Completed repair sent to Google Sheet.';
+    loadSavedRepairRecords();
+    return true;
+  } catch (error) {
+    statusElement.textContent = 'Error sending completed repair. Please check your connection.';
+    return false;
+  }
+}
+
+function markLocalForRepairCompleted(forRepairId, dateFinished) {
+  if (!forRepairId) return;
+  const index = localForRepairTrucks.findIndex(record => record.forRepairId === forRepairId);
+  if (index === -1) return;
+  localForRepairTrucks[index] = {
+    ...localForRepairTrucks[index],
+    repairStatus: 'Completed',
+    endDate: dateFinished || localForRepairTrucks[index].endDate,
+    updatedAt: new Date().toISOString()
+  };
+  saveLocalForRepairTrucks();
+  renderLocalForRepairTrucks();
 }
 
 tabButtons.forEach(button => {
@@ -2983,12 +3258,13 @@ if (manualEntryForm) {
 
   manualEntryForm.addEventListener('submit', async event => {
     event.preventDefault();
+    const row = collectManualEntryRow();
     const saved = await saveRepairRows(
-      [collectManualEntryRow()],
+      [row],
       'Manual User Input',
       manualSaveStatus,
       'No manual repair record to save. Fill at least one repair field first.',
-      'Manual entry sent to Google Sheet. Please check the Repair_Requests tab.'
+      'Saved locally and synced to Google Sheet.'
     );
     if (saved) manualEntryForm.reset();
     setManualFormVisibility();
@@ -3140,9 +3416,11 @@ if (forRepairLocalForm) {
     const record = {
       plateNumber: normalizePlate(getForRepairLocalValue('plateNumber')) || getForRepairLocalValue('plateNumber'),
       groupCategory: getForRepairLocalValue('plateGroup'),
+      truckType: getTruckInfoByPlate(getForRepairLocalValue('plateNumber'))?.truckType || '',
       garageLocation: getForRepairLocalValue('garageLocation'),
       repairIssue: getForRepairLocalValue('repairIssue'),
       startDate: getForRepairLocalValue('startDate'),
+      estimatedFinishDate: getForRepairLocalValue('estimatedFinishDate'),
       endDate: getForRepairLocalValue('endDate'),
       repairStatus: getForRepairLocalValue('repairStatus') || 'For Repair',
       remarks: getForRepairLocalValue('remarks')
@@ -3163,6 +3441,12 @@ if (forRepairLocalForm) {
 
 if (forRepairLocalBody) {
   forRepairLocalBody.addEventListener('click', event => {
+    const completeButton = event.target.closest('[data-for-repair-complete]');
+    if (completeButton) {
+      completeForRepairTruck(Number(completeButton.dataset.forRepairComplete));
+      return;
+    }
+
     const deleteButton = event.target.closest('[data-for-repair-delete]');
     if (!deleteButton) return;
     deleteForRepairTruck(Number(deleteButton.dataset.forRepairDelete));
@@ -3279,11 +3563,12 @@ if (savedRecordsBody) {
 
     const changeRequestButton = event.target.closest('[data-change-request]');
     if (changeRequestButton) {
-      requestSavedRepairChange(
-        Number(changeRequestButton.dataset.recordIndex),
-        changeRequestButton.dataset.changeRequest,
-        changeRequestButton
-      );
+      const idx = Number(changeRequestButton.dataset.recordIndex);
+      if (changeRequestButton.dataset.changeRequest === 'delete') {
+        deleteRepairRecordLocal(idx);
+      } else {
+        requestSavedRepairChange(idx, changeRequestButton.dataset.changeRequest, changeRequestButton);
+      }
       return;
     }
 
@@ -3434,7 +3719,7 @@ if (saveButton && saveStatus) {
         },
         body: JSON.stringify(dataToSend)
       });
-      saveStatus.textContent = 'Request sent to Google Sheet. Please check the Repair_Requests tab.';
+      saveStatus.textContent = 'Saved locally and synced to Google Sheet.';
       loadSavedRepairRecords();
     } catch (error) {
       saveStatus.textContent = 'Error sending request. Please check your connection.';
