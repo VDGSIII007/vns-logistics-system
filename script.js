@@ -1475,8 +1475,16 @@ async function deleteForRepairTruck(index) {
   if (!window.confirm('Delete this for-repair record? This will hide it but keep a cloud log.')) return;
   const reason = window.prompt('Reason for delete? (optional)') ?? '';
 
+  const oldStatus = record.repairStatus || '';
   const now = new Date().toISOString();
-  const updatedRecord = { ...record, isDeleted: true, deletedAt: now, deleteReason: reason, updatedAt: now };
+  const updatedRecord = {
+    ...record,
+    isDeleted: true,
+    deletedAt: now,
+    deleteReason: reason,
+    repairStatus: 'Deleted',
+    updatedAt: now
+  };
   localForRepairTrucks[index] = updatedRecord;
   saveLocalForRepairTrucks();
   renderLocalForRepairTrucks();
@@ -1490,6 +1498,7 @@ async function deleteForRepairTruck(index) {
       body: JSON.stringify({
         action: 'deleteForRepairTruck',
         forRepairId: record.forRepairId,
+        oldStatus: oldStatus,
         deletedBy: 'Web User',
         deleteReason: reason
       })
@@ -1533,7 +1542,9 @@ async function completeForRepairTruck(index) {
 
 function renderLocalForRepairTrucks() {
   if (!forRepairLocalBody) return;
-  const visible = localForRepairTrucks.filter(r => !r.isDeleted);
+  const visible = localForRepairTrucks.filter(r =>
+    !r.isDeleted && !/^(completed|deleted)$/i.test(r.repairStatus || '')
+  );
   if (!visible.length) {
     forRepairLocalBody.innerHTML = '<tr><td colspan="9" class="empty">No for repair trucks added yet.</td></tr>';
     return;

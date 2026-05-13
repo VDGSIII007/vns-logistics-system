@@ -377,7 +377,9 @@ function deleteForRepairTruck_(data) {
   }
 
   const now = new Date();
-  const oldStatus = getCellByHeader_(sheet, headers, rowIndex, "Repair_Status");
+  const sheetStatus = getCellByHeader_(sheet, headers, rowIndex, "Repair_Status");
+  // Prefer the status captured by the frontend before local mutation; fall back to sheet value.
+  const oldStatus = String(data.oldStatus || "").trim() || String(sheetStatus || "");
   const plateNumber = getCellByHeader_(sheet, headers, rowIndex, "Plate_Number");
   const deletedBy = String(data.deletedBy || "Web User");
   const deleteReason = String(data.deleteReason || "");
