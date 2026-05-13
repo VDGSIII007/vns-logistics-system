@@ -1441,49 +1441,71 @@ function saveForRepairTruck(record) {
   localForRepairTrucks.unshift(record);
   saveLocalForRepairTrucks();
   renderLocalForRepairTrucks();
-  syncForRepairTruck(record);
 }
 
-async function syncForRepairTruck(record) {
+function syncForRepairTruck(record) {
+  return fetch(REPAIR_WEB_APP_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      action: 'saveForRepairTruck',
+      record: {
+        For_Repair_ID: record.forRepairId,
+        Plate_Number: record.plateNumber || '',
+        Group_Category: record.groupCategory || '',
+        Truck_Type: record.truckType || '',
+        Garage_Location: record.garageLocation || '',
+        Repair_Issue: record.repairIssue || '',
+        Start_Date: record.startDate || '',
+        Estimated_Finish_Date: record.estimatedFinishDate || '',
+        End_Date: record.endDate || '',
+        Repair_Status: record.repairStatus || '',
+        Remarks: record.remarks || '',
+        Created_At: record.createdAt || '',
+        Updated_At: record.updatedAt || ''
+      }
+    })
+  });
+}
+
+async function deleteForRepairTruck(index) {
+  const record = localForRepairTrucks[index];
+  if (!record) return;
+  if (!window.confirm('Delete this for-repair record? This will hide it but keep a cloud log.')) return;
+  const reason = window.prompt('Reason for delete? (optional)') ?? '';
+
+  const now = new Date().toISOString();
+  const updatedRecord = { ...record, isDeleted: true, deletedAt: now, deleteReason: reason, updatedAt: now };
+  localForRepairTrucks[index] = updatedRecord;
+  saveLocalForRepairTrucks();
+  renderLocalForRepairTrucks();
+  if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Deleted locally. Syncing delete to cloud...';
+
   try {
     await fetch(REPAIR_WEB_APP_URL, {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
-        action: 'saveForRepairTruck',
-        record: {
-          For_Repair_ID: record.forRepairId,
-          Plate_Number: record.plateNumber || '',
-          Group_Category: record.groupCategory || '',
-          Truck_Type: record.truckType || '',
-          Garage_Location: record.garageLocation || '',
-          Repair_Issue: record.repairIssue || '',
-          Start_Date: record.startDate || '',
-          Estimated_Finish_Date: record.estimatedFinishDate || '',
-          End_Date: record.endDate || '',
-          Repair_Status: record.repairStatus || '',
-          Remarks: record.remarks || '',
-          Created_At: record.createdAt || '',
-          Updated_At: record.updatedAt || ''
-        }
+        action: 'deleteForRepairTruck',
+        forRepairId: record.forRepairId,
+        deletedBy: 'Web User',
+        deleteReason: reason
       })
     });
+    console.log('[ForRepair] Delete sync success:', record.forRepairId);
+    if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Deleted and logged in cloud.';
   } catch (error) {
-    console.warn('Unable to sync for repair truck.', error);
+    console.error('[ForRepair] Delete sync failed:', error);
+    if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Deleted locally. Cloud sync failed.';
   }
 }
 
-function deleteForRepairTruck(index) {
-  localForRepairTrucks.splice(index, 1);
-  saveLocalForRepairTrucks();
-  renderLocalForRepairTrucks();
-  if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'For repair unit deleted.';
-}
-
-function completeForRepairTruck(index) {
+async function completeForRepairTruck(index) {
   const record = localForRepairTrucks[index];
   if (!record) return;
+  if (!window.confirm('Mark this repair as completed?')) return;
   const today = new Date().toISOString().slice(0, 10);
   const completedDate = window.prompt('Completion date:', record.endDate || today);
   if (completedDate === null) return;
@@ -1497,35 +1519,51 @@ function completeForRepairTruck(index) {
   localForRepairTrucks[index] = updatedRecord;
   saveLocalForRepairTrucks();
   renderLocalForRepairTrucks();
-  syncForRepairTruck(updatedRecord);
-  if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'For repair unit marked completed. Syncing to Google Sheets...';
+  if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Completed locally. Syncing to cloud...';
+
+  try {
+    await syncForRepairTruck(updatedRecord);
+    console.log('[ForRepair] Complete sync success:', updatedRecord.forRepairId);
+    if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Completed and synced to cloud.';
+  } catch (error) {
+    console.error('[ForRepair] Complete sync failed:', error);
+    if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Completed locally. Cloud sync failed.';
+  }
 }
 
 function renderLocalForRepairTrucks() {
   if (!forRepairLocalBody) return;
-  if (!localForRepairTrucks.length) {
+  const visible = localForRepairTrucks.filter(r => !r.isDeleted);
+  if (!visible.length) {
     forRepairLocalBody.innerHTML = '<tr><td colspan="9" class="empty">No for repair trucks added yet.</td></tr>';
     return;
   }
 
-  forRepairLocalBody.innerHTML = localForRepairTrucks.map((record, index) => `
-    <tr>
-      <td>${escapeHtml(truncateRecordValue(record.plateNumber, 18))}</td>
-      <td>${escapeHtml(truncateRecordValue(record.garageLocation, 28))}</td>
-      <td>${escapeHtml(truncateRecordValue(record.repairIssue))}</td>
-      <td>${escapeHtml(truncateRecordValue(record.startDate, 18))}</td>
-      <td>${escapeHtml(truncateRecordValue(record.estimatedFinishDate, 18))}</td>
-      <td>${escapeHtml(truncateRecordValue(record.endDate, 18))}</td>
-      <td>${escapeHtml(truncateRecordValue(record.repairStatus, 24))}</td>
-      <td>${escapeHtml(truncateRecordValue(record.remarks))}</td>
-      <td>
-        <div class="change-request-actions">
-          <button class="details-button action-mini-button" type="button" data-for-repair-complete="${index}">Complete</button>
-          <button class="details-button action-mini-button" type="button" data-for-repair-delete="${index}">Delete</button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
+  forRepairLocalBody.innerHTML = visible.map(record => {
+    const actualIndex = localForRepairTrucks.indexOf(record);
+    const isCompleted = /completed/i.test(record.repairStatus || '');
+    return `
+      <tr>
+        <td>${escapeHtml(truncateRecordValue(record.plateNumber, 18))}</td>
+        <td>${escapeHtml(truncateRecordValue(record.garageLocation, 28))}</td>
+        <td>${escapeHtml(truncateRecordValue(record.repairIssue))}</td>
+        <td>${escapeHtml(truncateRecordValue(record.startDate, 18))}</td>
+        <td>${escapeHtml(truncateRecordValue(record.estimatedFinishDate, 18))}</td>
+        <td>${escapeHtml(truncateRecordValue(record.endDate, 18))}</td>
+        <td>${escapeHtml(truncateRecordValue(record.repairStatus, 24))}</td>
+        <td>${escapeHtml(truncateRecordValue(record.remarks))}</td>
+        <td>
+          <div class="change-request-actions">
+            ${isCompleted
+              ? '<span class="save-status">Completed</span>'
+              : `<button class="details-button action-mini-button" type="button" data-for-repair-complete="${actualIndex}">Complete</button>`
+            }
+            <button class="details-button action-mini-button" type="button" data-for-repair-delete="${actualIndex}">Delete</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
 function truncateRecordValue(value, maxLength = 70) {
@@ -2082,10 +2120,10 @@ async function deleteRepairRecordLocal(recordIndex) {
 
   // Save locally first — row disappears immediately
   addRepairDeletedId(recordId);
-  recordsStatus.textContent = 'Deleted locally. Syncing delete to Google Sheet...';
+  recordsStatus.textContent = 'Deleted locally. Syncing delete to cloud...';
   renderSavedRecords();
 
-  // Sync to Google Sheets (no-cors — success = no network error)
+  // Sync to cloud (no-cors — success = no network error)
   try {
     await fetch(REPAIR_WEB_APP_URL, {
       method: 'POST',
@@ -2099,10 +2137,10 @@ async function deleteRepairRecordLocal(recordIndex) {
       })
     });
     console.log('[Repair] Delete sync success:', recordId);
-    recordsStatus.textContent = 'Deleted and logged in Google Sheet.';
+    recordsStatus.textContent = 'Deleted and logged in cloud.';
   } catch (error) {
     console.error('[Repair] Delete sync failed:', error);
-    recordsStatus.textContent = 'Deleted locally. Google Sheet delete sync failed.';
+    recordsStatus.textContent = 'Deleted locally. Cloud sync failed.';
   }
 }
 
@@ -3128,11 +3166,11 @@ async function saveRepairRows(rows, sourceMessage, statusElement, emptyMessage, 
     return false;
   }
 
-  console.log('[Repair] Syncing', dataToSend.length, 'record(s) to Google Sheet...');
+  console.log('[Repair] Syncing', dataToSend.length, 'record(s) to cloud...');
   if (statusElement === saveStatus) {
-    setParsedSaveStatus('Saved locally. Syncing to Google Sheet...', 'save-status-saving');
+    setParsedSaveStatus('Saved locally. Syncing to cloud...', 'save-status-saving');
   } else {
-    statusElement.textContent = 'Saved locally. Syncing to Google Sheet...';
+    statusElement.textContent = 'Saved locally. Syncing to cloud...';
   }
 
   try {
@@ -3146,18 +3184,18 @@ async function saveRepairRows(rows, sourceMessage, statusElement, emptyMessage, 
     });
     console.log('[Repair] Sync success:', dataToSend.length, 'record(s) sent.');
     if (statusElement === saveStatus) {
-      setParsedSaveStatus('Saved locally and synced to Google Sheet.', 'save-status-success');
+      setParsedSaveStatus('Saved locally and synced to cloud.', 'save-status-success');
     } else {
-      statusElement.textContent = 'Saved locally and synced to Google Sheet.';
+      statusElement.textContent = 'Saved locally and synced to cloud.';
     }
     loadSavedRepairRecords();
     return true;
   } catch (error) {
     console.error('[Repair] Sync failed:', error);
     if (statusElement === saveStatus) {
-      setParsedSaveStatus('Saved locally. Google Sheet sync failed.', 'save-status-error');
+      setParsedSaveStatus('Saved locally. Cloud sync failed.', 'save-status-error');
     } else {
-      statusElement.textContent = 'Saved locally. Google Sheet sync failed.';
+      statusElement.textContent = 'Saved locally. Cloud sync failed.';
     }
     return false;
   }
@@ -3209,11 +3247,11 @@ async function saveCompletedRepairRecord(row, statusElement) {
       })
     });
     markLocalForRepairCompleted(row.linkedForRepairId, row.dateFinished);
-    statusElement.textContent = 'Completed repair sent to Google Sheet.';
+    statusElement.textContent = 'Completed and synced to cloud.';
     loadSavedRepairRecords();
     return true;
   } catch (error) {
-    statusElement.textContent = 'Error sending completed repair. Please check your connection.';
+    statusElement.textContent = 'Completed locally. Cloud sync failed.';
     return false;
   }
 }
@@ -3264,7 +3302,7 @@ if (manualEntryForm) {
       'Manual User Input',
       manualSaveStatus,
       'No manual repair record to save. Fill at least one repair field first.',
-      'Saved locally and synced to Google Sheet.'
+      'Saved locally and synced to cloud.'
     );
     if (saved) manualEntryForm.reset();
     setManualFormVisibility();
@@ -3411,7 +3449,7 @@ if (cancelForRepairButton && forRepairLocalForm) {
 
 if (forRepairLocalForm) {
   initRepairPlateDropdowns();
-  forRepairLocalForm.addEventListener('submit', event => {
+  forRepairLocalForm.addEventListener('submit', async event => {
     event.preventDefault();
     const record = {
       plateNumber: normalizePlate(getForRepairLocalValue('plateNumber')) || getForRepairLocalValue('plateNumber'),
@@ -3435,7 +3473,16 @@ if (forRepairLocalForm) {
     forRepairLocalForm.reset();
     forRepairLocalForm.hidden = true;
     if (addForRepairButton) addForRepairButton.hidden = false;
-    if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'For repair unit saved locally.';
+    if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Saved locally. Syncing to cloud...';
+
+    try {
+      await syncForRepairTruck(record);
+      console.log('[ForRepair] Save sync success:', record.forRepairId);
+      if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Saved locally and synced to cloud.';
+    } catch (error) {
+      console.error('[ForRepair] Save sync failed:', error);
+      if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Saved locally. Cloud sync failed.';
+    }
   });
 }
 
@@ -3719,10 +3766,10 @@ if (saveButton && saveStatus) {
         },
         body: JSON.stringify(dataToSend)
       });
-      saveStatus.textContent = 'Saved locally and synced to Google Sheet.';
+      saveStatus.textContent = 'Saved locally and synced to cloud.';
       loadSavedRepairRecords();
     } catch (error) {
-      saveStatus.textContent = 'Error sending request. Please check your connection.';
+      saveStatus.textContent = 'Saved locally. Cloud sync failed.';
     }
   });
 }

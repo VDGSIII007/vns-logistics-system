@@ -92,7 +92,11 @@ const FOR_REPAIR_HEADERS = [
   "Repair_Status",
   "Remarks",
   "Created_At",
-  "Updated_At"
+  "Updated_At",
+  "Is_Deleted",
+  "Deleted_At",
+  "Deleted_By",
+  "Delete_Reason"
 ];
 
 const COMPLETED_REPAIR_HEADERS = [
@@ -139,6 +143,10 @@ function doPost(e) {
 
     if (data.action === "deleteRepairRequest") {
       return deleteRepairRequest_(data);
+    }
+
+    if (data.action === "deleteForRepairTruck") {
+      return deleteForRepairTruck_(data);
     }
 
     const sheet = ensureRepairSheet_();
@@ -324,6 +332,51 @@ function saveForRepairTruck(record) {
     success: true,
     message: "For repair truck saved successfully."
   });
+}
+
+function deleteForRepairTruck_(data) {
+  const forRepairId = String(data.forRepairId || "").trim();
+  if (!forRepairId) {
+    return jsonResponse({ success: false, message: "forRepairId is required." });
+  }
+
+  const sheet = ensureForRepairTrucksSheet_();
+  const logSheet = ensureStatusLogSheet_();
+  const headers = getHeaders_(sheet);
+  const rowIndex = findRowByKey_(sheet, headers, "For_Repair_ID", forRepairId);
+
+  if (rowIndex < 0) {
+    return jsonResponse({ success: false, message: "For_Repair_ID not found: " + forRepairId });
+  }
+
+  const now = new Date();
+  const oldStatus = getCellByHeader_(sheet, headers, rowIndex, "Repair_Status");
+  const plateNumber = getCellByHeader_(sheet, headers, rowIndex, "Plate_Number");
+  const deletedBy = String(data.deletedBy || "Web User");
+  const deleteReason = String(data.deleteReason || "");
+
+  updateCellIfPresent_(sheet, headers, rowIndex, "Is_Deleted", "TRUE");
+  updateCellIfPresent_(sheet, headers, rowIndex, "Deleted_At", now);
+  updateCellIfPresent_(sheet, headers, rowIndex, "Deleted_By", deletedBy);
+  if (deleteReason) {
+    updateCellIfPresent_(sheet, headers, rowIndex, "Delete_Reason", deleteReason);
+  }
+  updateCellIfPresent_(sheet, headers, rowIndex, "Repair_Status", "Deleted");
+  updateCellIfPresent_(sheet, headers, rowIndex, "Updated_At", now);
+
+  appendStatusLog_(logSheet, {
+    linkedRepairId: "",
+    linkedForRepairId: forRepairId,
+    plateNumber: plateNumber,
+    oldStatus: oldStatus,
+    newStatus: "Deleted",
+    action: "Delete For Repair Truck",
+    remarks: deleteReason,
+    changedBy: deletedBy,
+    changedAt: now
+  });
+
+  return jsonResponse({ success: true, message: "For repair truck deleted and logged." });
 }
 
 function deleteRepairRequest_(data) {
@@ -591,7 +644,11 @@ function normalizeForRepairTruckRow_(row) {
     Repair_Status: firstNonBlank_(row.Repair_Status, row.repairStatus, "For Repair"),
     Remarks: firstNonBlank_(row.Remarks, row.remarks),
     Created_At: firstNonBlank_(row.Created_At, row.createdAt, now),
-    Updated_At: now
+    Updated_At: now,
+    Is_Deleted: firstNonBlank_(row.Is_Deleted, row.isDeleted),
+    Deleted_At: firstNonBlank_(row.Deleted_At, row.deletedAt),
+    Deleted_By: firstNonBlank_(row.Deleted_By, row.deletedBy),
+    Delete_Reason: firstNonBlank_(row.Delete_Reason, row.deleteReason)
   };
 }
 
