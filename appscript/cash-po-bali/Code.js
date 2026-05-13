@@ -11,7 +11,7 @@
 //   6. Paste deployed URL into cash.js CASH_APP_SCRIPT_URL
 // ============================================================
 
-const SPREADSHEET_ID = "PASTE_VNS_CASH_PO_BALI_SPREADSHEET_ID_HERE";
+const SPREADSHEET_ID = "144qkV-l3Vo5tN6PusDGhcwLSKjIs2-sQeBYcpdA-bXM";
 const SYNC_KEY       = "vns-cash-sync-2026-Jay";
 
 const CASH_HEADERS = [

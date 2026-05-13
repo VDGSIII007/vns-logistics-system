@@ -11,7 +11,7 @@
 //   6. Paste deployed URL into tire-monitoring.js TIRE_APP_SCRIPT_URL
 // ============================================================
 
-const SPREADSHEET_ID = "PASTE_VNS_TIRE_MONITORING_SPREADSHEET_ID_HERE";
+const SPREADSHEET_ID = "1lhU2ak035Peorls2hEovIm9A5G1PvxQSHd5ebGyH_po";
 const SYNC_KEY       = "vns-tire-sync-2026-Jay";
 
 const TIRE_INVENTORY_HEADERS = [

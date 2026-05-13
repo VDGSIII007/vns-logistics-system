@@ -12,7 +12,7 @@
 //   6. Paste deployed URL into master-data.js MASTER_APP_SCRIPT_URL
 // ============================================================
 
-const SPREADSHEET_ID = "PASTE_VNS_TRUCK_MASTER_SPREADSHEET_ID_HERE";
+const SPREADSHEET_ID = "14JVeGkI3EIaZEHix56ICnFjOE56mrB9LK5sulgPTc7Q";
 const SYNC_KEY       = "vns-truck-sync-2026-Jay";
 
 const TRUCK_HEADERS = [
