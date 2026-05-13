@@ -553,7 +553,7 @@
 </head>
 <body>
   <header class="site-header" id="top">
-    <nav class="nav-shell">
+    <nav class="nav-shell" aria-label="Primary navigation">
       <a href="index.html" class="brand" aria-label="VNS Logistics home">
         <span class="brand-mark">VNS</span>
         <span class="brand-text">Logistics</span>
@@ -689,7 +689,8 @@
               <button id="add-for-repair-button" class="btn btn-primary" type="button">+ Add For Repair Unit</button>
             </div>
             <form id="for-repair-local-form" class="garage-form" hidden>
-              <label><span>Plate Number</span><input type="text" data-for-repair-field="plateNumber" placeholder="ABC 1234"></label>
+              <label><span>Group</span><select data-for-repair-field="plateGroup" data-plate-group-select="forRepair"></select></label>
+              <label><span>Plate Number</span><select data-for-repair-field="plateNumber" data-plate-select="forRepair"></select></label>
               <label>
                 <span>Garage Location</span>
                 <select data-for-repair-field="garageLocation">
@@ -853,7 +854,8 @@
               </div>
                 <div class="manual-fields">
                 <label><span>Date</span><input type="date" data-parts-field="date"></label>
-                <label><span>Plate Number</span><input type="text" data-parts-field="plateNumber" placeholder="CAA 5021"></label>
+                <label><span>Group</span><select data-parts-field="plateGroup" data-plate-group-select="parts"></select></label>
+                <label><span>Plate Number</span><select data-parts-field="plateNumber" data-plate-select="parts"></select></label>
                 <label>
                   <span>Truck Type</span>
                   <select data-parts-field="truckType">
@@ -896,7 +898,8 @@
               </div>
               <div class="manual-fields">
                 <label><span>Date</span><input type="date" data-equipment-field="date"></label>
-                <label><span>Plate Number</span><input type="text" data-equipment-field="plateNumber" placeholder="Optional"></label>
+                <label><span>Group</span><select data-equipment-field="plateGroup" data-plate-group-select="equipment"></select></label>
+                <label><span>Plate Number</span><select data-equipment-field="plateNumber" data-plate-select="equipment"></select></label>
                 <label>
                   <span>Truck Type</span>
                   <select data-equipment-field="truckType">
@@ -929,7 +932,8 @@
               </div>
               <div class="manual-fields">
                 <label><span>Date</span><input type="date" data-labor-field="date"></label>
-                <label><span>Plate Number</span><input type="text" data-labor-field="plateNumber"></label>
+                <label><span>Group</span><select data-labor-field="plateGroup" data-plate-group-select="labor"></select></label>
+                <label><span>Plate Number</span><select data-labor-field="plateNumber" data-plate-select="labor"></select></label>
                 <label>
                   <span>Truck Type</span>
                   <select data-labor-field="truckType">
@@ -964,7 +968,8 @@
               </div>
               <div class="manual-fields">
                 <label><span>Date Finished</span><input type="date" data-completed-field="dateFinished"></label>
-                <label><span>Plate Number</span><input type="text" data-completed-field="plateNumber"></label>
+                <label><span>Group</span><select data-completed-field="plateGroup" data-plate-group-select="completed"></select></label>
+                <label><span>Plate Number</span><select data-completed-field="plateNumber" data-plate-select="completed"></select></label>
                 <label>
                   <span>Truck Type</span>
                   <select data-completed-field="truckType">
@@ -999,7 +1004,8 @@
               </div>
               <div class="manual-fields">
                 <label><span>Date</span><input type="date" data-monitoring-field="date"></label>
-                <label><span>Plate Number</span><input type="text" data-monitoring-field="plateNumber"></label>
+                <label><span>Group</span><select data-monitoring-field="plateGroup" data-plate-group-select="monitoring"></select></label>
+                <label><span>Plate Number</span><select data-monitoring-field="plateNumber" data-plate-select="monitoring"></select></label>
                 <label>
                   <span>Truck Type</span>
                   <select data-monitoring-field="truckType">
@@ -1048,8 +1054,12 @@
           <div class="records-control-panel">
             <div class="records-filters">
               <label>
+                <span>Group</span>
+                <select id="records-plate-group-filter" data-plate-group-select="records"></select>
+              </label>
+              <label>
                 <span>Plate Number</span>
-                <input id="records-plate-filter" type="text" placeholder="Search plate">
+                <select id="records-plate-filter" data-plate-select="records"></select>
               </label>
               <label>
                 <span>Request Type</span>

@@ -1,3 +1,148 @@
+const PARTS_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzDriSFfuaNmSCu7SO-2nJC0RWaU2pjiviztQyHXQpi7lyoLPpBS4zNOCko70a-Y2nu7A/exec";
+const PARTS_SYNC_KEY       = "vns-parts-sync-2026-Jay";
+
+function partsPost(payload) {
+  return fetch(PARTS_APP_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ syncKey: PARTS_SYNC_KEY, ...payload })
+  }).then(r => r.json());
+}
+
+function toPartsInRecord(r) {
+  return {
+    Parts_In_ID: r.id,
+    Date: r.date || '',
+    Plate_Number: r.plateNumber || '',
+    Item_Name: r.itemName || '',
+    Item_Type: r.itemType || '',
+    Category: r.category || '',
+    Make: r.make || '',
+    Brand: r.brand || '',
+    Model: r.model || '',
+    Part_Number: r.partNumber || '',
+    Serial_Number: r.serialNumber || '',
+    Engine_Number: r.engineNumber || '',
+    Chassis_Number: r.chassisNumber || '',
+    Unit: r.unit || '',
+    Quantity: String(r.quantity || 0),
+    Unit_Cost: String(r.unitCost || 0),
+    Total_Cost: String(r.totalCost || 0),
+    Supplier: r.supplier || '',
+    Storage_Location: r.storageLocation || '',
+    Receipt_No: r.receiptNo || '',
+    Received_By: r.receivedBy || '',
+    Remarks: r.remarks || '',
+    Created_At: r.createdAt || ''
+  };
+}
+
+function toPartsOutRecord(r) {
+  return {
+    Parts_Out_ID: r.id,
+    Date: r.date || '',
+    Plate_Number: r.plateNumber || '',
+    Driver: r.driver || '',
+    Helper: r.helper || '',
+    Item_Name: r.itemName || '',
+    Item_Type: r.itemType || '',
+    Category: r.category || '',
+    Make: r.make || '',
+    Brand: r.brand || '',
+    Model: r.model || '',
+    Part_Number: r.partNumber || '',
+    Quantity: String(r.quantity || 0),
+    Unit_Cost: String(r.unitCost || 0),
+    Total_Cost: String(r.totalCost || 0),
+    Released_To: r.releasedTo || '',
+    Requested_By: r.requestedBy || '',
+    Repair_Request_ID: r.repairRequestId || '',
+    Work_Done: r.workDone || '',
+    Odometer: r.odometer || '',
+    Remarks: r.remarks || '',
+    Created_At: r.createdAt || ''
+  };
+}
+
+function toInventoryItemRecord(item) {
+  return {
+    Item_ID: item.itemId,
+    Item_Name: item.itemName || '',
+    Item_Type: item.itemType || '',
+    Category: item.category || '',
+    Make: item.make || '',
+    Brand: item.brand || '',
+    Model: item.model || '',
+    Part_Number: item.partNumber || '',
+    Serial_Number: item.serialNumber || '',
+    Engine_Number: item.engineNumber || '',
+    Chassis_Number: item.chassisNumber || '',
+    Unit: item.unit || '',
+    Current_Stock: String(item.currentStock || 0),
+    Minimum_Stock: String(item.minimumStock || 0),
+    Average_Unit_Cost: String(item.averageUnitCost || 0),
+    Supplier: item.supplier || '',
+    Storage_Location: item.storageLocation || '',
+    Last_Updated: item.lastUpdated || '',
+    Remarks: item.remarks || '',
+    Created_At: item.createdAt || '',
+    Updated_At: new Date().toISOString()
+  };
+}
+
+function toMovementRecord(r) {
+  return {
+    Movement_ID: r.id,
+    Date: r.date || '',
+    Movement_Type: r.movementType || '',
+    Item_ID: r.itemId || '',
+    Item_Name: r.itemName || '',
+    Item_Type: r.itemType || '',
+    Category: r.category || '',
+    Make: r.make || '',
+    Brand: r.brand || '',
+    Part_Number: r.partNumber || '',
+    Quantity: String(r.quantity || 0),
+    Unit: r.unit || '',
+    Unit_Cost: String(r.unitCost || 0),
+    Total_Cost: String(r.totalCost || 0),
+    Plate_Number: r.plateNumber || '',
+    Supplier: r.supplier || '',
+    Storage_Location: r.storageLocation || '',
+    Reference_ID: r.referenceId || '',
+    Remarks: r.remarks || '',
+    Created_At: r.createdAt || ''
+  };
+}
+
+function syncPartsIn(record, item, movement) {
+  if (partsInStatus) partsInStatus.textContent = 'Saved locally. Syncing…';
+  Promise.all([
+    partsPost({ action: 'savePartsIn', record: toPartsInRecord(record) }),
+    partsPost({ action: 'saveInventoryItem', record: toInventoryItemRecord(item) }),
+    partsPost({ action: 'saveMovement', record: toMovementRecord(movement) })
+  ])
+    .then(results => {
+      if (!partsInStatus) return;
+      partsInStatus.textContent = results.every(r => r && r.ok) ? 'Saved and synced.' : 'Saved locally. Sync failed.';
+    })
+    .catch(() => { if (partsInStatus) partsInStatus.textContent = 'Saved locally. Sync failed.'; });
+}
+
+function syncPartsOut(record, item, movement) {
+  if (partsOutStatus) partsOutStatus.textContent = 'Saved locally. Syncing…';
+  Promise.all([
+    partsPost({ action: 'savePartsOut', record: toPartsOutRecord(record) }),
+    partsPost({ action: 'saveInventoryItem', record: toInventoryItemRecord(item) }),
+    partsPost({ action: 'saveMovement', record: toMovementRecord(movement) })
+  ])
+    .then(results => {
+      if (!partsOutStatus) return;
+      partsOutStatus.textContent = results.every(r => r && r.ok) ? 'Saved and synced.' : 'Saved locally. Sync failed.';
+    })
+    .catch(() => { if (partsOutStatus) partsOutStatus.textContent = 'Saved locally. Sync failed.'; });
+}
+
 const ITEM_TYPES = ['Spare Part', 'Safety Equipment', 'Oil / Fluid', 'Tire', 'Tool', 'Consumable', 'Other'];
 const CATEGORIES = ['Engine', 'Electrical', 'Brake', 'Suspension', 'Transmission', 'Tire', 'Oil / Fluid', 'Lights', 'Body', 'Safety', 'Tools', 'Consumables', 'Other'];
 
@@ -495,10 +640,12 @@ function wireEvents() {
       event.preventDefault();
       const record = buildPartsInRecord(partsInForm);
       applyPartsIn(record);
+      const syncItem = inventoryItems.find(i => i.itemId === record.itemId);
+      const syncMove = movementRecords[0];
       writeStorage();
       partsInForm.reset();
-      if (partsInStatus) partsInStatus.textContent = 'Parts In saved locally.';
       refreshPage();
+      syncPartsIn(record, syncItem, syncMove);
     });
   }
 
@@ -518,10 +665,11 @@ function wireEvents() {
         return;
       }
       applyPartsOut(record, item);
+      const syncMove = movementRecords[0];
       writeStorage();
       partsOutForm.reset();
-      if (partsOutStatus) partsOutStatus.textContent = 'Parts Out saved locally.';
       refreshPage();
+      syncPartsOut(record, item, syncMove);
     });
   }
 }

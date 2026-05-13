@@ -2,8 +2,9 @@ const TRUCK_KEY = "vnsTruckMaster";
 const DRIVER_KEY = "vnsDriverMaster";
 const HELPER_KEY = "vnsHelperMaster";
 
-const MASTER_APP_SCRIPT_URL = "PASTE_APPS_SCRIPT_WEB_APP_URL_HERE";
-const MASTER_SYNC_KEY       = "vns-master-sync-2026-Jay";
+const MASTER_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbySWpFu-ZwtsC4uGK4uNgZSRlHUzS4bAMX4X0vAQjt-iuF7pbgT3loFGU2fU2YL4rq6pQ/exec";
+const MASTER_SYNC_KEY       = "vns-truck-sync-2026-Jay";
+const TRUCK_MASTER_LAST_SYNC_KEY = "vnsTruckMasterLastGoogleSync";
 
 const BOTTLE_TRUCK_DEFAULTS = [
   { Plate_Number: "NII3082", Trailer_Plate: "NUB6094", Truck_Type: "", Body_Type: "FLAT BED 36PALLETS" },
@@ -29,7 +30,8 @@ const BOTTLE_TRUCK_DEFAULTS = [
 const truckFields = [
   "Truck_ID", "Plate_Number", "IMEI", "Truck_Type", "Truck_Make", "Body_Type",
   "Trailer_Plate", "Group_Category", "Current_Driver_ID", "Current_Helper_ID",
-  "Current_Driver_Name", "Current_Helper_Name", "Dispatcher", "Status", "Remarks",
+  "Current_Driver", "Current_Helper", "Current_Driver_Name", "Current_Helper_Name",
+  "Dispatcher", "Status", "Remarks",
   "Created_At", "Updated_At"
 ];
 const driverFields = [
@@ -96,6 +98,12 @@ function formatDate(value) {
   if (!value) return '<span class="needs-update">Needs Update</span>';
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? esc(value) : esc(d.toLocaleString("en-PH"));
+}
+
+function formatPlainDate(value) {
+  if (!value) return "Never";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString("en-PH");
 }
 
 function setStatus(id, message, type = "") {
@@ -171,8 +179,10 @@ function getTrucks() {
     Group_Category:      normalizeGroup(row.Group_Category),
     Current_Driver_ID:   row.Current_Driver_ID || "",
     Current_Helper_ID:   row.Current_Helper_ID || "",
-    Current_Driver_Name: row.Current_Driver_Name || resolveDriverName(row.Current_Driver_ID),
-    Current_Helper_Name: row.Current_Helper_Name || resolveHelperName(row.Current_Helper_ID),
+    Current_Driver:      row.Current_Driver || row.Current_Driver_Name || resolveDriverName(row.Current_Driver_ID),
+    Current_Helper:      row.Current_Helper || row.Current_Helper_Name || resolveHelperName(row.Current_Helper_ID),
+    Current_Driver_Name: row.Current_Driver_Name || row.Current_Driver || resolveDriverName(row.Current_Driver_ID),
+    Current_Helper_Name: row.Current_Helper_Name || row.Current_Helper || resolveHelperName(row.Current_Helper_ID),
     Dispatcher:          row.Dispatcher || "",
     Status:              row.Status || "Active",
     Remarks:             row.Remarks || "",
@@ -285,6 +295,8 @@ function saveTruckCell(truckId, field, rawValue, triggerEl) {
   if (rows[idx][field] === value) return;
 
   rows[idx][field]     = value;
+  if (field === 'Current_Driver_Name') rows[idx].Current_Driver = value;
+  if (field === 'Current_Helper_Name') rows[idx].Current_Helper = value;
   rows[idx].Updated_At = nowIso();
   writeJson(TRUCK_KEY, rows);
   syncTruckSilent(rows[idx]);
@@ -357,8 +369,10 @@ function createTruckSkeleton(source = {}) {
     Group_Category: normalizeGroup(source.Group_Category),
     Current_Driver_ID: source.Current_Driver_ID || "",
     Current_Helper_ID: source.Current_Helper_ID || "",
-    Current_Driver_Name: source.Current_Driver_Name || "",
-    Current_Helper_Name: source.Current_Helper_Name || "",
+    Current_Driver: source.Current_Driver || source.Current_Driver_Name || "",
+    Current_Helper: source.Current_Helper || source.Current_Helper_Name || "",
+    Current_Driver_Name: source.Current_Driver_Name || source.Current_Driver || "",
+    Current_Helper_Name: source.Current_Helper_Name || source.Current_Helper || "",
     Dispatcher: source.Dispatcher || "",
     Status: source.Status || "Active",
     Remarks: source.Remarks || "",
@@ -378,6 +392,53 @@ function mergeTruckRecord(existing, incoming) {
   merged.Status          = merged.Status || incoming.Status || "Active";
   merged.Updated_At      = incoming.Updated_At || nowIso();
   return merged;
+}
+
+function truckIdentityKey(record) {
+  const truckId = String(record.Truck_ID || "").trim();
+  if (truckId) return `id:${truckId}`;
+  const plate = normalizePlate(record.Plate_Number);
+  return plate ? `plate:${plate}` : "";
+}
+
+function mergeTruckRowsSafely(localRows, cloudRows) {
+  const byKey = new Map();
+  const order = [];
+
+  function remember(row) {
+    const key = truckIdentityKey(row);
+    if (!key || byKey.has(key)) return;
+    byKey.set(key, row);
+    order.push(key);
+  }
+
+  localRows.forEach(remember);
+  cloudRows.forEach(cloudRow => {
+    const cloud = createTruckSkeleton(cloudRow);
+    const idKey = cloud.Truck_ID ? `id:${cloud.Truck_ID}` : "";
+    const plateKey = cloud.Plate_Number ? `plate:${cloud.Plate_Number}` : "";
+    const existingKey = (idKey && byKey.has(idKey)) ? idKey : ((plateKey && byKey.has(plateKey)) ? plateKey : "");
+    if (existingKey) {
+      byKey.set(existingKey, mergeTruckRecord(byKey.get(existingKey), cloud));
+      if (idKey && existingKey !== idKey && !byKey.has(idKey)) byKey.set(idKey, byKey.get(existingKey));
+      return;
+    }
+    const newKey = idKey || plateKey;
+    if (!newKey) return;
+    byKey.set(newKey, cloud);
+    order.push(newKey);
+  });
+
+  const seenPlates = new Set();
+  return order
+    .map(key => byKey.get(key))
+    .filter(row => {
+      const plate = normalizePlate(row.Plate_Number);
+      if (!plate) return true;
+      if (seenPlates.has(plate)) return false;
+      seenPlates.add(plate);
+      return true;
+    });
 }
 
 function summarizeImport(imported, updated, skipped, total) {
@@ -422,6 +483,8 @@ function saveTruck(event) {
     Group_Category:      normalizeGroup($("truck-group-category").value),
     Current_Driver_ID:   $("truck-driver-id").value,
     Current_Helper_ID:   $("truck-helper-id").value,
+    Current_Driver:      resolveDriverName($("truck-driver-id").value),
+    Current_Helper:      resolveHelperName($("truck-helper-id").value),
     Current_Driver_Name: resolveDriverName($("truck-driver-id").value),
     Current_Helper_Name: resolveHelperName($("truck-helper-id").value),
     Dispatcher:          $("truck-dispatcher").value.trim(),
@@ -508,6 +571,7 @@ function renderTrucks() {
   $("truck-table-body").innerHTML = !sortedRows.length
     ? '<tr><td colspan="15" class="empty-row">No truck records found.</td></tr>'
     : sortedRows.map(renderTruckRowInline).join("");
+  updateTruckSyncMeta();
 }
 
 function importTrucks() {
@@ -589,7 +653,7 @@ function saveDriverCell(driverId, field, value, triggerEl) {
   if (field === 'Driver_Name') {
     const trucks = getTrucks();
     let changed = false;
-    trucks.forEach(t => { if (t.Current_Driver_ID === driverId) { t.Current_Driver_Name = value; changed = true; } });
+    trucks.forEach(t => { if (t.Current_Driver_ID === driverId) { t.Current_Driver_Name = value; t.Current_Driver = value; changed = true; } });
     if (changed) writeJson(TRUCK_KEY, trucks);
   }
 
@@ -738,7 +802,7 @@ function saveHelperCell(helperId, field, value, triggerEl) {
   if (field === 'Helper_Name') {
     const trucks = getTrucks();
     let changed = false;
-    trucks.forEach(t => { if (t.Current_Helper_ID === helperId) { t.Current_Helper_Name = value; changed = true; } });
+    trucks.forEach(t => { if (t.Current_Helper_ID === helperId) { t.Current_Helper_Name = value; t.Current_Helper = value; changed = true; } });
     if (changed) writeJson(TRUCK_KEY, trucks);
   }
 
@@ -860,9 +924,13 @@ function isMasterSyncConfigured() {
 
 function setMasterSyncStatus(state, detail) {
   const el = $("master-sync-status");
-  if (!el) return;
+  if (!el) {
+    updateTruckSyncMeta(state);
+    return;
+  }
   const labels = {
     local:   "Local backup only",
+    ready:   "Google Sheets connected",
     loading: "Loading from Google Sheets…",
     synced:  "Synced to Google Sheets",
     failed:  "Sync failed",
@@ -870,6 +938,26 @@ function setMasterSyncStatus(state, detail) {
   };
   el.textContent = detail ? `${labels[state] || state}: ${detail}` : (labels[state] || state);
   el.className   = `master-sync-badge mss-${state}`;
+  updateTruckSyncMeta(state);
+}
+
+function getMasterConnectionLabel(state) {
+  if (!isMasterSyncConfigured()) return "Not configured";
+  if (state === "failed") return "Connection error";
+  if (state === "saving" || state === "loading") return "Connecting...";
+  return "Connected";
+}
+
+function updateTruckSyncMeta(state = "") {
+  const el = $("truck-sync-meta");
+  if (!el) return;
+  const count = getTrucks().length;
+  const lastSync = formatPlainDate(localStorage.getItem(TRUCK_MASTER_LAST_SYNC_KEY));
+  el.textContent = `Truck Master: ${count} local record${count === 1 ? "" : "s"} | Last sync: ${lastSync} | Google Sheets: ${getMasterConnectionLabel(state)}`;
+}
+
+function markTruckMasterSynced() {
+  localStorage.setItem(TRUCK_MASTER_LAST_SYNC_KEY, nowIso());
 }
 
 function masterSheetsGet(action, extra) {
@@ -885,15 +973,25 @@ function masterSheetsPost(payload) {
 }
 
 function loadFromSheets() {
-  if (!isMasterSyncConfigured()) return;
+  if (!isMasterSyncConfigured()) {
+    setMasterSyncStatus("local", "Google Sheets URL not configured");
+    return;
+  }
   setMasterSyncStatus("loading");
   masterSheetsGet("getAllMasterData")
     .then(data => {
       if (!data.ok) throw new Error(data.error || "Unknown error");
-      if (Array.isArray(data.trucks)  && data.trucks.length)  writeJson(TRUCK_KEY,  data.trucks);
-      if (Array.isArray(data.drivers) && data.drivers.length) writeJson(DRIVER_KEY, data.drivers);
-      if (Array.isArray(data.helpers) && data.helpers.length) writeJson(HELPER_KEY, data.helpers);
-      setMasterSyncStatus("synced");
+      const truckCount = Array.isArray(data.trucks) ? data.trucks.length : 0;
+      const driverCount = Array.isArray(data.drivers) ? data.drivers.length : 0;
+      const helperCount = Array.isArray(data.helpers) ? data.helpers.length : 0;
+      if (truckCount > 0) writeJson(TRUCK_KEY, mergeTruckRowsSafely(getTrucks(), data.trucks));
+      if (driverCount > 0) writeJson(DRIVER_KEY, data.drivers);
+      if (helperCount > 0) writeJson(HELPER_KEY, data.helpers);
+      const skipped = [];
+      if (Array.isArray(data.trucks) && truckCount === 0) skipped.push("trucks");
+      if (Array.isArray(data.drivers) && driverCount === 0) skipped.push("drivers");
+      if (Array.isArray(data.helpers) && helperCount === 0) skipped.push("helpers");
+      setMasterSyncStatus("synced", skipped.length ? `empty cloud ${skipped.join(", ")} left local data unchanged` : "");
       populateAssignmentSelects();
       renderTrucks();
       renderDrivers();
@@ -908,6 +1006,7 @@ function syncTruckSilent(record) {
   masterSheetsPost({ action: "saveTruckMaster", record })
     .then(data => {
       if (!data.ok) throw new Error(data.error || "Unknown error");
+      markTruckMasterSynced();
       setMasterSyncStatus("synced");
     })
     .catch(() => setMasterSyncStatus("failed", "Truck not synced"));
@@ -941,9 +1040,42 @@ function batchSyncTrucksSilent(records) {
   masterSheetsPost({ action: "batchSaveTruckMaster", records })
     .then(data => {
       if (!data.ok) throw new Error(data.error || "Unknown error");
+      markTruckMasterSynced();
       setMasterSyncStatus("synced");
     })
     .catch(() => setMasterSyncStatus("failed", "Batch sync failed"));
+}
+
+function syncTruckMasterToSheets() {
+  const records = getTrucks();
+  updateTruckSyncMeta();
+  if (!isMasterSyncConfigured()) {
+    setMasterSyncStatus("local", "Google Sheets URL not configured");
+    alert("Google Sheets endpoint not configured yet.");
+    return;
+  }
+  if (!records.length) {
+    setMasterSyncStatus("ready", "No local truck records to upload");
+    return;
+  }
+  const message = `Upload ${records.length} local Truck Master record${records.length === 1 ? "" : "s"} to Google Sheets?\n\nThis is a one-way upload from this browser. Local data will stay unchanged.`;
+  if (!confirm(message)) {
+    setMasterSyncStatus("ready", "Upload cancelled");
+    return;
+  }
+
+  setMasterSyncStatus("saving", `${records.length} truck record${records.length === 1 ? "" : "s"}`);
+  const request = records.length === 1
+    ? masterSheetsPost({ action: "saveTruckMaster", record: records[0] })
+    : masterSheetsPost({ action: "batchSaveTruckMaster", records });
+
+  request
+    .then(data => {
+      if (!data.ok) throw new Error(data.error || "Unknown error");
+      markTruckMasterSynced();
+      setMasterSyncStatus("synced", `${records.length} truck record${records.length === 1 ? "" : "s"} uploaded`);
+    })
+    .catch(err => setMasterSyncStatus("failed", err.message || "Truck Master upload failed"));
 }
 
 /* ═══════════════════════════════════════════════
@@ -1004,6 +1136,7 @@ function init() {
   $("truck-bulk-toggle-button").addEventListener("click", () => $("truck-import-panel").classList.toggle("open"));
   $("truck-import-hide-button").addEventListener("click", () => $("truck-import-panel").classList.remove("open"));
   $("truck-dispatch-import-button").addEventListener("click", importFromDispatchList);
+  $("truck-sync-button").addEventListener("click", syncTruckMasterToSheets);
   $("truck-refresh-button").addEventListener("click", loadFromSheets);
   $("truck-export-button").addEventListener("click", () => exportCsv("VNS_Truck_Master.csv", truckFields, getTrucks()));
   $("truck-export-filtered-button").addEventListener("click", () => exportCsv("VNS_Truck_Master_Filtered.csv", truckFields, truckFilterRows(getTrucks())));
@@ -1019,6 +1152,7 @@ function init() {
   renderTrucks();
   renderDrivers();
   renderHelpers();
+  setMasterSyncStatus(isMasterSyncConfigured() ? "ready" : "local");
 
   // Top scrollbar mirrors (set up after initial render)
   initTopScrollbar('truck-top-scroll',  'truck-table-wrap');

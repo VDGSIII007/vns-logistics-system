@@ -53,6 +53,7 @@ const clearViberFollowupBtn = document.getElementById('clearViberFollowupBtn');
 const closeViberFollowupBtn = document.getElementById('closeViberFollowupBtn');
 const closeViberFollowupBottomBtn = document.getElementById('closeViberFollowupBottomBtn');
 const copyViberFollowupStatus = document.getElementById('copyViberFollowupStatus');
+const recordsPlateGroupFilter = document.getElementById('records-plate-group-filter');
 const recordsPlateFilter = document.getElementById('records-plate-filter');
 const recordsTypeFilter = document.getElementById('records-type-filter');
 const recordsRepairStatusFilter = document.getElementById('records-repair-status-filter');
@@ -114,6 +115,16 @@ let savedParsedRequestSignature = '';
 let savedParsedRowKeys = new Set();
 const REPAIR_CHANGE_REQUESTS_KEY = 'vnsRepairChangeRequests';
 const REPAIR_PAYMENT_UPDATES_KEY = 'vnsRepairPaymentUpdates';
+const TRUCK_MASTER_KEY = 'vnsTruckMaster';
+const LEGACY_TRUCK_MASTER_KEY = 'vnsTruckMasterfile';
+const REPAIR_PLATE_GROUPS = [
+  { value: '', label: 'All Groups' },
+  { value: 'Bottle', label: 'Bottle' },
+  { value: 'Sugar', label: 'Sugar' },
+  { value: 'Preform / Resin', label: 'Preform / Resin' },
+  { value: 'Caps / Crown', label: 'Caps / Crown' },
+  { value: 'Unknown / Needs Update', label: 'Needs Update / Unknown' }
+];
 
 function initRepairTabs() {
   const buttons = document.querySelectorAll('.repair-tab-button');
@@ -481,14 +492,16 @@ function createRepairRowFromRequest(request, carryForward, requestTypeOverride) 
   const unitCost = quantityNumber && totalNumber ? totalNumber / quantityNumber : '';
   const totalCost = totalNumber !== '' ? formatCurrency(totalNumber) : '';
   const category = getCategoryForRequest(requestType, quantityInfo.item);
+  const plateNumber = normalizePlate(request.plateNumber) || carryForward.plateNumber || '';
+  const truckInfo = getTruckInfoByPlate(plateNumber);
 
   return applyRequestTypeRules({
     requestType,
     date: normalizeRequestDate(request.date),
     dateFinished: '',
     requestedBy: request.requestedBy || '',
-    plateNumber: normalizePlate(request.plateNumber) || carryForward.plateNumber || '',
-    truckType: request.truckType || carryForward.truckType || '',
+    plateNumber,
+    truckType: request.truckType || carryForward.truckType || truckInfo?.truckType || '',
     driver: request.driver || carryForward.driver || '',
     helper: request.helper || carryForward.helper || '',
     odometer: request.odometer || '',
@@ -2090,7 +2103,9 @@ function setQuickFilterActiveState() {
 }
 
 function clearSavedRecordFilters() {
+  if (recordsPlateGroupFilter) recordsPlateGroupFilter.value = '';
   if (recordsPlateFilter) recordsPlateFilter.value = '';
+  populateRepairPlateSelect('records');
   if (recordsTypeFilter) recordsTypeFilter.value = '';
   if (recordsRepairStatusFilter) recordsRepairStatusFilter.value = '';
   if (recordsPaymentStatusFilter) recordsPaymentStatusFilter.value = '';
@@ -2512,16 +2527,56 @@ function normalizePlateNumber(plateNumber = '') {
   return String(plateNumber).trim().replace(/\s+/g, '').toUpperCase();
 }
 
-function getTruckMasterfileRecords() {
+function normalizeTruckGroup(value = '') {
+  const text = String(value || '').trim().replace(/\s+/g, ' ');
+  const compact = text.toLowerCase().replace(/[^a-z]/g, '');
+  if (!compact) return 'Unknown / Needs Update';
+  if (compact === 'bottle' || compact === 'bottles') return 'Bottle';
+  if (compact === 'sugar') return 'Sugar';
+  if (compact === 'preform' || compact === 'resin' || compact === 'preformresin') return 'Preform / Resin';
+  if (compact === 'caps' || compact === 'crown' || compact === 'crowns' || compact === 'capscrown' || compact === 'capscrowns') return 'Caps / Crown';
+  if (compact.includes('unknown') || compact.includes('needsupdate')) return 'Unknown / Needs Update';
+  return text;
+}
+
+function readTruckMasterStorage(key) {
   try {
-    const stored = JSON.parse(localStorage.getItem('vnsTruckMasterfile') || '[]');
+    const stored = JSON.parse(localStorage.getItem(key) || '[]');
     if (Array.isArray(stored)) return stored;
     if (stored && Array.isArray(stored.trucks)) return stored.trucks;
     if (stored && typeof stored === 'object') return Object.values(stored);
   } catch (error) {
-    console.warn('Unable to read vnsTruckMasterfile from localStorage.', error);
+    console.warn(`Unable to read ${key} from localStorage.`, error);
   }
   return [];
+}
+
+function getTruckMasterValue(truck, keys) {
+  for (const key of keys) {
+    const value = truck?.[key];
+    if (String(value || '').trim()) return value;
+  }
+  return '';
+}
+
+function getTruckMasterfileRecords() {
+  const records = [
+    ...readTruckMasterStorage(TRUCK_MASTER_KEY),
+    ...readTruckMasterStorage(LEGACY_TRUCK_MASTER_KEY)
+  ];
+  const byPlate = new Map();
+  records.forEach(truck => {
+    const plateNumber = normalizePlateNumber(getTruckMasterValue(truck, ['Plate_Number', 'plateNumber', 'plate_number', 'plate', 'Plate Number']));
+    if (!plateNumber) return;
+    const normalized = {
+      ...truck,
+      plateNumber,
+      truckType: getTruckMasterValue(truck, ['Truck_Type', 'truckType', 'truck_type', 'Truck Type', 'Body_Type', 'bodyType']),
+      groupCategory: normalizeTruckGroup(getTruckMasterValue(truck, ['Group_Category', 'groupCategory', 'group', 'Group', 'Group Category']))
+    };
+    if (!byPlate.has(plateNumber)) byPlate.set(plateNumber, normalized);
+  });
+  return Array.from(byPlate.values()).sort((a, b) => a.plateNumber.localeCompare(b.plateNumber));
 }
 
 function getTruckInfoByPlate(plateNumber) {
@@ -2531,6 +2586,96 @@ function getTruckInfoByPlate(plateNumber) {
   return getTruckMasterfileRecords().find(truck => (
     normalizePlateNumber(truck?.plateNumber) === normalizedPlate
   )) || null;
+}
+
+function getRepairPlateGroupField(prefix) {
+  if (prefix === 'records') return recordsPlateGroupFilter;
+  if (prefix === 'forRepair') return forRepairLocalForm?.querySelector('[data-for-repair-field="plateGroup"]');
+  return getSimpleManualField(prefix, 'plateGroup');
+}
+
+function getRepairPlateField(prefix) {
+  if (prefix === 'records') return recordsPlateFilter;
+  if (prefix === 'forRepair') return forRepairLocalForm?.querySelector('[data-for-repair-field="plateNumber"]');
+  return getSimpleManualField(prefix, 'plateNumber');
+}
+
+function getRepairPlateRowsForGroup(group) {
+  const normalizedGroup = normalizeTruckGroup(group);
+  return getTruckMasterfileRecords().filter(truck => (
+    !group || normalizeTruckGroup(truck.groupCategory) === normalizedGroup
+  ));
+}
+
+function populateRepairGroupSelect(select) {
+  if (!select) return;
+  const currentValue = select.value;
+  select.innerHTML = REPAIR_PLATE_GROUPS
+    .map(group => `<option value="${escapeHtml(group.value)}">${escapeHtml(group.label)}</option>`)
+    .join('');
+  select.value = REPAIR_PLATE_GROUPS.some(group => group.value === currentValue) ? currentValue : '';
+}
+
+function populateRepairPlateSelect(prefix) {
+  const plateField = getRepairPlateField(prefix);
+  const groupField = getRepairPlateGroupField(prefix);
+  if (!plateField || plateField.tagName !== 'SELECT') return;
+
+  const currentValue = normalizePlateNumber(plateField.value);
+  const rows = getRepairPlateRowsForGroup(groupField?.value || '');
+  const options = [
+    `<option value="">${prefix === 'records' ? 'All plates' : 'Select plate'}</option>`,
+    ...rows.map(truck => `<option value="${escapeHtml(truck.plateNumber)}">${escapeHtml(truck.plateNumber)}</option>`)
+  ];
+  if (prefix !== 'records') options.push('<option value="__manual__">Manual / not in Truck Master</option>');
+  plateField.innerHTML = options.join('');
+  if (currentValue && rows.some(truck => truck.plateNumber === currentValue)) {
+    plateField.value = currentValue;
+  } else if (currentValue) {
+    plateField.add(new Option(currentValue, currentValue), plateField.options[1] || null);
+    plateField.value = currentValue;
+  }
+}
+
+function handleManualPlateOption(prefix) {
+  const plateField = getRepairPlateField(prefix);
+  if (!plateField || plateField.value !== '__manual__') return;
+  const manualPlate = normalizePlateNumber(window.prompt('Enter plate number not in Truck Master:', '') || '');
+  populateRepairPlateSelect(prefix);
+  if (manualPlate) {
+    plateField.add(new Option(manualPlate, manualPlate), plateField.options[1] || null);
+    plateField.value = manualPlate;
+  } else {
+    plateField.value = '';
+  }
+}
+
+function initRepairPlateDropdowns() {
+  const prefixes = ['records', 'forRepair', 'parts', 'equipment', 'labor', 'completed', 'monitoring'];
+  prefixes.forEach(prefix => {
+    const groupField = getRepairPlateGroupField(prefix);
+    const plateField = getRepairPlateField(prefix);
+    populateRepairGroupSelect(groupField);
+    populateRepairPlateSelect(prefix);
+
+    if (groupField && !groupField.dataset.plateGroupBound) {
+      groupField.dataset.plateGroupBound = 'true';
+      groupField.addEventListener('change', () => {
+        populateRepairPlateSelect(prefix);
+        setTruckTypeFromMasterfile(prefix);
+        if (prefix === 'records') renderSavedRecords();
+      });
+    }
+
+    if (plateField && !plateField.dataset.plateSelectBound) {
+      plateField.dataset.plateSelectBound = 'true';
+      plateField.addEventListener('change', () => {
+        handleManualPlateOption(prefix);
+        setTruckTypeFromMasterfile(prefix);
+        if (prefix === 'records') renderSavedRecords();
+      });
+    }
+  });
 }
 
 function setTruckTypeFromMasterfile(prefix) {
@@ -2817,6 +2962,7 @@ tabButtons.forEach(button => {
 });
 
 if (manualEntryForm) {
+  initRepairPlateDropdowns();
   manualRequestTypeSelect?.addEventListener('change', setManualFormVisibility);
   setManualFormVisibility();
 
@@ -2988,10 +3134,12 @@ if (cancelForRepairButton && forRepairLocalForm) {
 }
 
 if (forRepairLocalForm) {
+  initRepairPlateDropdowns();
   forRepairLocalForm.addEventListener('submit', event => {
     event.preventDefault();
     const record = {
       plateNumber: normalizePlate(getForRepairLocalValue('plateNumber')) || getForRepairLocalValue('plateNumber'),
+      groupCategory: getForRepairLocalValue('plateGroup'),
       garageLocation: getForRepairLocalValue('garageLocation'),
       repairIssue: getForRepairLocalValue('repairIssue'),
       startDate: getForRepairLocalValue('startDate'),

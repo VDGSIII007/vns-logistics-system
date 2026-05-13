@@ -18,7 +18,8 @@ const MASTER_SYNC_KEY = "vns-master-sync-2026-Jay";     // master data
 const TRUCK_MASTER_HEADERS = [
   "Truck_ID", "Plate_Number", "IMEI", "Truck_Type", "Truck_Make", "Body_Type",
   "Trailer_Plate", "Group_Category", "Current_Driver_ID", "Current_Helper_ID",
-  "Current_Driver_Name", "Current_Helper_Name", "Dispatcher", "Status", "Remarks",
+  "Current_Driver", "Current_Helper", "Current_Driver_Name", "Current_Helper_Name",
+  "Dispatcher", "Status", "Remarks",
   "Created_At", "Updated_At"
 ];
 const DRIVER_MASTER_HEADERS = [
@@ -183,7 +184,7 @@ function handleMasterPost_(body) {
     case "saveTruckMaster":
       return jsonResponse(upsertTruckRecord_(body.record || {}));
     case "batchSaveTruckMaster":
-      return jsonResponse(batchUpsertMasterRecords_("Truck_Master", TRUCK_MASTER_HEADERS, "Plate_Number", (body.records || []).map(prepareTruckRecord_)));
+      return jsonResponse(batchUpsertTruckRecords_((body.records || []).map(prepareTruckRecord_)));
     case "saveDriverMaster":
       return jsonResponse({ ok: true, ...upsertMasterRecord_("Driver_Master", DRIVER_MASTER_HEADERS, "Driver_ID", body.record || {}) });
     case "batchSaveDriverMaster":
@@ -242,7 +243,7 @@ function readMasterRecords_(sheetName, headers) {
 function upsertTruckRecord_(record) {
   const prepared = prepareTruckRecord_(record);
   if (!prepared.Plate_Number) return { ok: false, skipped: true, reason: "Empty plate" };
-  const result = upsertMasterRecord_("Truck_Master", TRUCK_MASTER_HEADERS, "Plate_Number", prepared);
+  const result = upsertTruckRecordByIdOrPlate_(prepared);
   return { ok: true, ...result };
 }
 
@@ -252,10 +253,122 @@ function prepareTruckRecord_(record) {
     Plate_Number:   normalizePlate_(record.Plate_Number),
     Trailer_Plate:  normalizePlate_(record.Trailer_Plate || ""),
     Group_Category: normalizeGroup_(record.Group_Category || ""),
+    Current_Driver: record.Current_Driver || record.Current_Driver_Name || "",
+    Current_Helper: record.Current_Helper || record.Current_Helper_Name || "",
     Truck_ID:       record.Truck_ID || makeTruckId_(),
     Status:         record.Status || "Active",
     Created_At:     record.Created_At || now
   });
+}
+
+function findTruckMasterRow_(sheet, actualHeaders, record) {
+  const truckId = String(record.Truck_ID || "").trim();
+  const plate = normalizePlate_(record.Plate_Number);
+  const truckIdColIdx = actualHeaders.indexOf("Truck_ID");
+  const plateColIdx = actualHeaders.indexOf("Plate_Number");
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+
+  const rows = sheet.getRange(2, 1, lastRow - 1, actualHeaders.length).getValues();
+  if (truckId && truckIdColIdx !== -1) {
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i][truckIdColIdx] || "").trim() === truckId) return i + 2;
+    }
+  }
+  if (plate && plateColIdx !== -1) {
+    for (var j = 0; j < rows.length; j++) {
+      if (normalizePlate_(rows[j][plateColIdx]) === plate) return j + 2;
+    }
+  }
+  return -1;
+}
+
+function upsertTruckRecordByIdOrPlate_(record) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ensureMasterSheet_(ss, "Truck_Master", TRUCK_MASTER_HEADERS);
+  const actualHeaders = getHeaders(sheet);
+  const existingRowIdx = findTruckMasterRow_(sheet, actualHeaders, record);
+  const now = new Date().toISOString();
+  const keyValue = String(record.Truck_ID || record.Plate_Number || "").trim();
+
+  if (existingRowIdx > 0) {
+    const existingRow = sheet.getRange(existingRowIdx, 1, 1, actualHeaders.length).getValues()[0];
+    const existingObj = {};
+    actualHeaders.forEach(function(h, i) { existingObj[h] = cellToString_(existingRow[i]); });
+    const merged = mergeNonBlank_(existingObj, record);
+    merged.Updated_At = now;
+    sheet.getRange(existingRowIdx, 1, 1, actualHeaders.length)
+      .setValues([actualHeaders.map(function(h) { return merged[h] !== undefined ? String(merged[h]) : ""; })]);
+    return { updated: true, key: keyValue };
+  }
+
+  record.Created_At = record.Created_At || now;
+  record.Updated_At = now;
+  sheet.appendRow(actualHeaders.map(function(h) { return record[h] !== undefined ? String(record[h]) : ""; }));
+  return { created: true, key: keyValue };
+}
+
+function batchUpsertTruckRecords_(records) {
+  if (!records || !records.length) return { ok: true, imported: 0, updated: 0, skipped: 0, total: 0 };
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ensureMasterSheet_(ss, "Truck_Master", TRUCK_MASTER_HEADERS);
+  const actualHeaders = getHeaders(sheet);
+  const truckIdColIdx = actualHeaders.indexOf("Truck_ID");
+  const plateColIdx = actualHeaders.indexOf("Plate_Number");
+  const now = new Date().toISOString();
+  const lastRow = sheet.getLastRow();
+  const byTruckId = {};
+  const byPlate = {};
+  var existingAllRows = [];
+
+  if (lastRow >= 2) {
+    existingAllRows = sheet.getRange(2, 1, lastRow - 1, actualHeaders.length).getValues();
+    existingAllRows.forEach(function(row, i) {
+      const truckId = truckIdColIdx === -1 ? "" : String(row[truckIdColIdx] || "").trim();
+      const plate = plateColIdx === -1 ? "" : normalizePlate_(row[plateColIdx]);
+      if (truckId) byTruckId[truckId] = i;
+      if (plate) byPlate[plate] = i;
+    });
+  }
+
+  var imported = 0, updated = 0, skipped = 0;
+  const rowsToUpdate = [];
+  const newRows = [];
+
+  records.forEach(function(record) {
+    const truckId = String(record.Truck_ID || "").trim();
+    const plate = normalizePlate_(record.Plate_Number);
+    if (!truckId && !plate) { skipped++; return; }
+
+    var eIdx = truckId && byTruckId.hasOwnProperty(truckId) ? byTruckId[truckId] : -1;
+    if (eIdx === -1 && plate && byPlate.hasOwnProperty(plate)) eIdx = byPlate[plate];
+
+    if (eIdx !== -1) {
+      const existingObj = {};
+      actualHeaders.forEach(function(h, i) { existingObj[h] = cellToString_(existingAllRows[eIdx][i]); });
+      const merged = mergeNonBlank_(existingObj, record);
+      merged.Updated_At = now;
+      rowsToUpdate.push({
+        sheetRow: eIdx + 2,
+        values: actualHeaders.map(function(h) { return merged[h] !== undefined ? String(merged[h]) : ""; })
+      });
+      updated++;
+    } else {
+      record.Created_At = record.Created_At || now;
+      record.Updated_At = now;
+      newRows.push(actualHeaders.map(function(h) { return record[h] !== undefined ? String(record[h]) : ""; }));
+      imported++;
+    }
+  });
+
+  rowsToUpdate.forEach(function(u) {
+    sheet.getRange(u.sheetRow, 1, 1, actualHeaders.length).setValues([u.values]);
+  });
+  newRows.forEach(function(row) { sheet.appendRow(row); });
+
+  const total = Math.max(lastRow - 1, 0) + imported;
+  return { ok: true, imported: imported, updated: updated, skipped: skipped, total: total };
 }
 
 function upsertMasterRecord_(sheetName, headers, keyField, record) {

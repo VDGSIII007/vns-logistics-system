@@ -1,3 +1,47 @@
+const CASH_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyu1N444S_vthjIoxcy081CdDZJuy6EwHt5ktKU42U4qNY_HL4F2HHKEQl6HDSZZItf/exec";
+const CASH_SYNC_KEY       = "vns-cash-sync-2026-Jay";
+
+function cashPost(payload) {
+  return fetch(CASH_APP_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ syncKey: CASH_SYNC_KEY, ...payload })
+  }).then(r => r.json());
+}
+
+function toCashSheetRecord(record) {
+  return {
+    Cash_ID: record.id,
+    Date: record.date || '',
+    Time: '',
+    Sender: record.plateNumber || '',
+    Plate_Number: record.plateNumber || '',
+    Group_Category: '',
+    Transaction_Type: record.type || '',
+    Person_Name: record.personName || record.driverName || record.receiverName || '',
+    Role: record.personType || '',
+    GCash_Number: record.depositNumber || '',
+    Amount: String(record.amount || record.budgetAmount || 0),
+    PO_Number: record.poNumber || record.shipmentNumber || '',
+    Liters: String(record.liters || ''),
+    Fuel_Station: record.fuelStation || '',
+    Route: record.route || (record.source && record.destination ? record.source + ' → ' + record.destination : ''),
+    Balance_After_Payroll: '',
+    Review_Status: record.status || '',
+    Encoded_By: '',
+    Remarks: record.remarks || record.reason || '',
+    Created_At: record.createdAt || '',
+    Updated_At: record.updatedAt || ''
+  };
+}
+
+function syncCashSilent(record, statusId) {
+  setStatus(statusId, 'Saved locally. Syncing…', 'success');
+  cashPost({ action: 'saveEntry', record: toCashSheetRecord(record) })
+    .then(res => setStatus(statusId, (res && res.ok) ? 'Saved and synced.' : 'Saved locally. Sync failed.', (res && res.ok) ? 'success' : 'warning'))
+    .catch(() => setStatus(statusId, 'Saved locally. Sync failed.', 'warning'));
+}
+
 const DIESEL_KEY = "vnsDieselPOEntries";
 const BUDGET_KEY = "vnsTripBudgets";
 const BALI_KEY = "vnsBaliCashAdvances";
@@ -93,8 +137,8 @@ function saveDieselPO() {
   writeJson(DIESEL_KEY, [data].concat(records.filter(item => item.id !== data.id)));
   $("diesel-form").dataset.recordId = data.id;
   $("diesel-form").dataset.createdAt = data.createdAt;
-  setStatus("diesel-status", "Diesel PO saved locally.", "success");
   refreshAllCashData();
+  syncCashSilent(data, "diesel-status");
 }
 
 function clearDieselPOForm() {
@@ -206,8 +250,8 @@ function saveBudget() {
   writeJson(BUDGET_KEY, [data].concat(records.filter(item => item.id !== data.id)));
   $("budget-form").dataset.recordId = data.id;
   $("budget-form").dataset.createdAt = data.createdAt;
-  setStatus("budget-status", "Trip Budget saved locally.", "success");
   refreshAllCashData();
+  syncCashSilent(data, "budget-status");
 }
 
 function clearBudgetForm() {
@@ -297,8 +341,8 @@ function saveBali() {
   writeJson(BALI_KEY, [data].concat(records.filter(item => item.id !== data.id)));
   $("bali-form").dataset.recordId = data.id;
   $("bali-form").dataset.createdAt = data.createdAt;
-  setStatus("bali-status", "Bali / Cash Advance saved locally.", "success");
   refreshAllCashData();
+  syncCashSilent(data, "bali-status");
 }
 
 function clearBaliForm() {

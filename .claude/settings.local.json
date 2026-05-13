@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir /b \"c:\\\\Users\\\\User\\\\Desktop\\\\vns website\\\\appscript\")",
+      "Bash(node --check master-data.js)",
+      "Bash(node --check cash.js)",
+      "Bash(node --check tire-monitoring.js)",
+      "Bash(node --check parts-inventory.js)"
+    ]
+  }
+}

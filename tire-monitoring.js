@@ -1,5 +1,110 @@
 'use strict';
 
+const TIRE_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzjNvohEpqR8_X-UwJrI5yZQFn4sKJwv5ctzc2wj38VPK76yrfNE4skX-zLgMRJmntB/exec";
+const TIRE_SYNC_KEY       = "vns-tire-sync-2026-Jay";
+
+function tirePost(payload) {
+  return fetch(TIRE_APP_SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ syncKey: TIRE_SYNC_KEY, ...payload })
+  }).then(r => r.json());
+}
+
+function syncTireRecord(action, record, statusEl) {
+  tirePost({ action, record })
+    .then(res => {
+      if (!statusEl) return;
+      statusEl.textContent = (res && res.ok) ? 'Saved and synced.' : 'Saved locally. Sync failed.';
+      statusEl.className   = (res && res.ok) ? 'tire-form-status' : 'tire-form-status error';
+    })
+    .catch(() => {
+      if (!statusEl) return;
+      statusEl.textContent = 'Saved locally. Sync failed.';
+      statusEl.className   = 'tire-form-status error';
+    });
+}
+
+function syncTireBatch(action, records, statusEl) {
+  tirePost({ action, records })
+    .then(res => {
+      if (!statusEl) return;
+      statusEl.textContent = (res && res.ok) ? 'Saved and synced.' : 'Saved locally. Sync failed.';
+      statusEl.className   = (res && res.ok) ? 'tire-form-status' : 'tire-form-status error';
+    })
+    .catch(() => {
+      if (!statusEl) return;
+      statusEl.textContent = 'Saved locally. Sync failed.';
+      statusEl.className   = 'tire-form-status error';
+    });
+}
+
+function toTireInventoryRecord(t) {
+  return {
+    Tire_ID: t.id,
+    Purchase_Date: t.dateAdded || '',
+    Supplier: t.supplier || '',
+    Invoice_No: '',
+    Tire_Serial: t.serial || '',
+    Brand: t.brand || '',
+    Tire_Size: t.size || '',
+    Cost: String(t.cost || ''),
+    Quantity: String(t.qty || 1),
+    Storage_Location: t.location || '',
+    Status: t.status || '',
+    Linked_Plate_Number: t.assignedPlate || '',
+    Linked_Tire_Position: '',
+    Remarks: t.remarks || '',
+    Created_At: t.createdAt || '',
+    Updated_At: t.createdAt || ''
+  };
+}
+
+function toTireChangeLogRecord(r) {
+  return {
+    Change_ID: r.id,
+    Change_Date: r.date || '',
+    Plate_Number: r.plate || '',
+    IMEI: '',
+    Truck_Type: '',
+    Truck_Make: '',
+    Tire_Position: r.position || '',
+    Action_Type: r.action || '',
+    Old_Tire_Serial: '',
+    New_Tire_Serial: r.serial || '',
+    Brand: r.brand || '',
+    Tire_Size: r.size || '',
+    Reason: r.condition || '',
+    Driver_Name: '',
+    Signature_By: r.performedBy || '',
+    Odometer: r.odometer || '',
+    Remarks: r.remarks || '',
+    Encoded_At: r.createdAt || ''
+  };
+}
+
+function toTireDisposalRecord(r) {
+  return {
+    Disposal_ID: r.id,
+    Disposal_Date: r.date || '',
+    Tire_Serial: r.serial || '',
+    Brand: r.brand || '',
+    Tire_Size: r.size || '',
+    Last_Plate_Number: r.plate || '',
+    Last_Tire_Position: '',
+    Disposal_Status: 'Disposed',
+    Disposal_Method: r.reason || '',
+    Disposal_Destination: r.recycler || '',
+    Receiver_Contact: '',
+    Disposal_Receipt_No: '',
+    Disposal_Certificate_No: r.certNo || '',
+    Estimated_Scrap_Value: '',
+    Disposed_By: r.disposedBy || '',
+    Remarks: r.remarks || '',
+    Encoded_At: r.createdAt || ''
+  };
+}
+
 /* ══════════════════════════════════════════════════
    TIRE MONITORING — tire-monitoring.js
    localStorage keys:
@@ -654,8 +759,9 @@ function saveChangeLog() {
   // Update position status
   updatePositionStatus(record);
 
-  statusEl.textContent = 'Saved.';
+  statusEl.textContent = 'Saved. Syncing…';
   statusEl.className   = 'tire-form-status';
+  syncTireRecord('saveTireChangeLog', toTireChangeLogRecord(record), statusEl);
   renderChangeLogTable();
   renderHistoryTab();
   updateKPIs();
@@ -853,8 +959,14 @@ function saveInventoryRecord() {
   }
   saveTireInventory(inv);
 
-  msgEl.textContent = qty > 1 ? qty + ' tires added.' : 'Tire added.';
-  msgEl.className   = 'tire-form-status';
+  if (qty > 1) {
+    msgEl.textContent = qty + ' tires added. Syncing…';
+    syncTireBatch('batchSaveTireInventory', inv.slice(inv.length - qty).map(toTireInventoryRecord), msgEl);
+  } else {
+    msgEl.textContent = 'Tire added. Syncing…';
+    syncTireRecord('saveTireInventory', toTireInventoryRecord(inv[inv.length - 1]), msgEl);
+  }
+  msgEl.className = 'tire-form-status';
   renderInventoryTable();
   renderInvSummary();
   updateKPIs();
@@ -1053,8 +1165,9 @@ function saveDisposalLog() {
   const idx = inv.findIndex(t => t.serial === serial);
   if (idx !== -1) { inv[idx].status = 'Disposed'; saveTireInventory(inv); }
 
-  statusEl.textContent = 'Disposal logged.';
+  statusEl.textContent = 'Disposal logged. Syncing…';
   statusEl.className   = 'tire-form-status';
+  syncTireRecord('saveTireDisposal', toTireDisposalRecord(record), statusEl);
   renderDisposalPendingTable();
   renderDisposalHistTable();
   renderInventoryTable();
