@@ -77,14 +77,13 @@
           <label><span>Cutoff End</span><input id="cutoff-end" type="date"></label>
           <label><span>Group / Category</span><select id="group-category">
             <option value="">Select group</option>
-            <option>Sugar</option>
             <option>Bottle</option>
-            <option>Preform</option>
-            <option>Resin</option>
-            <option>Caps</option>
-            <option>Crowns</option>
+            <option>Sugar</option>
+            <option>Preform / Resin</option>
+            <option>Caps / Crown</option>
+            <option>Needs Update / Unknown</option>
           </select></label>
-          <label><span>Plate Number</span><input id="plate-number" type="text" placeholder="ABC1234"></label>
+          <label><span>Plate Number</span><input id="plate-number" type="text" list="payroll-truck-plates" placeholder="ABC1234"></label>
           <label><span>Driver Name</span><input id="driver-name" type="text"></label>
           <label><span>Helper Name</span><input id="helper-name" type="text"></label>
           <label><span>Encoder Name</span><input id="encoder-name" type="text"></label>
@@ -98,15 +97,6 @@
           </select></label>
           <label class="wide-field"><span>General Remarks</span><textarea id="general-remarks" rows="2"></textarea></label>
         </form>
-
-        <div class="payroll-actions payroll-header-actions payroll-toolbar">
-          <button id="new-payroll-button" class="btn btn-outline" type="button">New Payroll</button>
-          <button id="save-draft-button" class="btn btn-primary" type="button">Save Draft</button>
-          <button id="submit-payroll-button" class="btn btn-outline" type="button">Submit for Approval</button>
-          <button id="calculate-payroll-button" class="btn btn-outline" type="button">Calculate Payroll</button>
-          <button id="clear-form-button" class="btn btn-outline danger-outline" type="button">Clear Form</button>
-          <span id="payroll-save-status" class="payroll-status-line"></span>
-        </div>
       </section>
 
       <section class="payroll-section-card payroll-table-card payroll-table-shell">
@@ -158,6 +148,21 @@
             <tbody id="payroll-lines-body"></tbody>
           </table>
         </div>
+      </section>
+
+      <section class="payroll-section-card payroll-bottom-actions-card">
+        <div class="payroll-bottom-actions">
+          <div class="payroll-actions-left payroll-toolbar">
+            <button id="new-payroll-button" class="btn btn-outline" type="button">New Payroll</button>
+            <button id="clear-form-button" class="btn btn-outline danger-outline" type="button">Clear Form</button>
+          </div>
+          <div class="payroll-actions-right payroll-toolbar">
+            <button id="calculate-payroll-button" class="btn btn-outline" type="button">Calculate Payroll</button>
+            <button id="save-draft-button" class="btn btn-primary" type="button">Save Draft</button>
+            <button id="submit-payroll-button" class="btn btn-outline" type="button">Submit for Approval</button>
+          </div>
+        </div>
+        <span id="payroll-save-status" class="payroll-status-line"></span>
       </section>
 
       <section class="payroll-section-card payroll-budget-card encode-totals-card">
@@ -346,6 +351,7 @@
     </section>
   </main>
 
+  <datalist id="payroll-truck-plates"></datalist>
   <footer class="footer">
     <div class="container footer-grid">
       <div>

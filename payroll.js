@@ -2,6 +2,11 @@ const PAYROLL_RECORDS_KEY = "vnsPayrollRecords";
 const PAYROLL_RULES_KEY = "vnsPayrollRules";
 const PEOPLE_BALANCES_KEY = "vnsPeopleBalances";
 const PAYROLL_LEDGER_KEY = "vnsPayrollLedger";
+const PAYROLL_LIQUIDATION_API_URL = "https://script.google.com/macros/s/AKfycbx2JOUTm1ESJ8Ce6zGu7PzqDLBaPTjNoHeRskU-Akc5JipoUJXXPQ1BibY04paConwM/exec";
+const PAYROLL_LIQUIDATION_SYNC_KEY = "vns-payroll-liquidation-sync-2026-Jay";
+const PAYROLL_TRUCK_MASTER_KEY = "vnsTruckMaster";
+const PAYROLL_MASTER_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbySWpFu-ZwtsC4uGK4uNgZSRlHUzS4bAMX4X0vAQjt-iuF7pbgT3loFGU2fU2YL4rq6pQ/exec";
+const PAYROLL_MASTER_SYNC_KEY = "vns-truck-sync-2026-Jay";
 
 const payrollState = {
   currentId: null,
@@ -15,7 +20,9 @@ const payrollState = {
   hasCalculatedPayroll: false,
   hasSubmittedPayroll: false,
   sheetSelection: null,
-  isSelectingSheetRange: false
+  isSelectingSheetRange: false,
+  truckMaster: [],
+  selectedTruckType: ""
 };
 
 const amountFields = [
@@ -82,8 +89,10 @@ function initPayrollPage() {
   bindPayrollEvents();
   loadRules();
   loadPayrollRecords();
+  loadPayrollTruckMaster();
   renderBalanceLedger();
   newPayroll();
+  loadPayrollRecordsFromCloud();
 }
 
 function bindPayrollMenu() {
@@ -134,10 +143,15 @@ function bindPayrollEvents() {
 
   ["group-category", "plate-number", "driver-name", "helper-name", "payroll-status"].forEach(id => {
     $(id).addEventListener("input", () => {
+      if (id === "group-category") applyPayrollGroupToPlateOptions();
+      if (id === "plate-number") applyPayrollTruckToHeader(false);
       calculatePayroll();
       updateLockState();
     });
   });
+  $("group-category").addEventListener("change", applyPayrollGroupToPlateOptions);
+  $("plate-number").addEventListener("change", () => applyPayrollTruckToHeader(true));
+  $("plate-number").addEventListener("blur", () => applyPayrollTruckToHeader(true));
 
   ["override-driver-deduction", "override-helper-deduction", "approval-notes"].forEach(id => {
     $(id).addEventListener("input", calculatePayroll);
@@ -170,6 +184,7 @@ function newPayroll() {
   payrollState.warnings = [];
   payrollState.hasCalculatedPayroll = false;
   payrollState.hasSubmittedPayroll = false;
+  payrollState.selectedTruckType = "";
 
   $("payroll-number").value = generatePayrollId();
   $("payroll-date").value = today();
@@ -201,11 +216,142 @@ function newPayroll() {
   updateLockState();
   switchPayrollTab("encode-payroll-tab");
   setStatus("New payroll ready.", "info");
+  renderPayrollTruckPlateOptions();
 }
 
 function loadPayrollRecords() {
   payrollState.records = readJson(PAYROLL_RECORDS_KEY, []);
   renderPayrollRecordsTable();
+}
+
+function loadPayrollTruckMaster() {
+  const localTrucks = readJson(PAYROLL_TRUCK_MASTER_KEY, []);
+  payrollState.truckMaster = Array.isArray(localTrucks) ? localTrucks : [];
+  renderPayrollTruckPlateOptions();
+
+  const query = new URLSearchParams({
+    action: "getAllMasterData",
+    syncKey: PAYROLL_MASTER_SYNC_KEY
+  });
+  fetch(`${PAYROLL_MASTER_APP_SCRIPT_URL}?${query.toString()}`)
+    .then(response => response.json())
+    .then(result => {
+      const trucks = result?.trucks || result?.Truck_Master || [];
+      if (!result?.ok || !Array.isArray(trucks) || !trucks.length) return;
+      payrollState.truckMaster = trucks;
+      writeJson(PAYROLL_TRUCK_MASTER_KEY, trucks);
+      renderPayrollTruckPlateOptions();
+      applyPayrollTruckToHeader(false);
+    })
+    .catch(error => {
+      console.warn("Payroll truck master cloud load failed", error);
+      renderPayrollTruckPlateOptions();
+    });
+}
+
+function renderPayrollTruckPlateOptions() {
+  const list = $("payroll-truck-plates");
+  if (!list) return;
+  const group = normalizePayrollGroup($("group-category")?.value || "");
+  const trucks = getPayrollTrucksForGroup(group);
+  const plates = [...new Set(trucks.map(getPayrollTruckPlate).filter(Boolean))].sort();
+  list.innerHTML = plates.map(plate => `<option value="${escapeAttr(plate)}"></option>`).join("");
+}
+
+function applyPayrollGroupToPlateOptions() {
+  const selectedGroup = normalizePayrollGroup($("group-category")?.value || "");
+  setPayrollGroupValue(selectedGroup);
+  renderPayrollTruckPlateOptions();
+
+  const plate = normalizePlateForCloud($("plate-number")?.value || "");
+  if (!plate) return;
+  const truck = getPayrollTruckInfoByPlate(plate);
+  if (truck && selectedGroup && getPayrollTruckGroup(truck) !== selectedGroup) {
+    $("plate-number").value = "";
+    payrollState.selectedTruckType = "";
+  }
+}
+
+function applyPayrollTruckToHeader(fillEmptyPeopleOnly) {
+  const plateInput = $("plate-number");
+  if (!plateInput) return;
+  const normalizedPlate = normalizePlateForCloud(plateInput.value);
+  if (!normalizedPlate) {
+    payrollState.selectedTruckType = "";
+    return;
+  }
+
+  plateInput.value = normalizedPlate;
+  const truck = getPayrollTruckInfoByPlate(normalizedPlate);
+  if (!truck) {
+    payrollState.selectedTruckType = "";
+    if (!$("group-category").value) setPayrollGroupValue("Needs Update / Unknown");
+    renderPayrollTruckPlateOptions();
+    return;
+  }
+
+  const group = getPayrollTruckGroup(truck);
+  if (group) setPayrollGroupValue(group);
+  const driver = getPayrollTruckDriver(truck);
+  const helper = getPayrollTruckHelper(truck);
+  if (driver && (!fillEmptyPeopleOnly || !$("driver-name").value.trim())) $("driver-name").value = driver;
+  if (helper && (!fillEmptyPeopleOnly || !$("helper-name").value.trim())) $("helper-name").value = helper;
+  payrollState.selectedTruckType = getPayrollTruckType(truck);
+  renderPayrollTruckPlateOptions();
+}
+
+function getPayrollTrucksForGroup(group) {
+  if (!group) return payrollState.truckMaster;
+  if (group === "Needs Update / Unknown") {
+    return payrollState.truckMaster.filter(truck => getPayrollTruckGroup(truck) === group);
+  }
+  return payrollState.truckMaster.filter(truck => getPayrollTruckGroup(truck) === group);
+}
+
+function getPayrollTruckInfoByPlate(plate) {
+  const normalized = normalizePlateForCloud(plate);
+  return payrollState.truckMaster.find(truck => getPayrollTruckPlate(truck) === normalized) || null;
+}
+
+function getPayrollTruckPlate(truck) {
+  return normalizePlateForCloud(truck?.Plate_Number || truck?.plateNumber || truck?.plate || "");
+}
+
+function getPayrollTruckGroup(truck) {
+  return normalizePayrollGroup(truck?.Group_Category || truck?.groupCategory || truck?.Group || "");
+}
+
+function getPayrollTruckDriver(truck) {
+  return String(truck?.Current_Driver_Name || truck?.Current_Driver || truck?.Driver || truck?.driverName || "").trim();
+}
+
+function getPayrollTruckHelper(truck) {
+  return String(truck?.Current_Helper_Name || truck?.Current_Helper || truck?.Helper || truck?.helperName || "").trim();
+}
+
+function getPayrollTruckType(truck) {
+  return String(truck?.Truck_Type || truck?.truckType || truck?.Body_Type || truck?.bodyType || "").trim();
+}
+
+function normalizePayrollGroup(value) {
+  const raw = String(value || "").trim();
+  const key = raw.toLowerCase().replace(/\s+/g, " ");
+  const compact = key.replace(/[^a-z0-9]/g, "");
+  if (!key) return "";
+  if (key === "bottle" || key === "bottles") return "Bottle";
+  if (key === "sugar") return "Sugar";
+  if (key === "preform" || key === "resin" || key === "preform / resin" || compact === "preformresin") return "Preform / Resin";
+  if (key === "caps" || key === "crown" || key === "crowns" || key === "caps / crown" || key === "caps / crowns" || compact === "capscrown" || compact === "capscrowns") return "Caps / Crown";
+  if (key.includes("unknown") || key.includes("update")) return "Needs Update / Unknown";
+  return raw;
+}
+
+function setPayrollGroupValue(value) {
+  const select = $("group-category");
+  if (!select) return;
+  const normalized = normalizePayrollGroup(value);
+  const option = Array.from(select.options).find(item => item.value === normalized || item.textContent === normalized);
+  select.value = option ? option.value || option.textContent : "";
 }
 
 function savePayrollRecord() {
@@ -225,7 +371,13 @@ function savePayrollRecord() {
   writeJson(PAYROLL_RECORDS_KEY, payrollState.records);
   renderPayrollRecordsTable();
   renderWarnings(headerWarnings.concat(payrollState.warnings));
-  setStatus("Payroll saved locally.", "success");
+  setStatus("Saved locally. Syncing to cloud...", "info");
+  syncPayrollRecordToCloud(record)
+    .then(() => setStatus("Saved locally and synced to cloud.", "success"))
+    .catch(error => {
+      console.warn("Payroll cloud sync failed", error);
+      setStatus("Saved locally. Cloud sync failed.", "warning");
+    });
   return record;
 }
 
@@ -664,8 +816,9 @@ function editPayrollRecord(id) {
   $("payroll-date").value = record.payrollDate || "";
   $("cutoff-start").value = record.cutoffStart || "";
   $("cutoff-end").value = record.cutoffEnd || "";
-  $("group-category").value = record.groupCategory || "";
+  setPayrollGroupValue(record.groupCategory || "");
   $("plate-number").value = record.plateNumber || "";
+  payrollState.selectedTruckType = record.truckType || "";
   $("driver-name").value = record.driverName || "";
   $("helper-name").value = record.helperName || "";
   $("encoder-name").value = record.encoderName || record.createdBy || "";
@@ -697,8 +850,9 @@ function duplicatePayrollRecord(id) {
   $("payroll-date").value = today();
   $("cutoff-start").value = record.cutoffStart || "";
   $("cutoff-end").value = record.cutoffEnd || "";
-  $("group-category").value = record.groupCategory || "";
+  setPayrollGroupValue(record.groupCategory || "");
   $("plate-number").value = record.plateNumber || "";
+  payrollState.selectedTruckType = record.truckType || "";
   $("driver-name").value = record.driverName || "";
   $("helper-name").value = record.helperName || "";
   $("encoder-name").value = record.encoderName || "";
@@ -834,14 +988,331 @@ function amountValue(value) {
   return hasValue(value) ? parseNumber(value) : "";
 }
 
-function syncPayrollToGoogleSheets() {
-  console.info("Google Apps Script sync placeholder: payroll records will be posted here later.");
-  return Promise.resolve({ ok: false, placeholder: true });
+function payrollCloudGet(action, params = {}) {
+  const query = new URLSearchParams({
+    action,
+    syncKey: PAYROLL_LIQUIDATION_SYNC_KEY,
+    ...params
+  });
+  return fetch(`${PAYROLL_LIQUIDATION_API_URL}?${query.toString()}`).then(response => response.json());
 }
 
-function fetchPayrollFromGoogleSheets() {
-  console.info("Google Apps Script fetch placeholder: payroll records will be fetched here later.");
-  return Promise.resolve([]);
+function payrollCloudPost(action, payload = {}) {
+  return fetch(PAYROLL_LIQUIDATION_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({
+      syncKey: PAYROLL_LIQUIDATION_SYNC_KEY,
+      action,
+      ...payload
+    })
+  }).then(response => response.json());
+}
+
+function syncPayrollRecordToCloud(record) {
+  const batch = payrollRecordToLiquidationBatch(record);
+  const tripLines = payrollRecordToLiquidationTripLines(record);
+  return payrollCloudPost("saveLiquidationBatch", { record: batch })
+    .then(result => {
+      if (!result?.ok) throw new Error(result?.error || "Batch sync failed.");
+      return payrollCloudPost("saveLiquidationTripLines", {
+        liquidationId: record.id,
+        records: tripLines
+      });
+    })
+    .then(result => {
+      if (!result?.ok) throw new Error(result?.error || "Trip line sync failed.");
+      return result;
+    });
+}
+
+function loadPayrollRecordsFromCloud() {
+  payrollCloudGet("listLiquidationBatches")
+    .then(batchResult => {
+      const cloudBatches = extractCloudArray(batchResult, ["batches", "records", "data"]);
+      if (!batchResult?.ok || !cloudBatches.length) return null;
+      return payrollCloudGet("listTripLines")
+        .then(lineResult => ({
+          batches: cloudBatches,
+          tripLines: extractCloudArray(lineResult, ["tripLines", "lines", "records", "data"])
+        }))
+        .catch(error => {
+          console.warn("Payroll cloud trip lines load failed", error);
+          return { batches: cloudBatches, tripLines: [] };
+        });
+    })
+    .then(payload => {
+      if (!payload) return;
+      const cloudRecords = cloudLiquidationToPayrollRecords(payload.batches, payload.tripLines);
+      if (!cloudRecords.length) return;
+      payrollState.records = mergePayrollRecords(payrollState.records, cloudRecords);
+      writeJson(PAYROLL_RECORDS_KEY, payrollState.records);
+      renderPayrollRecordsTable();
+      setStatus("Loaded cloud payroll records.", "success");
+    })
+    .catch(error => {
+      console.warn("Payroll cloud load failed", error);
+      setStatus("Cloud records could not be loaded. Local records kept.", "warning");
+    });
+}
+
+function extractCloudArray(response, keys) {
+  if (Array.isArray(response)) return response;
+  for (const key of keys) {
+    const value = response?.[key];
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object") {
+      for (const nestedKey of keys) {
+        if (Array.isArray(value[nestedKey])) return value[nestedKey];
+      }
+    }
+  }
+  return [];
+}
+
+function payrollRecordToLiquidationBatch(record) {
+  const totals = record.totals || {};
+  const status = mapPayrollStatusToLiquidation(record.status);
+  return {
+    Liquidation_ID: record.id,
+    Liquidation_Number: record.payrollNumber,
+    Payroll_Number: record.payrollNumber,
+    Liquidation_Date: record.payrollDate,
+    Period_Start: record.cutoffStart,
+    Period_End: record.cutoffEnd,
+    Year_Tab: getRecordYear(record.payrollDate || record.cutoffEnd),
+    Plate_Number: normalizePlateForCloud(record.plateNumber),
+    Group_Category: record.groupCategory,
+    Truck_Type: record.truckType || "",
+    Driver_Name: record.driverName,
+    Helper_Name: record.helperName,
+    Encoded_By: record.encoderName || record.createdBy,
+    Reviewed_By: record.approval?.approverName || "",
+    Approved_By: record.status === "Approved" || record.status === "Paid" ? record.approval?.approverName || "" : "",
+    Approval_Status: status,
+    Workflow_Status: status,
+    Review_Notes: record.approval?.approvalNotes || "",
+    Return_Reason: record.status === "Returned" ? record.approval?.revisionReason || "" : "",
+    Reject_Reason: record.status === "Rejected" ? record.approval?.revisionReason || "" : "",
+    Submitted_At: record.status === "Submitted" ? record.updatedAt || "" : "",
+    Approved_At: record.status === "Approved" || record.status === "Paid" ? record.updatedAt || "" : "",
+    Posted_To_Truck_Sheet: "",
+    Total_Diesel: totals.totalDiesel || "",
+    Total_Driver_Salary: totals.totalDriverSalary || "",
+    Total_Helper_Salary: totals.totalHelperSalary || "",
+    Total_Toll: totals.totalToll || "",
+    Total_Passway: totals.totalPassway || "",
+    Total_Parking: totals.totalParking || "",
+    Total_Lagay_Loaded: sumLineField(record.lines, "lagayLoaded"),
+    Total_Lagay_Empty: sumLineField(record.lines, "lagayEmpty"),
+    Total_Mano: sumLineField(record.lines, "mano"),
+    Total_Vulcanize: sumLineField(record.lines, "vulcanize"),
+    Total_Driver_Allowance: totals.totalDriverAllowance || "",
+    Total_Helper_Allowance: totals.totalHelperAllowance || "",
+    Total_Truck_Wash: sumLineField(record.lines, "hugasTruck"),
+    Total_Checkpoint: sumLineField(record.lines, "checkpoint"),
+    Total_Other_Expenses: totals.totalOtherExpenses || "",
+    Total_Budget_Released: totals.totalBudgetReleased || "",
+    Remarks: record.remarks,
+    Created_At: record.createdAt,
+    Updated_At: record.updatedAt
+  };
+}
+
+function payrollRecordToLiquidationTripLines(record) {
+  return (record.lines || []).filter(line => !isLineBlank(line)).map((line, index) => ({
+    Line_ID: line.id || `${record.id}-line-${index + 1}`,
+    Liquidation_ID: record.id,
+    Line_No: index + 1,
+    Trip_Date: line.tripDate || "",
+    Plate_Number: normalizePlateForCloud(record.plateNumber),
+    Group_Category: record.groupCategory || "",
+    Driver_Name: record.driverName || "",
+    Helper_Name: record.helperName || "",
+    Diesel: line.diesel || "",
+    Cost_Per_Liter: line.costPerLiter || "",
+    PO_Number: line.poNumber || "",
+    Source: line.source || "",
+    Destination: line.destination || "",
+    Ref: line.ref || line.shipmentNumber || "",
+    Shipment_Number: line.shipmentNumber || "",
+    Van_Number: line.vanNumber || "",
+    Container_Type: line.containerType || "",
+    Commodity: line.commodity || "",
+    Driver_Salary: line.driverSalary || "",
+    Helper_Salary: line.helperSalary || "",
+    Toll: line.tollFee || "",
+    Passway: line.passway || "",
+    Parking: line.parking || "",
+    Lagay_Loaded: line.lagayLoaded || "",
+    Lagay_Empty: line.lagayEmpty || "",
+    Mano: line.mano || "",
+    Vulcanize: line.vulcanize || "",
+    Driver_Allowance: line.driverAllowance || "",
+    Helper_Allowance: line.helperAllowance || "",
+    Truck_Wash: line.hugasTruck || "",
+    Checkpoint: line.checkpoint || "",
+    Other_Expenses: line.otherExpenses || "",
+    Budget_Released: line.budgetReleased || "",
+    Remarks: line.remarks || "",
+    Created_At: record.createdAt || "",
+    Updated_At: record.updatedAt || ""
+  }));
+}
+
+function cloudLiquidationToPayrollRecords(batches, tripLines) {
+  const linesByBatch = tripLines.reduce((map, line) => {
+    const id = line.Liquidation_ID || "";
+    if (!id) return map;
+    if (!map[id]) map[id] = [];
+    map[id].push(cloudTripLineToPayrollLine(line));
+    return map;
+  }, {});
+
+  return batches.map(batch => ({
+    id: batch.Liquidation_ID || createId("payroll"),
+    payrollNumber: batch.Payroll_Number || batch.Liquidation_Number || "",
+    payrollDate: toDateInputValue(batch.Liquidation_Date || batch.Date_Submitted || ""),
+    cutoffStart: toDateInputValue(batch.Period_Start || ""),
+    cutoffEnd: toDateInputValue(batch.Period_End || ""),
+    groupCategory: normalizePayrollGroup(batch.Group_Category || ""),
+    plateNumber: normalizePlateForCloud(batch.Plate_Number || ""),
+    truckType: batch.Truck_Type || "",
+    driverName: batch.Driver_Name || batch.Driver || "",
+    helperName: batch.Helper_Name || batch.Helper || "",
+    encoderName: batch.Encoded_By || "",
+    status: mapLiquidationStatusToPayroll(batch.Approval_Status || batch.Workflow_Status),
+    remarks: batch.Remarks || "",
+    lines: (linesByBatch[batch.Liquidation_ID] || []).sort((a, b) => Number(a.lineNo || 0) - Number(b.lineNo || 0)),
+    totals: cloudBatchToPayrollTotals(batch),
+    approval: {
+      approverName: batch.Approved_By || batch.Reviewed_By || "",
+      approvalNotes: batch.Review_Notes || "",
+      revisionReason: batch.Return_Reason || batch.Reject_Reason || "",
+      paymentReference: "",
+      paymentDate: ""
+    },
+    deductions: { driver: {}, helper: {} },
+    createdBy: batch.Encoded_By || "",
+    createdAt: batch.Created_At || "",
+    updatedAt: batch.Updated_At || ""
+  }));
+}
+
+function cloudTripLineToPayrollLine(line) {
+  return {
+    id: line.Line_ID || createId("line"),
+    lineId: line.Line_ID || "",
+    lineNo: line.Line_No || "",
+    tripDate: toDateInputValue(line.Trip_Date || ""),
+    diesel: amountValue(line.Diesel),
+    costPerLiter: amountValue(line.Cost_Per_Liter),
+    poNumber: line.PO_Number || "",
+    shipmentNumber: line.Shipment_Number || line.Ref || "",
+    vanNumber: line.Van_Number || "",
+    containerType: line.Container_Type || "",
+    source: line.Source || "",
+    destination: line.Destination || "",
+    commodity: line.Commodity || "",
+    driverSalary: amountValue(line.Driver_Salary),
+    helperSalary: amountValue(line.Helper_Salary),
+    driverAllowance: amountValue(line.Driver_Allowance),
+    helperAllowance: amountValue(line.Helper_Allowance),
+    tollFee: amountValue(line.Toll),
+    passway: amountValue(line.Passway),
+    parking: amountValue(line.Parking),
+    lagayLoaded: amountValue(line.Lagay_Loaded),
+    lagayEmpty: amountValue(line.Lagay_Empty),
+    mano: amountValue(line.Mano),
+    vulcanize: amountValue(line.Vulcanize),
+    hugasTruck: amountValue(line.Truck_Wash),
+    checkpoint: amountValue(line.Checkpoint),
+    otherExpenses: amountValue(line.Other_Expenses),
+    budgetReleased: amountValue(line.Budget_Released),
+    remarks: line.Remarks || "",
+    warnings: []
+  };
+}
+
+function cloudBatchToPayrollTotals(batch) {
+  const totals = {
+    ...getEmptyTotals(),
+    totalDriverSalary: parseNumber(batch.Total_Driver_Salary),
+    totalHelperSalary: parseNumber(batch.Total_Helper_Salary),
+    totalDriverAllowance: parseNumber(batch.Total_Driver_Allowance),
+    totalHelperAllowance: parseNumber(batch.Total_Helper_Allowance),
+    totalDiesel: parseNumber(batch.Total_Diesel),
+    totalToll: parseNumber(batch.Total_Toll),
+    totalPassway: parseNumber(batch.Total_Passway),
+    totalParking: parseNumber(batch.Total_Parking),
+    totalOtherExpenses: parseNumber(batch.Total_Other_Expenses),
+    totalBudgetReleased: parseNumber(batch.Total_Budget_Released)
+  };
+  totals.totalExpenses = totals.totalDiesel + totals.totalToll + totals.totalPassway + totals.totalParking + totals.totalOtherExpenses;
+  totals.budgetDifference = totals.totalBudgetReleased - totals.totalExpenses;
+  return totals;
+}
+
+function mergePayrollRecords(localRecords, cloudRecords) {
+  const byId = new Map();
+  localRecords.forEach(record => byId.set(record.id, record));
+  cloudRecords.forEach(cloudRecord => {
+    const localRecord = byId.get(cloudRecord.id);
+    byId.set(cloudRecord.id, localRecord ? mergePayrollRecord(localRecord, cloudRecord) : cloudRecord);
+  });
+  return Array.from(byId.values()).sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
+}
+
+function mergePayrollRecord(localRecord, cloudRecord) {
+  const merged = { ...cloudRecord, ...localRecord };
+  Object.keys(cloudRecord).forEach(key => {
+    const localValue = localRecord[key];
+    const cloudValue = cloudRecord[key];
+    if (isEmptyPayrollValue(localValue) && !isEmptyPayrollValue(cloudValue)) merged[key] = cloudValue;
+  });
+  if ((!localRecord.lines || !localRecord.lines.length) && cloudRecord.lines?.length) merged.lines = cloudRecord.lines;
+  if (!localRecord.totals || !Object.values(localRecord.totals).some(value => parseNumber(value))) merged.totals = cloudRecord.totals;
+  return merged;
+}
+
+function mapPayrollStatusToLiquidation(status) {
+  const normalized = String(status || "Draft").trim();
+  if (normalized === "Submitted") return "For Review";
+  return normalized;
+}
+
+function mapLiquidationStatusToPayroll(status) {
+  const normalized = String(status || "Draft").trim();
+  if (normalized === "For Review") return "Submitted";
+  if (normalized === "Approved by Mother") return "Approved";
+  return normalized;
+}
+
+function normalizePlateForCloud(value) {
+  return String(value || "").replace(/\s+/g, "").toUpperCase();
+}
+
+function getRecordYear(value) {
+  const text = String(value || "").trim();
+  return /^\d{4}/.test(text) ? text.slice(0, 4) : String(new Date().getFullYear());
+}
+
+function toDateInputValue(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? text : date.toISOString().slice(0, 10);
+}
+
+function sumLineField(lines = [], field) {
+  return lines.reduce((sum, line) => sum + parseNumber(line[field]), 0);
+}
+
+function isEmptyPayrollValue(value) {
+  if (Array.isArray(value)) return !value.length;
+  if (value && typeof value === "object") return !Object.keys(value).length;
+  return value === undefined || value === null || value === "";
 }
 
 function syncRulesToGoogleSheets() {
@@ -1195,8 +1666,9 @@ function buildPayrollRecord(existing = {}) {
     payrollDate: $("payroll-date").value,
     cutoffStart: $("cutoff-start").value,
     cutoffEnd: $("cutoff-end").value,
-    groupCategory: $("group-category").value,
+    groupCategory: normalizePayrollGroup($("group-category").value),
     plateNumber: $("plate-number").value.trim().toUpperCase(),
+    truckType: payrollState.selectedTruckType || getPayrollTruckType(getPayrollTruckInfoByPlate($("plate-number").value)) || "",
     driverName: $("driver-name").value.trim(),
     helperName: $("helper-name").value.trim(),
     encoderName: $("encoder-name").value.trim(),
