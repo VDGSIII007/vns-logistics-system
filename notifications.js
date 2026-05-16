@@ -8,6 +8,8 @@
   const NOTIFICATION_COOLDOWN_MS = 60000;
   const LAST_NOTIFIED_COUNT_KEY = "vnsLastNotifiedCount";
   const LAST_NOTIFICATION_AT_KEY = "vnsLastNotificationAt";
+  const ORIGINAL_TITLE = (document.title.replace(/^\(\d+\)\s*/, "") || "VNS Portal")
+    .replace(/^VNS Logistics System Portal$/, "VNS Portal");
 
   const STORAGE_KEYS = {
     payroll: "vnsPayrollRecords",
@@ -310,6 +312,11 @@
     element.classList.toggle("is-zero", count <= 0);
   }
 
+  function updateBrowserTabTitle(count) {
+    const cleanTitle = ORIGINAL_TITLE.replace(/^\(\d+\)\s*/, "") || "VNS Portal";
+    document.title = count > 0 ? `(${count}) ${cleanTitle}` : cleanTitle;
+  }
+
   function renderNotifications(summary) {
     latestSummary = summary;
     const role = currentRole();
@@ -317,6 +324,7 @@
     const visibleTotal = visibleTotalForRole(summary, role);
 
     renderBadge(document.querySelector("[data-vns-notification-total]"), visibleTotal);
+    updateBrowserTabTitle(visibleTotal);
 
     const lastChecked = document.querySelector("[data-vns-notification-last-checked]");
     if (lastChecked) lastChecked.textContent = formatCheckedTime(summary.checkedAt);
