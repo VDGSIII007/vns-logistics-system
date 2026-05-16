@@ -55,35 +55,56 @@
           <h2>Choose the workflow you need.</h2>
           <p>Open the active VNS tools for repair, dispatch, tire monitoring, inventory, cash logs, expenses, and payroll.</p>
         </div>
+        <div class="role-preview-panel">
+          <label for="vns-dev-role-select">
+            <span>Development Role Preview</span>
+            <select id="vns-dev-role-select">
+              <option>Admin</option>
+              <option>Mother</option>
+              <option>Sister</option>
+              <option>Encoder</option>
+              <option>Viewer</option>
+            </select>
+          </label>
+          <p>Frontend preview only. Backend role validation will be added later.</p>
+        </div>
 
         <div class="portal-grid">
-          <a href="repair.html" class="portal-card portal-card-primary">
+          <a href="repair.html" class="portal-card portal-card-primary" data-vns-permission="repair:entry,repair:approve">
             <h3>Repair & Maintenance</h3>
             <p>Parse messy Viber repair requests into structured request records for logistics and finance teams.</p>
           </a>
-          <a href="parts-inventory.html" class="portal-card portal-card-primary">
+          <a href="parts-inventory.html" class="portal-card portal-card-primary" data-vns-role="Admin,Encoder">
             <h3>Parts Inventory</h3>
             <p>Track spare parts, safety equipment, oil, tires, and stock movements.</p>
           </a>
-          <a href="dispatch.html" class="portal-card portal-card-primary">
+          <a href="dispatch.html" class="portal-card portal-card-primary" data-vns-role="Admin,Encoder">
             <h3>Dispatch Module</h3>
             <p>Manage truck trips, commodities (Bottles, Sugar, Preform, Resin, Caps, Crowns), dispatcher sheet, and delivery logs.</p>
           </a>
-          <a href="tire-monitoring.html" class="portal-card portal-card-primary">
+          <a href="tire-monitoring.html" class="portal-card portal-card-primary" data-vns-role="Admin,Encoder">
             <h3>Tire Monitoring</h3>
             <p>Track tire installations, rotations, inventory, full lifecycle history, and EcoVadis disposal compliance.</p>
           </a>
-          <a href="expenses.html" class="portal-card portal-card-primary">
+          <a href="expenses.html" class="portal-card portal-card-primary" data-vns-role="Admin,Encoder,Viewer">
             <h3>Expenses</h3>
             <p>View VNS Master Expenses with route filters, trip counts, diesel, toll fees, and total expense summaries.</p>
           </a>
-          <a href="cash.html" class="portal-card portal-card-primary">
+          <a href="cash.html" class="portal-card portal-card-primary" data-vns-permission="cash:entry,cash:approve">
             <h3>Cash / PO / Bali Log</h3>
             <p>Parse Viber deposits, diesel PO, budget, Bali, and payroll balance records.</p>
           </a>
-          <a href="payroll.html" class="portal-card portal-card-primary">
+          <a href="payroll.html" class="portal-card portal-card-primary" data-vns-permission="payroll:entry,payroll:approve">
             <h3>Payroll Portal</h3>
             <p>Encode driver/helper payroll, review expenses and deductions, approve salary, and generate Viber payment messages.</p>
+          </a>
+          <a href="approval-center.html" class="portal-card portal-card-primary" data-vns-permission="payroll:approve,repair:approve,cash:approve">
+            <h3>Approval Center</h3>
+            <p>Mother/Admin preview dashboard for payroll, cash, PO, Bali, repair, and labor items waiting for approval.</p>
+          </a>
+          <a href="payment-queue.html" class="portal-card portal-card-primary" data-vns-permission="payroll:pay,repair:pay,cash:pay">
+            <h3>Payment Queue</h3>
+            <p>Sister/Admin queue for approved payroll, cash, PO, Bali, repair, and labor items waiting for release.</p>
           </a>
         </div>
       </div>
@@ -100,6 +121,7 @@
     </div>
   </footer>
 
+  <script src="auth.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

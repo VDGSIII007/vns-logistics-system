@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Approval Center - VNS Logistics</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="queue-page">
+  <header class="site-header" id="top">
+    <nav class="nav-shell" aria-label="Primary navigation">
+      <a href="index.html" class="brand" aria-label="VNS Logistics home">
+        <span class="brand-mark">VNS</span>
+        <span class="brand-text">Logistics</span>
+      </a>
+      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav">Menu</button>
+      <div class="nav-links" id="main-nav">
+        <a href="index.html">Home</a>
+        <a href="portal.html" class="active-link">System Portal</a>
+        <a href="approval-center.html" class="active-link">Approval Center</a>
+        <a href="payment-queue.html">Payment Queue</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="ops-shell" id="ac-page-content">
+    <header class="ops-header">
+      <a href="portal.html" class="ops-back">Back to Portal</a>
+      <div>
+        <p class="ops-eyebrow">Mother/Admin Portal</p>
+        <h1>Approval Center</h1>
+        <p>Central review dashboard for records waiting for approval.</p>
+      </div>
+    </header>
+
+    <div class="dev-access-banner" id="ac-dev-access-banner" hidden>
+      Development preview: role restriction is bypassed for testing. Cloudflare email login will control access later.
+    </div>
+    <div class="ops-status-line" id="ac-status-message" aria-live="polite"></div>
+
+    <section class="ops-summary-grid" id="ac-summary" aria-label="Approval summary"></section>
+
+    <section class="ops-card">
+      <div class="ops-tabs" role="tablist" aria-label="Approval center sections">
+        <button class="ops-tab active" type="button" data-tab="payroll" aria-selected="true">Payroll Approval</button>
+        <button class="ops-tab" type="button" data-tab="cash">Cash / PO / Bali Approval</button>
+        <button class="ops-tab" type="button" data-tab="repair">Repair &amp; Labor Approval</button>
+      </div>
+      <div class="ops-view-tabs" role="tablist" aria-label="Approval record view">
+        <button class="ops-view-btn active" type="button" data-view="approval" aria-selected="true">For Approval</button>
+        <button class="ops-view-btn" type="button" data-view="history">Approval History</button>
+      </div>
+
+      <div class="ops-toolbar">
+        <input id="ac-search" class="ops-input" type="search" placeholder="Search reference, plate, group, payee" autocomplete="off" />
+        <select id="ac-sort" class="ops-select">
+          <option value="date-desc">Newest First</option>
+          <option value="date-asc">Oldest First</option>
+          <option value="amount-desc">Highest Amount</option>
+          <option value="amount-asc">Lowest Amount</option>
+        </select>
+        <button id="ac-refresh" class="ops-secondary-btn" type="button">Refresh</button>
+        <button id="ac-approve-selected" class="ops-secondary-btn repair-batch-btn" type="button" disabled title="Batch approval will be enabled after repair backend approval actions are connected." hidden>Approve Selected</button>
+      </div>
+      <p class="ops-footnote muted" id="ac-table-note"></p>
+
+      <div class="ops-table-wrap">
+        <table class="ops-table">
+          <thead>
+            <tr>
+              <th>Module</th>
+              <th>Reference ID</th>
+              <th>Date</th>
+              <th>Plate / No Plate</th>
+              <th>Group</th>
+              <th>Payee / Driver / Person</th>
+              <th>Amount</th>
+              <th>Approval Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="ac-body"></tbody>
+        </table>
+      </div>
+      <div id="ac-mobile-list" class="ops-mobile-list"></div>
+      <p class="ops-footnote muted" id="ac-preview-note">Preview mode: central approval actions are disabled until backend role checks are connected.</p>
+    </section>
+  </main>
+
+  <div class="ops-modal" id="ac-modal" hidden>
+    <div class="ops-modal-card" role="dialog" aria-modal="true" aria-labelledby="ac-modal-title">
+      <button class="ops-modal-close" id="ac-close" type="button" aria-label="Close details">Close</button>
+      <div id="ac-detail"></div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div class="container footer-grid">
+      <div>
+        <strong>VNS Logistics System</strong>
+        <p>Role-based workflow preview</p>
+      </div>
+      <a href="portal.html">Back to Portal</a>
+    </div>
+  </footer>
+
+  <script src="auth.js"></script>
+  <script src="approval-center.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

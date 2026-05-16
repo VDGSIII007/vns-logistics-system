@@ -13,6 +13,7 @@ function cashPost(payload) {
 
 function toCashSheetRecord(record) {
   const clean = ensureNoPlateGroup({ ...record });
+  const loggedBy = clean.loggedBy || clean.Logged_By || clean.encodedBy || clean.Encoded_By || '';
   return {
     Cash_ID: clean.id,
     Date: clean.date || '',
@@ -31,7 +32,8 @@ function toCashSheetRecord(record) {
     Route: record.route || (record.source && record.destination ? record.source + ' → ' + record.destination : ''),
     Balance_After_Payroll: '',
     Review_Status: clean.status || '',
-    Encoded_By: '',
+    Encoded_By: loggedBy,
+    Logged_By: loggedBy,
     Remarks: clean.remarks || clean.reason || '',
     Created_At: clean.createdAt || '',
     Updated_At: clean.updatedAt || '',
@@ -52,6 +54,11 @@ const DIESEL_KEY = "vnsDieselPOEntries";
 const BUDGET_KEY = "vnsTripBudgets";
 const BALI_KEY = "vnsBaliCashAdvances";
 let truckMasterCache = [];
+let savedCashRecordsCache = [];
+let savedCashRecordsSource = "local";
+let savedCashRecordsStatus = "";
+let savedCashRecordsStatusKind = "info";
+let activeCashEditRecord = null;
 const CASH_ROLE_OPTIONS = ["Driver", "Helper", "Mechanic", "Tireman", "Dispatcher", "Shop / Supplier", "Office", "Other"];
 
 function $(id) { return document.getElementById(id); }
@@ -269,7 +276,7 @@ function resolveRecordGroup(record) {
 }
 
 function resolveCashPerson(data) {
-  return String(data.personName || data.driverName || data.receiverName || "").trim();
+  return String(data.personName || data.loggedBy || data.driverName || data.receiverName || "").trim();
 }
 
 function resolveCashRole(data) {
@@ -294,14 +301,16 @@ function switchCashTab(tabId) {
 
 function getDieselPOFormData() {
   const now = new Date().toISOString();
+  const loggedBy = $("diesel-logged-by").value.trim();
   return {
     id: $("diesel-form").dataset.recordId || createId("diesel"),
     type: "Diesel PO",
     date: $("diesel-date").value,
     plateNumber: getPlateInputValue("diesel-plate-number"),
     groupCategory: resolveRecordGroup({ plateNumber: getPlateInputValue("diesel-plate-number"), groupCategory: $("diesel-group-category").value }),
-    personName: $("diesel-person-name").value.trim(),
-    personType: $("diesel-person-type").value,
+    loggedBy,
+    personName: loggedBy,
+    personType: loggedBy ? "Logger" : "",
     driverName: $("diesel-driver-name").value.trim(),
     helperName: $("diesel-helper-name").value.trim(),
     fuelStation: $("diesel-fuel-station").value.trim(),
@@ -324,11 +333,27 @@ function getDieselPOFormData() {
 }
 
 function validateDieselPO(data) {
-  if (!data.date || !data.amount) return "Date and Diesel Amount are required.";
-  if (!data.plateNumber && (!resolveCashPerson(data) || !resolveCashRole(data))) return "Person Name and Role are required when Plate Number is blank.";
-  if (data.plateNumber && (!data.fuelStation || !data.poNumber)) return "Fuel Station and PO Number are required when Plate Number is selected.";
-  if (data.depositNeeded === "Yes" && (!data.receiverName || !data.depositNumber)) return "Receiver Name and Account / Number are required when Deposit Needed is Yes.";
+  if (!data.date) return "Please enter the Date before saving Diesel PO.";
+  if (!data.groupCategory) return "Please select the Group before saving Diesel PO.";
+  if (!data.plateNumber) return "Please enter the Plate Number before saving Diesel PO.";
+  if (!data.fuelStation) return "Please enter the Fuel Station before saving Diesel PO.";
+  if (!data.poNumber) return "Please enter the PO Number before saving Diesel PO.";
+  if (!data.amount && !data.liters) return "Please enter either Diesel Amount or Diesel Liters before saving Diesel PO.";
+  if (!data.status) return "Please select the Status before saving Diesel PO.";
+  if (data.depositNeeded === "Yes" && (!data.receiverName || !data.depositTo || !data.depositNumber)) return "Receiver Name, Deposit To, and Account / Number are required when Deposit Needed is Yes.";
   return "";
+}
+
+function markCashError(id) {
+  const el = $(id);
+  if (el) el.classList.add("input-error");
+}
+
+function clearCashErrors(...ids) {
+  ids.forEach(id => {
+    const el = $(id);
+    if (el) el.classList.remove("input-error");
+  });
 }
 
 function saveDieselPO() {
@@ -336,7 +361,23 @@ function saveDieselPO() {
   applyTruckToForm("diesel");
   const data = getDieselPOFormData();
   const error = validateDieselPO(data);
-  if (error) return setStatus("diesel-status", error, "warning");
+  if (error) {
+    clearCashErrors("diesel-date","diesel-group-category","diesel-plate-number","diesel-logged-by","diesel-amount","diesel-liters","diesel-fuel-station","diesel-po-number","diesel-receiver-name","diesel-deposit-to","diesel-deposit-number","diesel-status-field");
+    if (!data.date) markCashError("diesel-date");
+    if (!data.groupCategory) markCashError("diesel-group-category");
+    if (!data.plateNumber) markCashError("diesel-plate-number");
+    if (!data.fuelStation) markCashError("diesel-fuel-station");
+    if (!data.poNumber) markCashError("diesel-po-number");
+    if (!data.amount && !data.liters) {
+      markCashError("diesel-amount");
+      markCashError("diesel-liters");
+    }
+    if (!data.status) markCashError("diesel-status-field");
+    if (data.depositNeeded === "Yes" && !data.receiverName) markCashError("diesel-receiver-name");
+    if (data.depositNeeded === "Yes" && !data.depositTo) markCashError("diesel-deposit-to");
+    if (data.depositNeeded === "Yes" && !data.depositNumber) markCashError("diesel-deposit-number");
+    return setStatus("diesel-status", error, "warning");
+  }
   const records = readJson(DIESEL_KEY);
   writeJson(DIESEL_KEY, [data].concat(records.filter(item => item.id !== data.id)));
   $("diesel-form").dataset.recordId = data.id;
@@ -362,8 +403,7 @@ function loadDieselPOToForm(record) {
   $("diesel-date").value = record.date || "";
   $("diesel-plate-number").value = record.plateNumber || "";
   setGroupSelectValue("diesel-group-category", record.groupCategory || "");
-  $("diesel-person-name").value = record.personName || "";
-  $("diesel-person-type").value = record.personType || "Driver";
+  $("diesel-logged-by").value = record.loggedBy || (record.personType === "Logger" ? record.personName : "") || "";
   $("diesel-driver-name").value = record.driverName || "";
   $("diesel-helper-name").value = record.helperName || "";
   $("diesel-fuel-station").value = record.fuelStation || "";
@@ -391,8 +431,7 @@ function generateDieselPOViberMessage() {
     `Plate: ${d.plateNumber || "No Plate"}`,
     "Diesel PO Request",
     "",
-    `Person: ${resolveCashPerson(d) || "-"}`,
-    `Role: ${resolveCashRole(d) || "-"}`,
+    `Logged By: ${d.loggedBy || "-"}`,
     `Driver: ${d.driverName || "-"}`,
     `Helper: ${d.helperName || "-"}`,
     "",
@@ -417,8 +456,20 @@ function copyDieselPOMessage() { navigator.clipboard?.writeText($("diesel-messag
 
 function applyDieselDepositState() {
   const depositNeeded = $("diesel-deposit-needed").value === "Yes";
-  ["diesel-receiver-name", "diesel-deposit-number"].forEach(id => {
+  ["diesel-receiver-name", "diesel-deposit-to", "diesel-deposit-number"].forEach(id => {
     const input = $(id);
+    input.disabled = !depositNeeded;
+    input.style.opacity = depositNeeded ? "1" : ".58";
+  });
+}
+
+function applyDepositState(prefix) {
+  const toggle = $(`${prefix}-deposit-needed`);
+  if (!toggle) return;
+  const depositNeeded = toggle.value === "Yes";
+  [`${prefix}-receiver-name`, `${prefix}-deposit-to`, `${prefix}-deposit-number`].forEach(id => {
+    const input = $(id);
+    if (!input) return;
     input.disabled = !depositNeeded;
     input.style.opacity = depositNeeded ? "1" : ".58";
   });
@@ -426,14 +477,16 @@ function applyDieselDepositState() {
 
 function getBudgetFormData() {
   const now = new Date().toISOString();
+  const loggedBy = $("budget-logged-by").value.trim();
   return {
     id: $("budget-form").dataset.recordId || createId("budget"),
     type: "Trip Budget",
     date: $("budget-date").value,
     plateNumber: getPlateInputValue("budget-plate-number"),
     groupCategory: resolveRecordGroup({ plateNumber: getPlateInputValue("budget-plate-number"), groupCategory: $("budget-group-category").value }),
-    personName: $("budget-person-name").value.trim(),
-    personType: $("budget-person-type").value,
+    loggedBy,
+    personName: loggedBy,
+    personType: loggedBy ? "Logger" : "",
     driverName: $("budget-driver-name").value.trim(),
     helperName: $("budget-helper-name").value.trim(),
     budgetAmount: Number($("budget-amount").value) || 0,
@@ -441,6 +494,7 @@ function getBudgetFormData() {
     source: $("budget-source").value.trim(),
     destination: $("budget-destination").value.trim(),
     shipmentNumber: $("budget-shipment-number").value.trim(),
+    depositNeeded: $("budget-deposit-needed").value,
     depositTo: $("budget-deposit-to").value.trim(),
     receiverName: $("budget-receiver-name").value.trim(),
     depositNumber: $("budget-deposit-number").value.trim(),
@@ -453,9 +507,13 @@ function getBudgetFormData() {
 }
 
 function validateBudget(data) {
-  if (!data.date || !data.budgetAmount) return "Date and Budget Amount are required.";
-  if (!data.plateNumber && (!resolveCashPerson(data) || !resolveCashRole(data))) return "Person Name and Role are required when Plate Number is blank.";
-  if (data.plateNumber && (!data.depositTo || !data.receiverName || !data.depositNumber)) return "Deposit To, Receiver Name, and Number are required when Plate Number is selected.";
+  if (!data.date) return "Please enter the Date before saving Trip Budget.";
+  if (!data.groupCategory) return "Please select the Group before saving Trip Budget.";
+  if (!data.plateNumber) return "Please enter the Plate Number before saving Trip Budget.";
+  if (!data.source || !data.destination) return "Please enter the Source and Destination before saving Trip Budget.";
+  if (!data.budgetAmount) return "Please enter the Budget Amount before saving Trip Budget.";
+  if (!data.status) return "Please select the Status before saving Trip Budget.";
+  if (data.depositNeeded === "Yes" && (!data.receiverName || !data.depositTo || !data.depositNumber)) return "Receiver Name, Deposit To, and Account / Number are required when Deposit Needed is Yes.";
   return "";
 }
 
@@ -464,13 +522,28 @@ function saveBudget() {
   applyTruckToForm("budget");
   const data = getBudgetFormData();
   const error = validateBudget(data);
-  if (error) return setStatus("budget-status", error, "warning");
+  if (error) {
+    clearCashErrors("budget-date","budget-group-category","budget-plate-number","budget-logged-by","budget-amount","budget-source","budget-destination","budget-deposit-to","budget-receiver-name","budget-deposit-number","budget-status-field");
+    if (!data.date) markCashError("budget-date");
+    if (!data.groupCategory) markCashError("budget-group-category");
+    if (!data.plateNumber) markCashError("budget-plate-number");
+    if (!data.source) markCashError("budget-source");
+    if (!data.destination) markCashError("budget-destination");
+    if (!data.budgetAmount) markCashError("budget-amount");
+    if (!data.status) markCashError("budget-status-field");
+    if (data.depositNeeded === "Yes" && !data.receiverName) markCashError("budget-receiver-name");
+    if (data.depositNeeded === "Yes" && !data.depositTo) markCashError("budget-deposit-to");
+    if (data.depositNeeded === "Yes" && !data.depositNumber) markCashError("budget-deposit-number");
+    return setStatus("budget-status", error, "warning");
+  }
+  const dataToSave = { ...data };
+  delete dataToSave.depositNeeded;
   const records = readJson(BUDGET_KEY);
-  writeJson(BUDGET_KEY, [data].concat(records.filter(item => item.id !== data.id)));
+  writeJson(BUDGET_KEY, [dataToSave].concat(records.filter(item => item.id !== data.id)));
   $("budget-form").dataset.recordId = data.id;
   $("budget-form").dataset.createdAt = data.createdAt;
   refreshAllCashData();
-  syncCashSilent(data, "budget-status", isEditing ? "updateEntry" : "saveEntry");
+  syncCashSilent(dataToSave, "budget-status", isEditing ? "updateEntry" : "saveEntry");
 }
 
 function clearBudgetForm() {
@@ -480,23 +553,26 @@ function clearBudgetForm() {
   $("budget-message").value = "";
   setStatus("budget-status", "");
   renderTruckPlateDatalistForPrefix("budget");
+  applyDepositState("budget");
 }
 
 function loadBudgetToForm(record) {
   switchCashTab("budget-tab");
   $("budget-form").dataset.recordId = record.id;
   $("budget-form").dataset.createdAt = record.createdAt || "";
-  ["date","plateNumber","personName","driverName","helperName","source","destination","shipmentNumber","depositTo","receiverName","depositNumber","status","reference","remarks"].forEach(key => {
+  ["date","plateNumber","driverName","helperName","source","destination","shipmentNumber","depositTo","receiverName","depositNumber","status","reference","remarks"].forEach(key => {
     const id = `budget-${key.replace(/[A-Z]/g, m => `-${m.toLowerCase()}`)}`;
     if ($(id)) $(id).value = record[key] || "";
   });
   $("budget-amount").value = record.budgetAmount || "";
+  $("budget-logged-by").value = record.loggedBy || (record.personType === "Logger" ? record.personName : "") || "";
   $("budget-type").value = record.budgetType || "Trip Budget";
-  $("budget-person-type").value = record.personType || "Driver";
+  $("budget-deposit-needed").value = record.depositNeeded || "No";
   setGroupSelectValue("budget-group-category", record.groupCategory || "");
   $("budget-status-field").value = record.status || "Draft";
   if (!record.groupCategory) applyTruckToForm("budget");
   renderTruckPlateDatalistForPrefix("budget");
+  applyDepositState("budget");
 }
 
 function generateBudgetViberMessage() {
@@ -505,8 +581,7 @@ function generateBudgetViberMessage() {
     `Plate: ${d.plateNumber || "No Plate"}`,
     "Trip Budget Request",
     "",
-    `Person: ${resolveCashPerson(d) || "-"}`,
-    `Role: ${resolveCashRole(d) || "-"}`,
+    `Logged By: ${d.loggedBy || "-"}`,
     `Driver: ${d.driverName || "-"}`,
     `Helper: ${d.helperName || "-"}`,
     "",
@@ -542,6 +617,7 @@ function getBaliFormData() {
     currentBalance: Number($("bali-current-balance").value) || 0,
     amount: Number($("bali-amount").value) || 0,
     reason: $("bali-reason").value.trim(),
+    depositNeeded: $("bali-deposit-needed").value,
     depositTo: $("bali-deposit-to").value,
     receiverName: $("bali-receiver-name").value.trim(),
     depositNumber: $("bali-deposit-number").value.trim(),
@@ -556,8 +632,13 @@ function getBaliFormData() {
 }
 
 function validateBali(data) {
-  if (!data.date || !data.personType || !data.personName || !data.amount) return "Date, Person Type, Person Name, and Bali Amount are required.";
-  if (data.plateNumber && (!data.depositTo || !data.receiverName || !data.depositNumber)) return "Deposit To, Receiver Name, and Number are required when Plate Number is selected.";
+  if (!data.date) return "Please enter the Date before saving Bali / Cash Advance.";
+  if (!data.personName) return "Please enter the Person Name before saving Bali / Cash Advance.";
+  if (!data.personType) return "Please select the Role before saving Bali / Cash Advance.";
+  if (!data.reason) return "Please enter the Reason before saving Bali / Cash Advance.";
+  if (!data.amount) return "Please enter the Amount before saving Bali / Cash Advance.";
+  if (!data.status) return "Please select the Status before saving Bali / Cash Advance.";
+  if (data.depositNeeded === "Yes" && (!data.receiverName || !data.depositTo || !data.depositNumber)) return "Receiver Name, Deposit To, and Account / Number are required when Deposit Needed is Yes.";
   return "";
 }
 
@@ -566,13 +647,27 @@ function saveBali() {
   applyTruckToForm("bali");
   const data = getBaliFormData();
   const error = validateBali(data);
-  if (error) return setStatus("bali-status", error, "warning");
+  if (error) {
+    clearCashErrors("bali-date","bali-person-name","bali-person-type","bali-amount","bali-reason","bali-receiver-name","bali-deposit-to","bali-deposit-number","bali-status-field");
+    if (!data.date) markCashError("bali-date");
+    if (!data.personName) markCashError("bali-person-name");
+    if (!data.personType) markCashError("bali-person-type");
+    if (!data.amount) markCashError("bali-amount");
+    if (!data.reason) markCashError("bali-reason");
+    if (!data.status) markCashError("bali-status-field");
+    if (data.depositNeeded === "Yes" && !data.receiverName) markCashError("bali-receiver-name");
+    if (data.depositNeeded === "Yes" && !data.depositTo) markCashError("bali-deposit-to");
+    if (data.depositNeeded === "Yes" && !data.depositNumber) markCashError("bali-deposit-number");
+    return setStatus("bali-status", error, "warning");
+  }
+  const dataToSave = { ...data };
+  delete dataToSave.depositNeeded;
   const records = readJson(BALI_KEY);
-  writeJson(BALI_KEY, [data].concat(records.filter(item => item.id !== data.id)));
+  writeJson(BALI_KEY, [dataToSave].concat(records.filter(item => item.id !== data.id)));
   $("bali-form").dataset.recordId = data.id;
   $("bali-form").dataset.createdAt = data.createdAt;
   refreshAllCashData();
-  syncCashSilent(data, "bali-status", isEditing ? "updateEntry" : "saveEntry");
+  syncCashSilent(dataToSave, "bali-status", isEditing ? "updateEntry" : "saveEntry");
 }
 
 function clearBaliForm() {
@@ -582,6 +677,7 @@ function clearBaliForm() {
   $("bali-message").value = "";
   setStatus("bali-status", "");
   renderTruckPlateDatalistForPrefix("bali");
+  applyDepositState("bali");
 }
 
 function loadBaliToForm(record) {
@@ -595,6 +691,7 @@ function loadBaliToForm(record) {
   $("bali-person-type").value = record.personType || "Driver";
   $("bali-current-balance").value = record.currentBalance || "";
   $("bali-amount").value = record.amount || "";
+  $("bali-deposit-needed").value = record.depositNeeded || "No";
   $("bali-deposit-to").value = record.depositTo || "GCash";
   setGroupSelectValue("bali-group-category", record.groupCategory || "");
   $("bali-status-field").value = record.status || "Draft";
@@ -604,6 +701,7 @@ function loadBaliToForm(record) {
     setGroupSelectValue("bali-group-category", "General / No Plate");
   }
   renderTruckPlateDatalistForPrefix("bali");
+  applyDepositState("bali");
 }
 
 function generateBaliViberMessage() {
@@ -638,22 +736,210 @@ function getAllSavedCashRecords() {
   return readJson(DIESEL_KEY).concat(readJson(BUDGET_KEY), readJson(BALI_KEY)).filter(record => !record.isDeleted);
 }
 
+function firstCashValue(record, keys, fallback = "") {
+  for (const key of keys) {
+    const value = record?.[key];
+    if (value !== undefined && value !== null && String(value).trim()) return value;
+  }
+  return fallback;
+}
+
+function detectCashRecordType(record = {}) {
+  const explicit = firstCashValue(record, ["Transaction_Type", "Type", "transactionType", "type"]);
+  const blob = [
+    explicit,
+    record.PO_Number,
+    record.poNumber,
+    record.Fuel_Station,
+    record.fuelStation,
+    record.Route_Trip,
+    record.Route,
+    record.route,
+    record.Budget_Amount,
+    record.budgetAmount,
+    record.Balance_After_Payroll,
+    record.currentBalance,
+    record.Source_Message,
+    record.Remarks
+  ].map(value => String(value || "").toLowerCase()).join(" ");
+
+  if (blob.includes("diesel") || blob.includes("fuel") || record.PO_Number || record.poNumber || record.Fuel_Station || record.fuelStation || record.Liters || record.dieselLiters) return "Diesel PO";
+  if (blob.includes("trip budget") || blob.includes("budget") || record.Route_Trip || record.Budget_Amount || record.budgetAmount || record.Shipment_Number || record.shipmentNumber) return "Trip Budget";
+  if (blob.includes("bali") || blob.includes("bale") || blob.includes("cash advance") || record.Balance_After_Payroll || record.currentBalance) return "Bali / Cash Advance";
+  return explicit || "Other Cash Request";
+}
+
+function normalizeCashRecordForTable(record = {}, index = 0) {
+  const type = detectCashRecordType(record);
+  const amountValue = firstCashValue(record, ["Amount", "amount", "Diesel_Amount", "dieselAmount", "Budget_Amount", "budgetAmount"]);
+  const plate = firstCashValue(record, ["Plate_Number", "plateNumber"], "No Plate") || "No Plate";
+  const group = firstCashValue(record, ["Group_Category", "Truck_Group", "groupCategory"], "General / No Plate") || "General / No Plate";
+  const logger = firstCashValue(record, ["Logged_By", "loggedBy", "Encoded_By", "encodedBy"]);
+  const person = firstCashValue(record, ["Person_Name", "personName"]);
+  const driver = firstCashValue(record, ["Driver_Name", "driverName"]);
+  const helper = firstCashValue(record, ["Helper_Name", "helperName"]);
+  const receiver = type === "Bali / Cash Advance"
+    ? firstCashValue(record, ["Person_Name", "personName", "Logged_By", "loggedBy", "Encoded_By", "encodedBy"], "-")
+    : firstCashValue(record, ["Logged_By", "loggedBy", "Encoded_By", "encodedBy", "Person_Name", "personName", "Driver_Name", "driverName", "Helper_Name", "helperName"], "-");
+
+  return {
+    id: firstCashValue(record, ["Cash_ID", "Record_ID", "id", "recordId", "cashId"], `cash_${index + 1}`),
+    date: firstCashValue(record, ["Date", "Message_Date", "Encoded_At", "Created_At", "createdAt"]),
+    type,
+    plate,
+    group,
+    amount: Number(String(amountValue || "").replace(/[^\d.-]/g, "")) || 0,
+    receiver,
+    status: firstCashValue(record, ["Review_Status", "Status", "status", "reviewStatus"], "Draft") || "Draft",
+    raw: record,
+    logger,
+    person,
+    driver,
+    helper
+  };
+}
+
+function cashRecordStatus(record = {}) {
+  return firstCashValue(record, ["Review_Status", "Status", "status", "reviewStatus"], record.status || "");
+}
+
+function isCashDraftRecord(record = {}) {
+  const status = String(cashRecordStatus(record) || "").trim().toLowerCase();
+  return !status || status === "draft";
+}
+
+function normalizeSavedCashRecord(record = {}, index = 0, source = "local") {
+  const display = normalizeCashRecordForTable(record, index);
+  return {
+    ...record,
+    id: display.id,
+    type: display.type,
+    date: display.date,
+    plateNumber: display.plate === "No Plate" ? "" : display.plate,
+    groupCategory: display.group,
+    loggedBy: display.logger,
+    personName: display.person,
+    driverName: display.driver,
+    helperName: display.helper,
+    amount: display.amount,
+    budgetAmount: Number(String(firstCashValue(record, ["Budget_Amount", "budgetAmount", "Amount", "amount"]) || "").replace(/[^\d.-]/g, "")) || 0,
+    poNumber: firstCashValue(record, ["PO_Number", "poNumber"]),
+    liters: firstCashValue(record, ["Liters", "dieselLiters"]),
+    fuelStation: firstCashValue(record, ["Fuel_Station", "fuelStation"]),
+    route: firstCashValue(record, ["Route_Trip", "Route", "route"]),
+    source: firstCashValue(record, ["Source", "source"]),
+    destination: firstCashValue(record, ["Destination", "destination"]),
+    shipmentNumber: firstCashValue(record, ["Shipment_Number", "shipmentNumber"]),
+    budgetType: firstCashValue(record, ["Budget_Type", "budgetType"]),
+    currentBalance: Number(String(firstCashValue(record, ["Balance_After_Payroll", "currentBalance"]) || "").replace(/[^\d.-]/g, "")) || 0,
+    reason: firstCashValue(record, ["Reason", "reason", "Source_Message", "sourceMessage", "Remarks", "remarks"]),
+    remarks: firstCashValue(record, ["Remarks", "remarks", "Source_Message", "sourceMessage"]),
+    receiverName: display.receiver,
+    status: display.status,
+    paymentStatus: firstCashValue(record, ["Payment_Status", "paymentStatus", "Posted_Status", "postedStatus"], ""),
+    tableDisplay: display,
+    __cashRecordSource: source
+  };
+}
+
+function normalizeCashListResponse(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.entries)) return data.entries;
+  if (Array.isArray(data?.records)) return data.records;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.result)) return data.result;
+  return [];
+}
+
+function getLocalSavedCashRecords() {
+  return getAllSavedCashRecords().map((record, index) => normalizeSavedCashRecord(record, index, "local"));
+}
+
+function setSavedRecordsStatus(message, kind = "info") {
+  savedCashRecordsStatus = message;
+  savedCashRecordsStatusKind = kind;
+  const body = $("saved-records-body");
+  const tableWrap = body?.closest(".cash-table-wrap");
+  if (!tableWrap) return;
+  let status = $("saved-records-cloud-status");
+  if (!status) {
+    status = document.createElement("p");
+    status.id = "saved-records-cloud-status";
+    status.className = "cash-status info";
+    tableWrap.parentNode.insertBefore(status, tableWrap);
+  }
+  status.className = `cash-status ${kind}`;
+  status.textContent = message;
+}
+
+async function loadSavedCashRecordsFromCloud() {
+  try {
+    const params = new URLSearchParams({ action: "listEntries", syncKey: CASH_SYNC_KEY });
+    const response = await fetch(`${CASH_APP_SCRIPT_URL}?${params.toString()}`);
+    if (!response.ok) throw new Error(`Cloud load failed: ${response.status}`);
+    const data = await response.json();
+    if (data && data.ok === false) throw new Error(data.error || "Cloud load failed.");
+    const cloudRows = normalizeCashListResponse(data)
+      .filter(record => record && typeof record === "object")
+      .map((record, index) => normalizeSavedCashRecord(record, index, "cloud"));
+    if (cloudRows.length) {
+      savedCashRecordsCache = cloudRows;
+      savedCashRecordsSource = "cloud";
+      setSavedRecordsStatus("Loaded cloud records.", "success");
+      renderSavedCashRecords();
+      return;
+    }
+    savedCashRecordsCache = getLocalSavedCashRecords();
+    savedCashRecordsSource = "local";
+    setSavedRecordsStatus(savedCashRecordsCache.length ? "No cloud records found." : "No saved records found.", "info");
+    renderSavedCashRecords();
+  } catch (error) {
+    console.warn("Cash cloud records unavailable; showing local records.", error);
+    savedCashRecordsCache = getLocalSavedCashRecords();
+    savedCashRecordsSource = "local";
+    setSavedRecordsStatus(savedCashRecordsCache.length ? "Cloud load failed. Showing local records." : "No saved records found.", savedCashRecordsCache.length ? "warning" : "info");
+    renderSavedCashRecords();
+  }
+}
+
 function applySavedRecordFilters(records) {
   const from = $("filter-date-from").value;
   const to = $("filter-date-to").value;
   const type = $("filter-type").value;
   const group = $("filter-group")?.value || "";
   const plate = normalizePlate($("filter-plate").value);
-  return records.filter(record => (!from || record.date >= from) && (!to || record.date <= to) && (!type || record.type === type) && (!group || resolveRecordGroup(record) === group) && (!plate || normalizePlate(record.plateNumber).includes(plate)));
+  return records.filter(record => {
+    const display = record.tableDisplay || normalizeCashRecordForTable(record);
+    return (!from || display.date >= from) &&
+      (!to || display.date <= to) &&
+      (!type || display.type === type) &&
+      (!group || display.group === group || resolveRecordGroup(record) === group) &&
+      (!plate || normalizePlate(display.plate).includes(plate));
+  });
 }
 
 function renderSavedCashRecords() {
   const body = $("saved-records-body");
-  const rows = applySavedRecordFilters(getAllSavedCashRecords()).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  if (!savedCashRecordsCache.length) {
+    savedCashRecordsCache = getLocalSavedCashRecords();
+    if (!savedCashRecordsStatus) setSavedRecordsStatus("Loaded local records.", "info");
+  } else if (savedCashRecordsStatus) {
+    setSavedRecordsStatus(savedCashRecordsStatus, savedCashRecordsStatusKind);
+  }
+  const rows = applySavedRecordFilters(savedCashRecordsCache).sort((a, b) => {
+    const aDisplay = a.tableDisplay || normalizeCashRecordForTable(a);
+    const bDisplay = b.tableDisplay || normalizeCashRecordForTable(b);
+    return String(bDisplay.date).localeCompare(String(aDisplay.date));
+  });
   body.innerHTML = rows.length ? rows.map(record => {
-    const amount = record.type === "Diesel PO" ? record.amount : record.type === "Trip Budget" ? record.budgetAmount : record.amount;
-    return `<tr><td>${escapeHtml(record.date || "")}</td><td>${escapeHtml(record.type)}</td><td>${escapeHtml(record.plateNumber || "No Plate")}</td><td>${escapeHtml(resolveRecordGroup(record))}</td><td>${formatCurrency(amount)}</td><td>${escapeHtml(record.receiverName || resolveCashPerson(record) || "")}</td><td>${escapeHtml(record.status || "")}</td><td class="cash-row-actions"><button data-action="load" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Load</button><button data-action="message" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Message</button><button data-action="delete" data-type="${escapeHtml(record.type)}" data-id="${escapeHtml(record.id)}">Delete</button></td></tr>`;
-  }).join("") : '<tr><td colspan="8" class="empty">No saved local records found.</td></tr>';
+    const display = record.tableDisplay || normalizeCashRecordForTable(record);
+    const isCloud = record.__cashRecordSource === "cloud";
+    const isDraft = isCashDraftRecord(record);
+    const lockedTitle = "Only Draft records can be edited/deleted here. Ask Mother/Admin to return this request if changes are needed.";
+    const editAttrs = isDraft ? "" : ` disabled title="${lockedTitle}"`;
+    const deleteAttrs = isDraft ? "" : ` disabled title="${lockedTitle}"`;
+    return `<tr><td>${escapeHtml(display.date || "")}</td><td>${escapeHtml(display.type)}</td><td>${escapeHtml(display.plate)}</td><td>${escapeHtml(display.group)}</td><td>${formatCurrency(display.amount)}</td><td>${escapeHtml(display.receiver)}</td><td>${escapeHtml(display.status)}</td><td class="cash-row-actions"><button data-action="edit" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}"${editAttrs}>Edit</button><button data-action="message" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}">Message</button><button data-action="delete" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}"${deleteAttrs}>Delete</button></td></tr>`;
+  }).join("") : '<tr><td colspan="8" class="empty">No saved records found.</td></tr>';
 }
 
 function getRecordStore(type) {
@@ -664,23 +950,260 @@ function getRecordStore(type) {
 
 function loadSavedCashRecord(type, id) {
   const [, records, loader] = getRecordStore(type);
-  const record = records.find(item => item.id === id);
+  const record = records.find(item => item.id === id) || savedCashRecordsCache.find(item => item.id === id);
   if (record) loader(record);
 }
 
+function findSavedCashRecord(id, type = "") {
+  return savedCashRecordsCache.find(item => item.id === id && (!type || item.type === type)) ||
+    getAllSavedCashRecords().find(item => item.id === id && (!type || detectCashRecordType(item) === type));
+}
+
+function cashEditTitle(type) {
+  if (type === "Diesel PO") return "Edit Diesel PO";
+  if (type === "Trip Budget") return "Edit Trip Budget";
+  if (type === "Bali / Cash Advance") return "Edit Bali / Cash Advance";
+  return "Edit Cash Request";
+}
+
+function cashEditInput(id, label, value = "", type = "text", extra = "") {
+  return `<label><span>${escapeHtml(label)}</span><input id="${id}" type="${type}" value="${escapeHtml(value)}"${extra}></label>`;
+}
+
+function cashEditTextarea(id, label, value = "") {
+  return `<label class="cash-edit-wide"><span>${escapeHtml(label)}</span><textarea id="${id}" rows="3">${escapeHtml(value)}</textarea></label>`;
+}
+
+function cashEditSelect(id, label, value, options) {
+  return `<label><span>${escapeHtml(label)}</span><select id="${id}">${options.map(option => `<option${String(option) === String(value) ? " selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></label>`;
+}
+
+function cashEditSection(title, fields) {
+  return `<section class="cash-edit-section"><h3>${escapeHtml(title)}</h3><div class="cash-edit-grid">${fields.join("")}</div></section>`;
+}
+
+function buildCashEditForm(record) {
+  const type = detectCashRecordType(record);
+  const status = cashRecordStatus(record) || "Draft";
+  const groupOptions = ["Bottle", "Sugar", "Preform / Resin", "Caps / Crown", "General / No Plate", "Needs Update / Unknown"];
+  const statusOptions = ["Draft", "For Approval", "Pending", "Pending Approval", "Submitted", "For Review", "Approved", "Returned", "Rejected", "Deposited", "Used", "Paid"];
+  const commonTruck = [
+    cashEditInput("cash-edit-date", "Date", record.date || firstCashValue(record, ["Date", "Message_Date", "Encoded_At"]), "date"),
+    cashEditSelect("cash-edit-group", "Group", record.groupCategory || firstCashValue(record, ["Group_Category", "Truck_Group"], "General / No Plate"), groupOptions),
+    cashEditInput("cash-edit-plate", "Plate Number", record.plateNumber || firstCashValue(record, ["Plate_Number"]), "text", ' list="cash-truck-plates"'),
+    cashEditInput("cash-edit-driver", "Driver Name", record.driverName || firstCashValue(record, ["Driver_Name"])),
+    cashEditInput("cash-edit-helper", "Helper Name", record.helperName || firstCashValue(record, ["Helper_Name"]))
+  ];
+  const deposit = [
+    cashEditSelect("cash-edit-deposit-needed", "Deposit Needed", record.depositNeeded || "No", ["No", "Yes"]),
+    cashEditInput("cash-edit-receiver", "Receiver Name", record.receiverName || firstCashValue(record, ["Receiver_Name"])),
+    cashEditSelect("cash-edit-deposit-to", "Deposit To", record.depositTo || firstCashValue(record, ["Deposit_To"], "GCash"), ["GCash", "Bank", "Cash"]),
+    cashEditInput("cash-edit-deposit-number", "Account / Number", record.depositNumber || firstCashValue(record, ["GCash_Number", "Deposit_Number"]))
+  ];
+  const statusFields = [
+    cashEditSelect("cash-edit-status", "Status", status, statusOptions),
+    cashEditTextarea("cash-edit-remarks", "Notes / Remarks", record.remarks || firstCashValue(record, ["Remarks", "Source_Message"]))
+  ];
+
+  if (type === "Diesel PO") {
+    return [
+      cashEditSection("Truck Details", commonTruck),
+      cashEditSection("Diesel PO Details", [
+        cashEditInput("cash-edit-logged-by", "Logged By", record.loggedBy || firstCashValue(record, ["Logged_By", "Encoded_By"])),
+        cashEditInput("cash-edit-fuel-station", "Fuel Station", record.fuelStation || firstCashValue(record, ["Fuel_Station"])),
+        cashEditInput("cash-edit-po-number", "PO Number", record.poNumber || firstCashValue(record, ["PO_Number"])),
+        cashEditInput("cash-edit-amount", "Diesel Amount", record.amount || firstCashValue(record, ["Amount", "Diesel_Amount"]), "number", ' min="0" step="0.01"'),
+        cashEditInput("cash-edit-liters", "Diesel Liters", record.liters || firstCashValue(record, ["Liters"]), "number", ' min="0" step="0.01"'),
+        cashEditInput("cash-edit-route", "Route / Source / Destination", record.route || firstCashValue(record, ["Route_Trip", "Route"]))
+      ]),
+      cashEditSection("Deposit Details", deposit),
+      cashEditSection("Status / Notes", statusFields)
+    ].join("");
+  }
+
+  if (type === "Trip Budget") {
+    return [
+      cashEditSection("Truck Details", commonTruck),
+      cashEditSection("Trip Budget Details", [
+        cashEditInput("cash-edit-logged-by", "Logged By", record.loggedBy || firstCashValue(record, ["Logged_By", "Encoded_By"])),
+        cashEditInput("cash-edit-source", "Source", record.source || firstCashValue(record, ["Source"])),
+        cashEditInput("cash-edit-destination", "Destination", record.destination || firstCashValue(record, ["Destination"])),
+        cashEditInput("cash-edit-shipment", "Shipment Number", record.shipmentNumber || firstCashValue(record, ["Shipment_Number"])),
+        cashEditInput("cash-edit-budget-type", "Budget Type", record.budgetType || firstCashValue(record, ["Budget_Type"], "Trip Budget")),
+        cashEditInput("cash-edit-budget-amount", "Budget Amount", record.budgetAmount || firstCashValue(record, ["Budget_Amount", "Amount"]), "number", ' min="0" step="0.01"')
+      ]),
+      cashEditSection("Deposit Details", deposit),
+      cashEditSection("Status / Notes", statusFields)
+    ].join("");
+  }
+
+  return [
+    cashEditSection("Truck Details", commonTruck),
+    cashEditSection("Bali / Cash Advance Details", [
+      cashEditSelect("cash-edit-role", "Role", record.personType || firstCashValue(record, ["Role"], "Driver"), CASH_ROLE_OPTIONS),
+      cashEditInput("cash-edit-person-name", "Person Name", record.personName || firstCashValue(record, ["Person_Name"])),
+      cashEditInput("cash-edit-current-balance", "Current Balance", record.currentBalance || firstCashValue(record, ["Balance_After_Payroll"]), "number", ' min="0" step="0.01"'),
+      cashEditInput("cash-edit-amount", "Amount", record.amount || firstCashValue(record, ["Amount"]), "number", ' min="0" step="0.01"'),
+      cashEditTextarea("cash-edit-reason", "Reason", record.reason || firstCashValue(record, ["Reason", "Source_Message"]))
+    ]),
+    cashEditSection("Deposit Details", deposit),
+    cashEditSection("Status / Notes", statusFields)
+  ].join("");
+}
+
+function openCashEditModal(type, id) {
+  const record = findSavedCashRecord(id, type);
+  if (!record) return setSavedRecordsStatus("Draft record not found.", "warning");
+  if (!isCashDraftRecord(record)) {
+    return setSavedRecordsStatus("This request has already been submitted and cannot be edited here.", "warning");
+  }
+  activeCashEditRecord = record;
+  $("cash-edit-title").textContent = cashEditTitle(type);
+  $("cash-edit-subtitle").textContent = record.__cashRecordSource === "cloud" ? "Cloud draft record. Save will update the existing cloud row." : "Local draft record. Save will update the existing local record.";
+  $("cash-edit-body").innerHTML = buildCashEditForm(record);
+  $("cash-edit-modal").hidden = false;
+  setSavedRecordsStatus("Draft loaded for editing.", "success");
+}
+
+function closeCashEditModal() {
+  const modal = $("cash-edit-modal");
+  if (modal) modal.hidden = true;
+  activeCashEditRecord = null;
+}
+
+function editValue(id) {
+  return $(id)?.value?.trim() || "";
+}
+
+function collectCashEditData() {
+  const record = activeCashEditRecord || {};
+  const type = detectCashRecordType(record);
+  const updated = {
+    ...record,
+    id: record.id,
+    type,
+    date: editValue("cash-edit-date"),
+    groupCategory: editValue("cash-edit-group"),
+    plateNumber: getPlateInputValue("cash-edit-plate"),
+    driverName: editValue("cash-edit-driver"),
+    helperName: editValue("cash-edit-helper"),
+    depositNeeded: editValue("cash-edit-deposit-needed"),
+    receiverName: editValue("cash-edit-receiver"),
+    depositTo: editValue("cash-edit-deposit-to"),
+    depositNumber: editValue("cash-edit-deposit-number"),
+    status: editValue("cash-edit-status") || "Draft",
+    remarks: editValue("cash-edit-remarks"),
+    updatedAt: new Date().toISOString()
+  };
+
+  if (type === "Diesel PO") {
+    const loggedBy = editValue("cash-edit-logged-by");
+    Object.assign(updated, {
+      loggedBy,
+      personName: loggedBy,
+      personType: loggedBy ? "Logger" : "",
+      fuelStation: editValue("cash-edit-fuel-station"),
+      poNumber: editValue("cash-edit-po-number"),
+      amount: Number(editValue("cash-edit-amount")) || 0,
+      liters: Number(editValue("cash-edit-liters")) || 0,
+      route: editValue("cash-edit-route")
+    });
+  } else if (type === "Trip Budget") {
+    const loggedBy = editValue("cash-edit-logged-by");
+    Object.assign(updated, {
+      loggedBy,
+      personName: loggedBy,
+      personType: loggedBy ? "Logger" : "",
+      source: editValue("cash-edit-source"),
+      destination: editValue("cash-edit-destination"),
+      shipmentNumber: editValue("cash-edit-shipment"),
+      budgetType: editValue("cash-edit-budget-type"),
+      budgetAmount: Number(editValue("cash-edit-budget-amount")) || 0,
+      amount: Number(editValue("cash-edit-budget-amount")) || 0
+    });
+  } else {
+    Object.assign(updated, {
+      personType: editValue("cash-edit-role"),
+      personName: editValue("cash-edit-person-name"),
+      currentBalance: Number(editValue("cash-edit-current-balance")) || 0,
+      amount: Number(editValue("cash-edit-amount")) || 0,
+      reason: editValue("cash-edit-reason")
+    });
+  }
+
+  return updated;
+}
+
+async function saveCashEditModal(event) {
+  event.preventDefault();
+  const original = activeCashEditRecord;
+  if (!original) return;
+  if (!isCashDraftRecord(original)) {
+    setSavedRecordsStatus("This request has already been submitted and cannot be edited here.", "warning");
+    return;
+  }
+  const updated = collectCashEditData();
+  if (original.__cashRecordSource === "cloud") {
+    const sheetRecord = toCashSheetRecord(updated);
+    sheetRecord.Cash_ID = original.Cash_ID || original.cashId || original.id;
+    const result = await cashPost({ action: "updateEntry", record: sheetRecord });
+    if (!result || !result.ok) {
+      setSavedRecordsStatus("Cloud edit is not connected yet. Please edit from the source form or ask Admin.", "warning");
+      return;
+    }
+    closeCashEditModal();
+    await loadSavedCashRecordsFromCloud();
+    setSavedRecordsStatus("Draft changes saved.", "success");
+    return;
+  }
+
+  const [key, records] = getRecordStore(updated.type);
+  writeJson(key, records.map(item => item.id === updated.id ? updated : item));
+  savedCashRecordsCache = getLocalSavedCashRecords();
+  savedCashRecordsSource = "local";
+  closeCashEditModal();
+  setSavedRecordsStatus("Draft changes saved.", "success");
+  refreshAllCashData();
+}
+
 function deleteSavedCashRecord(type, id) {
-  if (!confirm("Delete this local record?")) return;
+  const cached = savedCashRecordsCache.find(item => item.id === id);
+  if (cached && !isCashDraftRecord(cached)) {
+    setSavedRecordsStatus("Only Draft records can be deleted here.", "warning");
+    return;
+  }
+  if (cached?.__cashRecordSource === "cloud") {
+    if (!confirm("Delete this cloud Draft record?")) return;
+    cashPost({ action: "deleteEntry", cashId: cached.Cash_ID || cached.cashId || cached.id, deletedBy: "" })
+      .then(res => {
+        if (res && res.ok) {
+          loadSavedCashRecordsFromCloud().then(() => setSavedRecordsStatus("Record deleted. Records refreshed.", "success"));
+        } else {
+          setSavedRecordsStatus("Cloud records cannot be deleted here yet.", "warning");
+        }
+      })
+      .catch(() => setSavedRecordsStatus("Cloud records cannot be deleted here yet.", "warning"));
+    return;
+  }
+  if (!confirm("Delete this local Draft record?")) return;
   const [key, records] = getRecordStore(type);
   const now = new Date().toISOString();
   let deletedRecord = null;
   const updated = records.map(item => {
     if (item.id !== id) return item;
+    if (!isCashDraftRecord(item)) return item;
     deletedRecord = { ...item, isDeleted: true, deletedAt: now, deletedBy: "", updatedAt: now };
     return deletedRecord;
   });
+  if (!deletedRecord) {
+    setSavedRecordsStatus("Only Draft records can be deleted here.", "warning");
+    return;
+  }
   writeJson(key, updated);
+  savedCashRecordsCache = getLocalSavedCashRecords();
+  savedCashRecordsSource = "local";
   refreshAllCashData();
-  if (!deletedRecord) return;
+  setSavedRecordsStatus("Record deleted. Records refreshed.", "success");
   const statusId = getStatusIdForType(type);
   cashPost({ action: "deleteEntry", cashId: deletedRecord.id, deletedBy: "" })
     .then(res => setStatus(statusId, (res && res.ok) ? "Deleted locally and synced." : "Deleted locally. Google Sheets delete sync failed.", (res && res.ok) ? "success" : "warning"))
@@ -695,7 +1218,7 @@ function getStatusIdForType(type) {
 
 function generateSavedCashRecordMessage(type, id) {
   const [, records, loader, generator] = getRecordStore(type);
-  const record = records.find(item => item.id === id);
+  const record = records.find(item => item.id === id) || savedCashRecordsCache.find(item => item.id === id);
   if (!record) return;
   loader(record);
   generator();
@@ -715,6 +1238,11 @@ function updateCashSummary() {
 
 function refreshAllCashData() {
   updateCashSummary();
+  if (savedCashRecordsSource !== "cloud") {
+    savedCashRecordsCache = getLocalSavedCashRecords();
+    savedCashRecordsSource = "local";
+    if (!savedCashRecordsStatus) savedCashRecordsStatus = "Loaded local records.";
+  }
   renderSavedCashRecords();
 }
 
@@ -726,7 +1254,9 @@ function wireEvents() {
   $("save-diesel-button").addEventListener("click", saveDieselPO); $("generate-diesel-button").addEventListener("click", generateDieselPOViberMessage); $("copy-diesel-button").addEventListener("click", copyDieselPOMessage); $("clear-diesel-button").addEventListener("click", clearDieselPOForm);
   $("diesel-deposit-needed").addEventListener("change", applyDieselDepositState);
   $("save-budget-button").addEventListener("click", saveBudget); $("generate-budget-button").addEventListener("click", generateBudgetViberMessage); $("copy-budget-button").addEventListener("click", copyBudgetMessage); $("clear-budget-button").addEventListener("click", clearBudgetForm);
+  $("budget-deposit-needed").addEventListener("change", () => applyDepositState("budget"));
   $("save-bali-button").addEventListener("click", saveBali); $("generate-bali-button").addEventListener("click", generateBaliViberMessage); $("copy-bali-button").addEventListener("click", copyBaliMessage); $("clear-bali-button").addEventListener("click", clearBaliForm);
+  $("bali-deposit-needed").addEventListener("change", () => applyDepositState("bali"));
   ["diesel", "budget", "bali"].forEach(prefix => {
     const plateInput = $(`${prefix}-plate-number`);
     const groupInput = $(`${prefix}-group-category`);
@@ -736,18 +1266,37 @@ function wireEvents() {
       plateInput.addEventListener("blur", () => applyTruckToForm(prefix));
     }
   });
+  ["diesel-form", "budget-form", "bali-form"].forEach(formId => {
+    $(formId)?.querySelectorAll("input, select, textarea").forEach(el => {
+      el.addEventListener("input", () => el.classList.remove("input-error"));
+      el.addEventListener("change", () => el.classList.remove("input-error"));
+    });
+  });
   ["filter-date-from", "filter-date-to", "filter-type", "filter-group", "filter-plate"].forEach(id => $(id).addEventListener("input", renderSavedCashRecords));
   $("saved-records-body").addEventListener("click", event => {
     const button = event.target.closest("button[data-action]");
     if (!button) return;
-    if (button.dataset.action === "load") loadSavedCashRecord(button.dataset.type, button.dataset.id);
+    if (button.disabled) {
+      setSavedRecordsStatus(button.title || "This action is not available for this record.", "warning");
+      return;
+    }
+    if (button.dataset.action === "edit") openCashEditModal(button.dataset.type, button.dataset.id);
     if (button.dataset.action === "delete") deleteSavedCashRecord(button.dataset.type, button.dataset.id);
     if (button.dataset.action === "message") generateSavedCashRecordMessage(button.dataset.type, button.dataset.id);
+  });
+  $("cash-edit-form")?.addEventListener("submit", saveCashEditModal);
+  $("cash-edit-close")?.addEventListener("click", closeCashEditModal);
+  $("cash-edit-cancel")?.addEventListener("click", closeCashEditModal);
+  $("cash-edit-modal")?.addEventListener("click", event => {
+    if (event.target.id === "cash-edit-modal") closeCashEditModal();
   });
 }
 
 populateCashRoleSelects();
 wireEvents();
 applyDieselDepositState();
+applyDepositState("budget");
+applyDepositState("bali");
 fetchTruckMaster();
 refreshAllCashData();
+loadSavedCashRecordsFromCloud();

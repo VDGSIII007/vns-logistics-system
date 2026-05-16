@@ -19,7 +19,7 @@ const CASH_HEADERS = [
   "Transaction_Type","Person_Name","Role","GCash_Number","Amount",
   "PO_Number","Liters","Fuel_Station","Route","Balance_After_Payroll",
   "Review_Status","Encoded_By","Remarks","Created_At","Updated_At",
-  "Deleted_At","Deleted_By","Is_Deleted"
+  "Deleted_At","Deleted_By","Is_Deleted","Logged_By"
 ];
 
 // ============================================================
@@ -68,11 +68,11 @@ function doPost(e) {
     ensureAllTabs_();
     switch (body.action) {
       case "saveEntry":
-        return jsonResponse_({ ok: true, result: upsertRecord_("Cash_PO_Bali_Log", CASH_HEADERS, "Cash_ID", body.record || {}) });
+        return jsonResponse_({ ok: true, result: upsertRecord_("Cash_PO_Bali_Log", CASH_HEADERS, "Cash_ID", normalizeCashRecord_(body.record || {})) });
       case "batchSaveEntries":
-        return jsonResponse_(batchUpsertRecords_("Cash_PO_Bali_Log", CASH_HEADERS, "Cash_ID", body.records || []));
+        return jsonResponse_(batchUpsertRecords_("Cash_PO_Bali_Log", CASH_HEADERS, "Cash_ID", (body.records || []).map(normalizeCashRecord_)));
       case "updateEntry":
-        return jsonResponse_({ ok: true, result: updateRecord_("Cash_PO_Bali_Log", CASH_HEADERS, "Cash_ID", body.record || {}) });
+        return jsonResponse_({ ok: true, result: updateRecord_("Cash_PO_Bali_Log", CASH_HEADERS, "Cash_ID", normalizeCashRecord_(body.record || {})) });
       case "deleteEntry":
         return jsonResponse_({ ok: true, result: softDeleteRecord_("Cash_PO_Bali_Log", CASH_HEADERS, "Cash_ID", body.cashId || (body.record && body.record.Cash_ID), body.deletedBy || "") });
       case "ensureTabs":
@@ -127,7 +127,48 @@ function readRecords_(sheetName, headers, includeDeleted) {
       actual.forEach(function(h, i) { if (h) obj[h] = cellStr_(row[i]); });
       return obj;
     })
-    .filter(function(obj) { return includeDeleted || String(obj.Is_Deleted || "").toUpperCase() !== "TRUE"; });
+    .filter(function(obj) { return includeDeleted || String(obj.Is_Deleted || "").toUpperCase() !== "TRUE"; })
+    .map(addCashAliases_);
+}
+
+function normalizeCashRecord_(record) {
+  record = record || {};
+  var normalized = {};
+  Object.keys(record).forEach(function(key) {
+    normalized[key] = record[key];
+  });
+
+  var loggedBy = firstNonBlank_(record.Logged_By, record.loggedBy, record.Encoded_By, record.encodedBy);
+  if (loggedBy) normalized.Logged_By = loggedBy;
+
+  if (normalized.Person_Name === undefined && record.personName !== undefined) {
+    normalized.Person_Name = record.personName;
+  }
+
+  if (normalized.Role === undefined) {
+    var role = firstNonBlank_(record.Role, record.personType, record.role);
+    if (role) normalized.Role = role;
+  }
+
+  return normalized;
+}
+
+function addCashAliases_(record) {
+  record.loggedBy = firstNonBlank_(record.Logged_By, record.Encoded_By, record.loggedBy);
+  record.personName = firstNonBlank_(record.Person_Name, record.personName);
+  record.personType = firstNonBlank_(record.Role, record.personType, record.role);
+  record.role = firstNonBlank_(record.Role, record.role, record.personType);
+  return record;
+}
+
+function firstNonBlank_() {
+  for (var i = 0; i < arguments.length; i++) {
+    var value = arguments[i];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+  }
+  return "";
 }
 
 function upsertRecord_(sheetName, headers, keyField, record) {

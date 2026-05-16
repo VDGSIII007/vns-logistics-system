@@ -44,7 +44,7 @@
       <div class="payroll-shell">
         <p class="eyebrow">Internal Module</p>
         <h1>Payroll Portal</h1>
-        <p>One encoding workspace for Pasahod 2 trip rows, Pasahod summary, approval, and payment.</p>
+        <p>Payroll entry, Pasahod encoding, saved records, and ledger reference. Approvals and payments are handled in the central portals.</p>
         <div class="module-header-action">
           <a href="portal.html" class="btn btn-outline">Back to Portal</a>
         </div>
@@ -53,13 +53,13 @@
 
     <section class="payroll-shell payroll-workspace single-payroll-workspace">
       <div class="payroll-tabs" role="tablist" aria-label="Payroll sections">
-        <button class="payroll-tab-button active" type="button" data-payroll-tab="encode-payroll-tab">Encode Payroll / Pasahod 2</button>
-        <button class="payroll-tab-button" type="button" data-payroll-tab="pasahod-summary-tab">Pasahod Summary</button>
-        <button class="payroll-tab-button" type="button" data-payroll-tab="approval-payment-tab">Approval / Payment</button>
+        <button class="payroll-tab-button active" type="button" data-payroll-tab="encode-payroll-tab" data-vns-permission="payroll:entry">Encode Payroll / Pasahod 2</button>
+        <button class="payroll-tab-button" type="button" data-payroll-tab="pasahod-summary-tab" data-vns-permission="payroll:entry">Pasahod Summary</button>
+        <button class="payroll-tab-button" type="button" data-payroll-tab="approval-payment-tab" data-vns-role="Admin">Approval / Payment</button>
         <button class="payroll-tab-button" type="button" data-payroll-tab="saved-records-tab">Saved Records</button>
       </div>
 
-      <section id="encode-payroll-tab" class="payroll-tab-panel active">
+      <section id="encode-payroll-tab" class="payroll-tab-panel active" data-vns-permission="payroll:entry">
       <section class="payroll-section-card payroll-compact-card payroll-header-card">
         <div class="payroll-card-head">
           <div>
@@ -179,7 +179,7 @@
       </section>
       </section>
 
-      <section id="pasahod-summary-tab" class="payroll-tab-panel">
+      <section id="pasahod-summary-tab" class="payroll-tab-panel" data-vns-permission="payroll:entry">
       <div class="payroll-tab-heading">
         <h2>Pasahod Summary</h2>
         <p>Salary, allowance, deductions, and net pay for driver and helper.</p>
@@ -267,7 +267,7 @@
       </section>
       </section>
 
-      <section id="approval-payment-tab" class="payroll-tab-panel">
+      <section id="approval-payment-tab" class="payroll-tab-panel" data-vns-role="Admin">
       <div class="payroll-tab-heading">
         <h2>Approval / Payment</h2>
         <p>Office review, overrides, payment details, and Viber-ready message.</p>
@@ -311,6 +311,34 @@
       </section>
       </section>
 
+      <section id="for-approval-tab" class="payroll-tab-panel" data-vns-role="Admin" hidden>
+      <section class="payroll-section-card payroll-records-card payroll-approval-card">
+        <div class="payroll-card-head">
+          <div>
+            <h2>For Approval</h2>
+            <p>Liquidations waiting for review.</p>
+          </div>
+        </div>
+        <div class="payroll-filters">
+          <label><span>Plate Number</span><input id="approval-filter-plate" type="text"></label>
+          <label><span>Group</span><select id="approval-filter-group"><option value="">All</option><option>Bottle</option><option>Sugar</option><option>Preform / Resin</option><option>Caps / Crown</option><option>Needs Update / Unknown</option></select></label>
+          <label><span>Status</span><select id="approval-filter-status"><option value="">Submitted / For Review</option><option>Submitted</option><option>For Review</option></select></label>
+          <label><span>From Date</span><input id="approval-filter-date-from" type="date"></label>
+          <label><span>To Date</span><input id="approval-filter-date-to" type="date"></label>
+        </div>
+        <div class="payroll-table-wrap">
+          <table class="payroll-table payroll-records-table payroll-approval-table">
+            <thead>
+              <tr>
+                <th>Payroll Number</th><th>Plate Number</th><th>Group</th><th>Driver</th><th>Payroll Date / Cutoff Period</th><th>Total Expenses</th><th>Status</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="approval-records-body"></tbody>
+          </table>
+        </div>
+      </section>
+      </section>
+
       <section id="saved-records-tab" class="payroll-tab-panel">
       <section class="payroll-section-card payroll-records-card">
         <div class="payroll-card-head">
@@ -320,7 +348,7 @@
           </div>
         </div>
         <div class="payroll-filters">
-          <label><span>Status</span><select id="filter-status"><option value="">All</option><option>Draft</option><option>Submitted</option><option>Returned</option><option>Approved</option><option>Rejected</option><option>Paid</option></select></label>
+          <label><span>Status</span><select id="filter-status"><option value="">All</option><option>Draft</option><option>Submitted / For Review</option><option>Returned</option><option>Approved / For Payment</option><option>Rejected</option><option>Paid</option></select></label>
           <label><span>Group</span><select id="filter-group"><option value="">All</option><option>Sugar</option><option>Bottle</option><option>Preform</option><option>Resin</option><option>Caps</option><option>Crowns</option></select></label>
           <label><span>Plate Number</span><input id="filter-plate" type="text"></label>
           <label><span>Driver</span><input id="filter-driver" type="text"></label>
@@ -351,6 +379,16 @@
     </section>
   </main>
 
+  <div id="approval-details-panel" class="record-details-panel payroll-approval-details" hidden>
+    <article class="record-details-card">
+      <div class="record-details-header">
+        <h2>Liquidation Details</h2>
+        <button id="approval-details-close" class="details-close" type="button">Close</button>
+      </div>
+      <div id="approval-details-content" class="record-details-content"></div>
+    </article>
+  </div>
+
   <datalist id="payroll-truck-plates"></datalist>
   <footer class="footer">
     <div class="container footer-grid">
@@ -363,5 +401,6 @@
   </footer>
 
   <script src="payroll.js"></script>
+  <script src="auth.js"></script>
 </body>
 </html>

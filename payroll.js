@@ -140,6 +140,17 @@ function bindPayrollEvents() {
   ["filter-status", "filter-group", "filter-plate", "filter-driver", "filter-payroll-date"].forEach(id => {
     $(id).addEventListener("input", renderPayrollRecordsTable);
   });
+  ["approval-filter-plate", "approval-filter-group", "approval-filter-status", "approval-filter-date-from", "approval-filter-date-to"].forEach(id => {
+    if ($(id)) $(id).addEventListener("input", renderForApprovalQueue);
+  });
+  if ($("approval-details-close")) {
+    $("approval-details-close").addEventListener("click", closeApprovalDetails);
+  }
+  if ($("approval-details-panel")) {
+    $("approval-details-panel").addEventListener("click", event => {
+      if (event.target === $("approval-details-panel")) closeApprovalDetails();
+    });
+  }
 
   ["group-category", "plate-number", "driver-name", "helper-name", "payroll-status"].forEach(id => {
     $(id).addEventListener("input", () => {
@@ -222,6 +233,7 @@ function newPayroll() {
 function loadPayrollRecords() {
   payrollState.records = readJson(PAYROLL_RECORDS_KEY, []);
   renderPayrollRecordsTable();
+  renderForApprovalQueue();
 }
 
 function loadPayrollTruckMaster() {
@@ -370,6 +382,7 @@ function savePayrollRecord() {
   payrollState.records.unshift(record);
   writeJson(PAYROLL_RECORDS_KEY, payrollState.records);
   renderPayrollRecordsTable();
+  renderForApprovalQueue();
   renderWarnings(headerWarnings.concat(payrollState.warnings));
   setStatus("Saved locally. Syncing to cloud...", "info");
   syncPayrollRecordToCloud(record)
@@ -757,6 +770,11 @@ function renderWarnings(warnings = payrollState.warnings) {
 }
 
 function renderPayrollRecordsTable() {
+  const recordsBody = $("records-body");
+  if (!recordsBody) {
+    renderForApprovalQueue();
+    return;
+  }
   const filters = {
     status: $("filter-status").value,
     group: $("filter-group").value,
@@ -765,7 +783,7 @@ function renderPayrollRecordsTable() {
     payrollDate: $("filter-payroll-date").value
   };
   const rows = payrollState.records.filter(record => {
-    if (filters.status && record.status !== filters.status) return false;
+    if (filters.status && getSavedPayrollDisplayStatus(record) !== filters.status) return false;
     if (filters.group && record.groupCategory !== filters.group) return false;
     if (filters.plate && !normalize(record.plateNumber).includes(filters.plate)) return false;
     if (filters.driver && !normalize(record.driverName).includes(filters.driver)) return false;
@@ -773,13 +791,13 @@ function renderPayrollRecordsTable() {
     return true;
   });
 
-  $("records-body").innerHTML = rows.length ? rows.map(record => `
+  recordsBody.innerHTML = rows.length ? rows.map(record => `
     <tr>
       <td>${escapeHtml(record.payrollDate)}</td>
       <td>${escapeHtml(record.plateNumber)}</td>
       <td>${escapeHtml(record.driverName)}</td>
       <td>${escapeHtml(record.helperName)}</td>
-      <td>${statusBadge(record.status)}</td>
+      <td>${statusBadge(getSavedPayrollDisplayStatus(record))}</td>
       <td>${formatCurrency(record.totals?.totalExpenses)}</td>
       <td>${formatCurrency(record.totals?.driverNetPay)}</td>
       <td>${formatCurrency(record.totals?.helperNetPay)}</td>
@@ -792,7 +810,7 @@ function renderPayrollRecordsTable() {
     </tr>
   `).join("") : `<tr><td colspan="9" class="empty-table">No payroll records yet.</td></tr>`;
 
-  $("records-body").querySelectorAll("button").forEach(button => {
+  recordsBody.querySelectorAll("button").forEach(button => {
     button.addEventListener("click", () => {
       const { action, id } = button.dataset;
       if (action === "edit") editPayrollRecord(id);
@@ -804,6 +822,271 @@ function renderPayrollRecordsTable() {
       }
     });
   });
+  renderForApprovalQueue();
+}
+
+function getSavedPayrollDisplayStatus(record) {
+  const status = mapLiquidationStatusToPayroll(record?.status || record?.Approval_Status || record?.Workflow_Status || "Draft");
+  const paymentStatus = String(record?.paymentStatus || record?.Payment_Status || record?.approval?.paymentStatus || "").trim();
+  const normalizedPayment = normalize(paymentStatus);
+
+  if (["paid", "released", "deposited", "used"].includes(normalizedPayment) || status === "Paid") return "Paid";
+  if (status === "Submitted" || status === "For Review") return "Submitted / For Review";
+  if (status === "Approved") return "Approved / For Payment";
+  if (status === "Returned") return "Returned";
+  if (status === "Rejected") return "Rejected";
+  return status || "Draft";
+}
+
+function renderForApprovalQueue() {
+  const body = $("approval-records-body");
+  if (!body) return;
+  const filters = {
+    plate: normalize($("approval-filter-plate")?.value),
+    group: $("approval-filter-group")?.value || "",
+    status: $("approval-filter-status")?.value || "",
+    dateFrom: $("approval-filter-date-from")?.value || "",
+    dateTo: $("approval-filter-date-to")?.value || ""
+  };
+  const rows = payrollState.records.filter(record => {
+    const status = getApprovalDisplayStatus(record.status);
+    if (!isForApprovalStatus(status)) return false;
+    if (filters.status && status !== filters.status) return false;
+    if (filters.group && normalizePayrollGroup(record.groupCategory) !== filters.group) return false;
+    if (filters.plate && !normalize(record.plateNumber).includes(filters.plate)) return false;
+    if (filters.dateFrom && String(record.payrollDate || "") < filters.dateFrom) return false;
+    if (filters.dateTo && String(record.payrollDate || "") > filters.dateTo) return false;
+    return true;
+  });
+
+  body.innerHTML = rows.length ? rows.map(record => `
+    <tr>
+      <td>${escapeHtml(record.payrollNumber || record.id)}</td>
+      <td>${escapeHtml(record.plateNumber)}</td>
+      <td>${escapeHtml(normalizePayrollGroup(record.groupCategory))}</td>
+      <td>${escapeHtml(record.driverName)}</td>
+      <td>${escapeHtml(formatApprovalPeriod(record))}</td>
+      <td>${formatCurrency(record.totals?.totalExpenses)}</td>
+      <td>${statusBadge(getApprovalDisplayStatus(record.status))}</td>
+      <td class="payroll-row-actions">
+        <button type="button" data-action="details" data-id="${escapeAttr(record.id)}">View Details</button>
+        <button type="button" data-action="approve" data-id="${escapeAttr(record.id)}">Approve</button>
+        <button type="button" data-action="return" data-id="${escapeAttr(record.id)}">Ask to Revise</button>
+        <button type="button" data-action="reject" data-id="${escapeAttr(record.id)}">Reject</button>
+      </td>
+    </tr>
+  `).join("") : `<tr><td colspan="8" class="empty-table">No payroll liquidations waiting for review.</td></tr>`;
+
+  body.querySelectorAll("button").forEach(button => {
+    button.addEventListener("click", () => {
+      const { action, id } = button.dataset;
+      if (action === "details") showApprovalDetails(id);
+      if (action === "approve") approveLiquidationFromQueue(id);
+      if (action === "return") returnLiquidationFromQueue(id);
+      if (action === "reject") rejectLiquidationFromQueue(id);
+    });
+  });
+}
+
+function getApprovalDisplayStatus(status) {
+  const normalized = String(status || "").trim();
+  if (normalized === "For Review") return "For Review";
+  return mapLiquidationStatusToPayroll(normalized);
+}
+
+function isForApprovalStatus(status) {
+  return status === "Submitted" || status === "For Review";
+}
+
+function formatApprovalPeriod(record) {
+  const payrollDate = record.payrollDate || "";
+  const cutoff = [record.cutoffStart, record.cutoffEnd].filter(Boolean).join(" to ");
+  return cutoff ? `${payrollDate || "No date"} / ${cutoff}` : payrollDate;
+}
+
+function showApprovalDetails(id) {
+  const record = payrollState.records.find(item => item.id === id);
+  const panel = $("approval-details-panel");
+  const content = $("approval-details-content");
+  if (!record || !panel || !content) return;
+  const totals = record.totals || getEmptyTotals();
+  content.innerHTML = `
+    <div class="detail-block approval-detail-grid">
+      ${approvalDetailItem("Payroll Number", record.payrollNumber || record.id)}
+      ${approvalDetailItem("Plate Number", record.plateNumber)}
+      ${approvalDetailItem("Group", normalizePayrollGroup(record.groupCategory))}
+      ${approvalDetailItem("Driver", record.driverName)}
+      ${approvalDetailItem("Helper", record.helperName)}
+      ${approvalDetailItem("Payroll Date", record.payrollDate)}
+      ${approvalDetailItem("Cutoff Start", record.cutoffStart)}
+      ${approvalDetailItem("Cutoff End", record.cutoffEnd)}
+      ${approvalDetailItem("Encoder", record.encoderName || record.createdBy)}
+      ${approvalDetailItem("Status", getApprovalDisplayStatus(record.status))}
+      ${approvalDetailItem("Remarks", record.remarks, "wide")}
+    </div>
+    <div class="detail-block approval-totals-grid">
+      ${approvalDetailItem("Total Diesel", formatCurrency(totals.totalDiesel))}
+      ${approvalDetailItem("Total Driver Salary", formatCurrency(totals.totalDriverSalary))}
+      ${approvalDetailItem("Total Helper Salary", formatCurrency(totals.totalHelperSalary))}
+      ${approvalDetailItem("Total Toll", formatCurrency(totals.totalToll))}
+      ${approvalDetailItem("Total Passway", formatCurrency(totals.totalPassway))}
+      ${approvalDetailItem("Total Parking", formatCurrency(totals.totalParking))}
+      ${approvalDetailItem("Total Other Expenses", formatCurrency(totals.totalOtherExpenses))}
+      ${approvalDetailItem("Total Expenses", formatCurrency(totals.totalExpenses))}
+    </div>
+    <div class="detail-block">
+      <h3>Trip Lines</h3>
+      <div class="payroll-table-wrap approval-lines-wrap">
+        <table class="payroll-table approval-lines-table">
+          <thead>
+            <tr><th>Trip Date</th><th>Source</th><th>Destination</th><th>Diesel</th><th>PO Number</th><th>Ref / Shipment Number</th><th>Driver Salary</th><th>Helper Salary</th><th>Toll</th><th>Parking</th><th>Remarks</th></tr>
+          </thead>
+          <tbody>${renderApprovalTripLines(record.lines || [])}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="payroll-row-actions approval-detail-actions">
+      <button type="button" data-action="approve" data-id="${escapeAttr(record.id)}">Approve</button>
+      <button type="button" data-action="return" data-id="${escapeAttr(record.id)}">Ask to Revise</button>
+      <button type="button" data-action="reject" data-id="${escapeAttr(record.id)}">Reject</button>
+    </div>
+  `;
+  content.querySelectorAll("button").forEach(button => {
+    button.addEventListener("click", () => {
+      if (button.dataset.action === "approve") approveLiquidationFromQueue(button.dataset.id);
+      if (button.dataset.action === "return") returnLiquidationFromQueue(button.dataset.id);
+      if (button.dataset.action === "reject") rejectLiquidationFromQueue(button.dataset.id);
+    });
+  });
+  panel.hidden = false;
+}
+
+function closeApprovalDetails() {
+  if ($("approval-details-panel")) $("approval-details-panel").hidden = true;
+}
+
+function approvalDetailItem(label, value, className = "") {
+  return `<div class="approval-detail-item ${className}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || "")}</strong></div>`;
+}
+
+function renderApprovalTripLines(lines) {
+  const visibleLines = lines.filter(line => !isLineBlank(line));
+  return visibleLines.length ? visibleLines.map(line => `
+    <tr>
+      <td>${escapeHtml(line.tripDate)}</td>
+      <td>${escapeHtml(line.source)}</td>
+      <td>${escapeHtml(line.destination)}</td>
+      <td>${formatCurrency(line.diesel)}</td>
+      <td>${escapeHtml(line.poNumber)}</td>
+      <td>${escapeHtml(line.shipmentNumber || line.ref)}</td>
+      <td>${formatCurrency(line.driverSalary)}</td>
+      <td>${formatCurrency(line.helperSalary)}</td>
+      <td>${formatCurrency(line.tollFee)}</td>
+      <td>${formatCurrency(line.parking)}</td>
+      <td>${escapeHtml(line.remarks)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="11" class="empty-table">No trip lines found.</td></tr>`;
+}
+
+function approveLiquidationFromQueue(id) {
+  const record = payrollState.records.find(item => item.id === id);
+  if (!record) return;
+  if (!confirm("Approve this liquidation?")) return;
+  setStatus("Approving liquidation...", "info");
+  payrollCloudPost("approveLiquidationByMother", {
+    Liquidation_ID: record.id,
+    liquidationId: record.id,
+    approvedBy: "Mother",
+    reviewNotes: record.approval?.approvalNotes || ""
+  })
+    .then(result => {
+      if (!result?.ok) throw new Error(result?.error || "Approval failed.");
+      updateLocalApprovalRecord(id, "Approved", {
+        approverName: "Mother",
+        approvalNotes: record.approval?.approvalNotes || ""
+      });
+      closeApprovalDetails();
+      setStatus("Approved and synced to cloud.", "success");
+    })
+    .catch(error => {
+      console.warn("Approval failed", error);
+      setStatus("Approval failed. Please try again.", "error");
+    });
+}
+
+function returnLiquidationFromQueue(id) {
+  const reason = prompt("Why should this be revised?");
+  if (!reason || !reason.trim()) {
+    setStatus("Revision reason is required.", "warning");
+    return;
+  }
+  setStatus("Returning liquidation for revision...", "info");
+  payrollCloudPost("returnLiquidationForRevision", {
+    Liquidation_ID: id,
+    liquidationId: id,
+    returnedBy: "Mother",
+    returnReason: reason.trim()
+  })
+    .then(result => {
+      if (!result?.ok) throw new Error(result?.error || "Return failed.");
+      updateLocalApprovalRecord(id, "Returned", {
+        approverName: "Mother",
+        revisionReason: reason.trim()
+      });
+      closeApprovalDetails();
+      setStatus("Returned for revision and synced to cloud.", "success");
+    })
+    .catch(error => {
+      console.warn("Return failed", error);
+      setStatus("Return failed. Please try again.", "error");
+    });
+}
+
+function rejectLiquidationFromQueue(id) {
+  const reason = prompt("Reason for rejection?");
+  if (!reason || !reason.trim()) {
+    setStatus("Rejection reason is required.", "warning");
+    return;
+  }
+  setStatus("Rejecting liquidation...", "info");
+  payrollCloudPost("rejectLiquidation", {
+    Liquidation_ID: id,
+    liquidationId: id,
+    rejectedBy: "Mother",
+    rejectReason: reason.trim()
+  })
+    .then(result => {
+      if (!result?.ok) throw new Error(result?.error || "Reject failed.");
+      updateLocalApprovalRecord(id, "Rejected", {
+        approverName: "Mother",
+        revisionReason: reason.trim()
+      });
+      closeApprovalDetails();
+      setStatus("Rejected and synced to cloud.", "success");
+    })
+    .catch(error => {
+      console.warn("Reject failed", error);
+      setStatus("Reject failed. Please try again.", "error");
+    });
+}
+
+function updateLocalApprovalRecord(id, status, approvalPatch = {}) {
+  const now = new Date().toISOString();
+  payrollState.records = payrollState.records.map(record => {
+    if (record.id !== id) return record;
+    return {
+      ...record,
+      status,
+      approval: {
+        ...(record.approval || {}),
+        ...approvalPatch
+      },
+      updatedAt: now
+    };
+  });
+  writeJson(PAYROLL_RECORDS_KEY, payrollState.records);
+  renderPayrollRecordsTable();
+  renderForApprovalQueue();
 }
 
 function editPayrollRecord(id) {
@@ -1048,6 +1331,7 @@ function loadPayrollRecordsFromCloud() {
       payrollState.records = mergePayrollRecords(payrollState.records, cloudRecords);
       writeJson(PAYROLL_RECORDS_KEY, payrollState.records);
       renderPayrollRecordsTable();
+      renderForApprovalQueue();
       setStatus("Loaded cloud payroll records.", "success");
     })
     .catch(error => {
@@ -1272,6 +1556,11 @@ function mergePayrollRecord(localRecord, cloudRecord) {
   });
   if ((!localRecord.lines || !localRecord.lines.length) && cloudRecord.lines?.length) merged.lines = cloudRecord.lines;
   if (!localRecord.totals || !Object.values(localRecord.totals).some(value => parseNumber(value))) merged.totals = cloudRecord.totals;
+  if (shouldUseCloudPayrollStatus(localRecord, cloudRecord)) {
+    merged.status = cloudRecord.status;
+    merged.approval = { ...(localRecord.approval || {}), ...(cloudRecord.approval || {}) };
+    merged.updatedAt = cloudRecord.updatedAt || localRecord.updatedAt;
+  }
   return merged;
 }
 
@@ -1286,6 +1575,17 @@ function mapLiquidationStatusToPayroll(status) {
   if (normalized === "For Review") return "Submitted";
   if (normalized === "Approved by Mother") return "Approved";
   return normalized;
+}
+
+function shouldUseCloudPayrollStatus(localRecord, cloudRecord) {
+  const localStatus = mapLiquidationStatusToPayroll(localRecord.status || "Draft");
+  const cloudStatus = mapLiquidationStatusToPayroll(cloudRecord.status || "Draft");
+  if (!cloudStatus || cloudStatus === localStatus) return false;
+  if (localStatus === "Draft" && cloudStatus !== "Draft") return true;
+  const localTime = Date.parse(localRecord.updatedAt || localRecord.createdAt || "");
+  const cloudTime = Date.parse(cloudRecord.updatedAt || cloudRecord.createdAt || "");
+  if (Number.isFinite(localTime) && Number.isFinite(cloudTime) && cloudTime > localTime) return true;
+  return ["Approved", "Returned", "Rejected", "Paid", "Posted", "Deleted"].includes(cloudStatus) && ["Draft", "Submitted"].includes(localStatus);
 }
 
 function normalizePlateForCloud(value) {
@@ -1745,7 +2045,11 @@ function isLockedStatus(status) {
 }
 
 function statusBadge(status, id = "") {
-  return `<span ${id ? `id="${id}"` : ""} class="status-badge status-${normalize(status || "Draft").replace(/\s+/g, "-")}">${escapeHtml(status || "Draft")}</span>`;
+  return `<span ${id ? `id="${id}"` : ""} class="status-badge status-${statusSlug(status || "Draft")}">${escapeHtml(status || "Draft")}</span>`;
+}
+
+function statusSlug(status) {
+  return normalize(status || "Draft").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
 function getSelectedLineIds() {

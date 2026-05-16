@@ -3285,10 +3285,57 @@ tabButtons.forEach(button => {
   button.addEventListener('click', () => setActiveTab(button.dataset.tabTarget));
 });
 
+function validateManualEntry() {
+  const requestType = getActiveManualType();
+  const missing = [];
+
+  function requireField(prefix, field, label) {
+    if (!getSimpleManualValue(prefix, field)) {
+      const el = getSimpleManualField(prefix, field);
+      if (el) el.classList.add('input-error');
+      missing.push(label);
+    }
+  }
+
+  ['parts', 'equipment', 'labor', 'monitoring'].forEach(prefix => {
+    manualEntryForm?.querySelectorAll(`[data-${prefix}-field]`).forEach(el => el.classList.remove('input-error'));
+  });
+
+  if (requestType === 'Parts Request') {
+    requireField('parts', 'date', 'Date');
+    requireField('parts', 'plateGroup', 'Group');
+    requireField('parts', 'plateNumber', 'Plate Number');
+    requireField('parts', 'workDone', 'Work Done / Repair Issue');
+    requireField('parts', 'totalCost', 'Total Amount');
+  } else if (requestType === 'Equipment Request') {
+    requireField('equipment', 'date', 'Date');
+    requireField('equipment', 'item', 'Equipment Item');
+    requireField('equipment', 'totalCost', 'Total Amount');
+  } else if (requestType === 'Labor Payment Request') {
+    requireField('labor', 'date', 'Date');
+    requireField('labor', 'plateGroup', 'Group');
+    requireField('labor', 'plateNumber', 'Plate Number');
+    requireField('labor', 'workDone', 'Work Done / Repair Issue');
+    requireField('labor', 'totalCost', 'Total Amount');
+  } else if (requestType === 'Repair Monitoring Update') {
+    requireField('monitoring', 'date', 'Date');
+    requireField('monitoring', 'plateGroup', 'Group');
+    requireField('monitoring', 'plateNumber', 'Plate Number');
+    requireField('monitoring', 'workDone', 'Work Done / Repair Issue');
+  }
+
+  return missing.length ? `Required: ${missing.join(', ')}.` : '';
+}
+
 if (manualEntryForm) {
   initRepairPlateDropdowns();
   manualRequestTypeSelect?.addEventListener('change', setManualFormVisibility);
   setManualFormVisibility();
+
+  manualEntryForm.querySelectorAll('input, select, textarea').forEach(el => {
+    el.addEventListener('input', () => el.classList.remove('input-error'));
+    el.addEventListener('change', () => el.classList.remove('input-error'));
+  });
 
   ['parts', 'equipment', 'labor', 'completed', 'monitoring'].forEach(prefix => {
     getSimpleManualField(prefix, 'plateNumber')?.addEventListener('input', () => {
@@ -3307,6 +3354,14 @@ if (manualEntryForm) {
 
   manualEntryForm.addEventListener('submit', async event => {
     event.preventDefault();
+    const validationError = validateManualEntry();
+    if (validationError) {
+      if (manualSaveStatus) {
+        manualSaveStatus.className = 'save-status save-status-warning';
+        manualSaveStatus.textContent = validationError;
+      }
+      return;
+    }
     const row = collectManualEntryRow();
     const saved = await saveRepairRows(
       [row],
@@ -3460,6 +3515,10 @@ if (cancelForRepairButton && forRepairLocalForm) {
 
 if (forRepairLocalForm) {
   initRepairPlateDropdowns();
+  forRepairLocalForm.querySelectorAll('input, select, textarea').forEach(el => {
+    el.addEventListener('input', () => el.classList.remove('input-error'));
+    el.addEventListener('change', () => el.classList.remove('input-error'));
+  });
   forRepairLocalForm.addEventListener('submit', async event => {
     event.preventDefault();
     const record = {
@@ -3475,8 +3534,16 @@ if (forRepairLocalForm) {
       remarks: getForRepairLocalValue('remarks')
     };
 
-    if (!record.plateNumber && !record.repairIssue) {
-      if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Enter a plate number or repair issue first.';
+    const frMissing = [];
+    ['plateGroup', 'plateNumber', 'repairIssue', 'startDate'].forEach(field => {
+      forRepairLocalForm.querySelector(`[data-for-repair-field="${field}"]`)?.classList.remove('input-error');
+    });
+    if (!record.groupCategory) { forRepairLocalForm.querySelector('[data-for-repair-field="plateGroup"]')?.classList.add('input-error'); frMissing.push('Group'); }
+    if (!record.plateNumber) { forRepairLocalForm.querySelector('[data-for-repair-field="plateNumber"]')?.classList.add('input-error'); frMissing.push('Plate Number'); }
+    if (!record.repairIssue) { forRepairLocalForm.querySelector('[data-for-repair-field="repairIssue"]')?.classList.add('input-error'); frMissing.push('Repair Issue'); }
+    if (!record.startDate) { forRepairLocalForm.querySelector('[data-for-repair-field="startDate"]')?.classList.add('input-error'); frMissing.push('Start Date'); }
+    if (frMissing.length) {
+      if (forRepairLocalStatus) { forRepairLocalStatus.className = 'save-status save-status-warning'; forRepairLocalStatus.textContent = `Required: ${frMissing.join(', ')}.`; }
       return;
     }
 
