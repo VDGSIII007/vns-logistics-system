@@ -8,6 +8,10 @@
   const NOTIFICATION_COOLDOWN_MS = 60000;
   const LAST_NOTIFIED_COUNT_KEY = "vnsLastNotifiedCount";
   const LAST_NOTIFICATION_AT_KEY = "vnsLastNotificationAt";
+  const PUSH_SUBSCRIPTION_KEY = "vnsPushSubscription";
+  const PUSH_ENDPOINT_HASH_KEY = "vnsPushEndpointHash";
+  const PUSH_PUBLIC_KEY = window.VNS_PUSH_PUBLIC_KEY || "";
+  const PUSH_API_BASE = window.VNS_PUSH_API_BASE || "/api/push";
   const ORIGINAL_TITLE = (document.title.replace(/^\(\d+\)\s*/, "") || "VNS Portal")
     .replace(/^VNS Logistics System Portal$/, "VNS Portal");
 
@@ -30,6 +34,14 @@
 
   let latestSummary = null;
   let isRefreshing = false;
+  let serviceWorkerRegistration = null;
+  let pushState = {
+    supported: false,
+    registered: false,
+    subscribed: false,
+    status: "Checking...",
+    message: ""
+  };
 
   function readJson(key) {
     try {
@@ -54,6 +66,22 @@
       localStorage.setItem(key, String(value));
     } catch (error) {
       console.warn("VNS notifications: unable to save browser alert state.", error);
+    }
+  }
+
+  function writeJsonValue(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      console.warn("VNS notifications: unable to save push subscription state.", error);
+    }
+  }
+
+  function removeStorageValue(key) {
+    try {
+      localStorage.removeItem(key);
+    } catch (error) {
+      console.warn("VNS notifications: unable to clear push subscription state.", error);
     }
   }
 
@@ -305,6 +333,129 @@
     }
   }
 
+  function renderBackgroundPushStatus(messageOverride = "") {
+    const status = document.querySelector("[data-vns-background-push-status]");
+    const message = document.querySelector("[data-vns-background-push-message]");
+    const subscribeButton = document.querySelector("[data-vns-subscribe-push]");
+    const unsubscribeButton = document.querySelector("[data-vns-unsubscribe-push]");
+    const testButton = document.querySelector("[data-vns-test-push]");
+
+    if (status) status.textContent = `Background push: ${pushState.status}`;
+    if (message) message.textContent = messageOverride || pushState.message || "";
+    if (subscribeButton) {
+      subscribeButton.hidden = pushState.subscribed;
+      subscribeButton.disabled = !pushState.supported || !pushState.registered;
+    }
+    if (unsubscribeButton) {
+      unsubscribeButton.hidden = !pushState.subscribed;
+      unsubscribeButton.disabled = !pushState.supported || !pushState.registered;
+    }
+    if (testButton) {
+      testButton.hidden = !pushState.subscribed;
+      testButton.disabled = !pushState.supported || !pushState.registered;
+    }
+  }
+
+  function pushSupported() {
+    return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  }
+
+  function hasConfiguredPushKey() {
+    return Boolean(PUSH_PUBLIC_KEY && PUSH_PUBLIC_KEY !== "PUBLIC_KEY_PLACEHOLDER");
+  }
+
+  async function postPushApi(path, payload) {
+    const response = await fetch(`${PUSH_API_BASE}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.error || `Push API failed: ${response.status}`);
+    return data;
+  }
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let index = 0; index < rawData.length; index += 1) {
+      outputArray[index] = rawData.charCodeAt(index);
+    }
+    return outputArray;
+  }
+
+  async function syncPushSubscriptionState(registration = serviceWorkerRegistration) {
+    if (!registration || !pushSupported()) {
+      renderBackgroundPushStatus();
+      return null;
+    }
+
+    const subscription = await registration.pushManager.getSubscription();
+    pushState.subscribed = Boolean(subscription);
+    if (subscription) {
+      const serializedSubscription = subscription.toJSON ? subscription.toJSON() : subscription;
+      writeJsonValue(PUSH_SUBSCRIPTION_KEY, serializedSubscription);
+      if (hasConfiguredPushKey()) {
+        try {
+          const response = await postPushApi("/subscribe", {
+            subscription: serializedSubscription,
+            role: currentRole(),
+            userAgent: navigator.userAgent || ""
+          });
+          if (response.endpointHash) writeStorageValue(PUSH_ENDPOINT_HASH_KEY, response.endpointHash);
+        } catch (error) {
+          console.warn("VNS notifications: unable to sync existing push subscription.", error);
+        }
+      }
+      pushState.status = "Registered";
+      pushState.message = "Background alerts subscribed.";
+    } else {
+      removeStorageValue(PUSH_SUBSCRIPTION_KEY);
+      pushState.status = "Registered";
+      pushState.message = hasConfiguredPushKey() ? "Background alerts can be subscribed on this browser." : "Background push needs server setup first.";
+    }
+    renderBackgroundPushStatus();
+    return subscription;
+  }
+
+  async function registerServiceWorker() {
+    if (!pushSupported()) {
+      pushState = {
+        supported: false,
+        registered: false,
+        subscribed: false,
+        status: "Not supported",
+        message: "Background push is not supported on this device."
+      };
+      renderBackgroundPushStatus();
+      return null;
+    }
+
+    pushState.supported = true;
+    pushState.status = "Supported";
+    pushState.message = "Registering background push...";
+    renderBackgroundPushStatus();
+
+    try {
+      serviceWorkerRegistration = await navigator.serviceWorker.register("/service-worker.js");
+      pushState.registered = true;
+      pushState.status = "Registered";
+      pushState.message = hasConfiguredPushKey() ? "Background push ready." : "Background push needs server setup first.";
+      await syncPushSubscriptionState(serviceWorkerRegistration);
+      return serviceWorkerRegistration;
+    } catch (error) {
+      console.warn("VNS notifications: service worker registration failed.", error);
+      pushState.registered = false;
+      pushState.subscribed = false;
+      pushState.status = "Failed";
+      pushState.message = "Background push registration failed.";
+      renderBackgroundPushStatus();
+      return null;
+    }
+  }
+
   function renderBadge(element, count, hideWhenZero = true) {
     if (!element) return;
     element.textContent = String(count);
@@ -329,6 +480,7 @@
     const lastChecked = document.querySelector("[data-vns-notification-last-checked]");
     if (lastChecked) lastChecked.textContent = formatCheckedTime(summary.checkedAt);
     renderBrowserAlertStatus();
+    renderBackgroundPushStatus();
 
     const list = document.querySelector("[data-vns-notification-list]");
     if (list) {
@@ -440,6 +592,113 @@
     }
   }
 
+  async function subscribeToPushAlerts() {
+    if (!pushSupported()) {
+      pushState.status = "Not supported";
+      pushState.message = "Background push is not supported on this device.";
+      renderBackgroundPushStatus();
+      return;
+    }
+    if (!hasConfiguredPushKey()) {
+      pushState.message = "Background push needs server setup first.";
+      renderBackgroundPushStatus(pushState.message);
+      return;
+    }
+
+    const registration = serviceWorkerRegistration || await registerServiceWorker();
+    if (!registration) return;
+
+    try {
+      if (Notification.permission === "default") {
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") {
+          pushState.message = permission === "denied"
+            ? "Browser alerts are blocked. Please enable notifications in browser settings."
+            : "Background alerts were not enabled.";
+          renderBackgroundPushStatus();
+          renderBrowserAlertStatus();
+          return;
+        }
+        renderBrowserAlertStatus();
+      }
+      if (Notification.permission !== "granted") {
+        pushState.message = "Browser alerts must be enabled before background alerts can subscribe.";
+        renderBackgroundPushStatus();
+        return;
+      }
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(PUSH_PUBLIC_KEY)
+      });
+      const serializedSubscription = subscription.toJSON ? subscription.toJSON() : subscription;
+      const response = await postPushApi("/subscribe", {
+        subscription: serializedSubscription,
+        role: currentRole(),
+        userAgent: navigator.userAgent || ""
+      });
+      writeJsonValue(PUSH_SUBSCRIPTION_KEY, serializedSubscription);
+      if (response.endpointHash) writeStorageValue(PUSH_ENDPOINT_HASH_KEY, response.endpointHash);
+      pushState.subscribed = true;
+      pushState.status = "Registered";
+      pushState.message = "Background alerts subscribed.";
+      renderBackgroundPushStatus();
+    } catch (error) {
+      console.warn("VNS notifications: push subscription failed.", error);
+      pushState.message = "Background alerts could not subscribe yet.";
+      renderBackgroundPushStatus();
+    }
+  }
+
+  async function unsubscribeFromPushAlerts() {
+    const registration = serviceWorkerRegistration || await registerServiceWorker();
+    if (!registration) return;
+
+    try {
+      const subscription = await registration.pushManager.getSubscription();
+      const endpoint = subscription?.endpoint || "";
+      if (subscription) await subscription.unsubscribe();
+      if (endpoint) await postPushApi("/unsubscribe", { endpoint });
+      removeStorageValue(PUSH_SUBSCRIPTION_KEY);
+      removeStorageValue(PUSH_ENDPOINT_HASH_KEY);
+      pushState.subscribed = false;
+      pushState.status = "Registered";
+      pushState.message = hasConfiguredPushKey() ? "Background alerts unsubscribed." : "Background push needs server setup first.";
+      renderBackgroundPushStatus();
+    } catch (error) {
+      console.warn("VNS notifications: push unsubscribe failed.", error);
+      pushState.message = "Background alerts could not unsubscribe.";
+      renderBackgroundPushStatus();
+    }
+  }
+
+  async function sendTestPush() {
+    const registration = serviceWorkerRegistration || await registerServiceWorker();
+    if (!registration) return;
+
+    try {
+      const subscription = await registration.pushManager.getSubscription();
+      if (!subscription?.endpoint) {
+        pushState.subscribed = false;
+        pushState.message = "Background alerts are not subscribed.";
+        renderBackgroundPushStatus();
+        return;
+      }
+      await postPushApi("/test", {
+        endpoint: subscription.endpoint,
+        title: "VNS Portal",
+        body: "Test background alert from VNS.",
+        url: "/portal.html"
+      });
+      pushState.message = "Test push sent.";
+      renderBackgroundPushStatus();
+    } catch (error) {
+      console.warn("VNS notifications: test push failed.", error);
+      pushState.message = error.message || "Test push failed.";
+      renderBackgroundPushStatus();
+    }
+  }
+
   async function refreshNotifications(options = {}) {
     if (isRefreshing) return latestSummary;
     const previousSummary = latestSummary;
@@ -491,18 +750,24 @@
   function initNotifications() {
     bindDropdown();
     renderBrowserAlertStatus();
+    renderBackgroundPushStatus();
     document.querySelector("[data-vns-notification-refresh]")?.addEventListener("click", () => refreshNotifications({ manual: true }));
     document.querySelector("[data-vns-enable-browser-alerts]")?.addEventListener("click", enableBrowserAlerts);
+    document.querySelector("[data-vns-subscribe-push]")?.addEventListener("click", subscribeToPushAlerts);
+    document.querySelector("[data-vns-unsubscribe-push]")?.addEventListener("click", unsubscribeFromPushAlerts);
+    document.querySelector("[data-vns-test-push]")?.addEventListener("click", sendTestPush);
     window.addEventListener("vns-role-change", () => {
       if (latestSummary) renderNotifications(latestSummary);
     });
+    registerServiceWorker();
     refreshNotifications();
     window.setInterval(refreshNotifications, REFRESH_INTERVAL_MS);
   }
 
   window.VNSNotificationCenter = {
     refresh: refreshNotifications,
-    getLatestSummary: () => latestSummary
+    getLatestSummary: () => latestSummary,
+    getPushState: () => ({ ...pushState })
   };
 
   document.addEventListener("DOMContentLoaded", initNotifications);

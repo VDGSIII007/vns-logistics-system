@@ -28,12 +28,17 @@
               <strong>Notifications</strong>
               <span data-vns-notification-last-checked>Last checked: --</span>
               <span data-vns-browser-alert-status>Browser alerts: Not enabled</span>
+              <span data-vns-background-push-status>Background push: Checking...</span>
             </div>
             <button class="notification-refresh" type="button" data-vns-notification-refresh>Refresh Notifications</button>
           </div>
           <div class="notification-alert-controls">
             <button class="notification-alert-button" type="button" data-vns-enable-browser-alerts>Enable Browser Alerts</button>
             <p data-vns-browser-alert-message></p>
+            <button class="notification-alert-button" type="button" data-vns-subscribe-push>Subscribe to Background Alerts</button>
+            <button class="notification-alert-button" type="button" data-vns-unsubscribe-push hidden>Unsubscribe</button>
+            <button class="notification-alert-button" type="button" data-vns-test-push hidden>Send Test Push</button>
+            <p data-vns-background-push-message></p>
           </div>
           <div class="notification-list" data-vns-notification-list>
             <p class="notification-empty">All clear. No pending items.</p>
@@ -150,6 +155,7 @@
   </footer>
 
   <script src="auth.js"></script>
+  <script src="push-config.js"></script>
   <script src="notifications.js"></script>
   <script src="script.js"></script>
 </body>

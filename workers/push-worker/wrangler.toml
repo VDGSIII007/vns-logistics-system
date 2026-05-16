@@ -1,0 +1,12 @@
+name = "vns-push-worker"
+main = "src/index.js"
+compatibility_date = "2025-12-01"
+
+[vars]
+VAPID_PUBLIC_KEY = "BJ5cF8jZG2rfx0tdWiKx19uVrM3c33b6k5sSUUzuDK90sN0v1KjUllYPPSJvfbkpyzUGSfdLdzVSwyWZDtt50ik"
+VAPID_SUBJECT = "mailto:admin@vns-logistics.com"
+
+[[kv_namespaces]]
+binding = "VNS_PUSH_SUBSCRIPTIONS"
+id = "da66f264850145cfa8f40b531af30282"
+preview_id = "928b969bd13c4c15868fbd3ccdf0d84e"
