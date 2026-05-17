@@ -2768,3 +2768,146 @@ body.payroll-page{
   background:#f3f4f6;
   color:#6b7280;
 }
+
+.repair-page .repair-tabs{
+  align-items:flex-end;
+  gap:4px;
+  padding:0 8px;
+  margin:0 0 -1px;
+  border:0;
+  border-bottom:1px solid #d8dde6;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+}
+.repair-page .repair-tab-button{
+  min-height:46px;
+  margin-bottom:-1px;
+  border:1px solid #d8dde6;
+  border-bottom-color:#d8dde6;
+  border-radius:14px 14px 0 0;
+  background:#fff;
+  color:#374151;
+  padding:0 18px;
+  font-size:.84rem;
+  box-shadow:0 -1px 0 rgba(255,255,255,.9) inset;
+}
+.repair-page .repair-tab-button:hover{
+  border-color:#c5ccd8;
+  color:#111827;
+}
+.repair-page .repair-tab-button.active{
+  position:relative;
+  z-index:2;
+  border-color:var(--red);
+  border-bottom-color:var(--red);
+  background:var(--red);
+  color:#fff;
+  box-shadow:0 12px 24px rgba(215,25,32,.16);
+}
+.repair-page .repair-tab-panel.active{
+  border-top-left-radius:0;
+}
+.repair-page .saved-records-filter-panel{
+  display:grid;
+  gap:18px;
+  padding:20px;
+  border-color:#e1e6ee;
+  box-shadow:0 14px 36px rgba(15,23,42,.055);
+}
+.repair-page .records-filter-header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  padding-bottom:14px;
+  border-bottom:1px solid #edf0f5;
+}
+.repair-page .records-filter-header h3{
+  margin:0;
+  color:#111827;
+  font-size:1.02rem;
+  font-weight:900;
+  letter-spacing:0;
+}
+.repair-page .records-filter-header p{
+  margin:4px 0 0;
+  color:#6b7280;
+  font-size:.86rem;
+  font-weight:700;
+  line-height:1.45;
+}
+.repair-page .records-filter-header .btn{
+  flex:0 0 auto;
+  min-height:38px;
+  border-radius:10px;
+  padding:0 14px;
+}
+.repair-page .saved-records-filter-panel .records-filters{
+  grid-template-columns:repeat(4,minmax(170px,1fr));
+  gap:12px;
+  margin:0;
+}
+.repair-page .records-quick-views{
+  display:grid;
+  gap:8px;
+  padding-top:2px;
+}
+.repair-page .records-quick-views > span{
+  color:#6b7280;
+  font-size:.72rem;
+  font-weight:900;
+  letter-spacing:.07em;
+  text-transform:uppercase;
+}
+.repair-page .saved-records-filter-panel .records-quick-filters{
+  gap:8px;
+  margin:0;
+}
+.repair-page .saved-records-filter-panel .records-quick-filters .btn{
+  min-height:34px;
+  border-radius:999px;
+  padding:0 13px;
+  border-color:#d8dde6;
+  background:#fff;
+  color:#374151;
+  font-size:.78rem;
+  box-shadow:none;
+}
+.repair-page .saved-records-filter-panel .records-quick-filters .btn.active{
+  border-color:var(--red);
+  background:#fff7f7;
+  color:var(--red);
+  box-shadow:none;
+}
+.repair-page .saved-records-filter-panel .records-muted-note{
+  min-height:0;
+  margin:0;
+  color:#6b7280;
+  font-size:.82rem;
+  font-weight:700;
+  line-height:1.45;
+}
+.repair-page .saved-records-filter-panel .records-muted-note:empty{
+  display:none;
+}
+@media(max-width:940px){
+  .repair-page .repair-tabs{
+    overflow-x:auto;
+    flex-wrap:nowrap;
+    padding:0;
+  }
+  .repair-page .repair-tab-button{
+    flex:0 0 auto;
+  }
+  .repair-page .records-filter-header{
+    align-items:stretch;
+    flex-direction:column;
+  }
+  .repair-page .records-filter-header .btn{
+    align-self:flex-start;
+  }
+  .repair-page .saved-records-filter-panel .records-filters{
+    grid-template-columns:1fr;
+  }
+}

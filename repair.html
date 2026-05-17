@@ -1151,7 +1151,14 @@
             </div>
           </div>
 
-          <div class="records-control-panel">
+          <div class="records-control-panel saved-records-filter-panel">
+            <div class="records-filter-header">
+              <div>
+                <h3>Filters</h3>
+                <p>Find saved repair records by truck, request, status, payment, or date.</p>
+              </div>
+              <button id="records-clear-filters-button" class="btn btn-outline" type="button">Clear Filters</button>
+            </div>
             <div class="records-filters">
               <label>
                 <span>Group</span>
@@ -1212,19 +1219,19 @@
                 <span>Date To</span>
                 <input id="records-date-to-filter" type="date">
               </label>
-              <div class="records-filter-action">
-                <button id="records-clear-filters-button" class="btn btn-outline" type="button">Clear Filters</button>
+            </div>
+            <div class="records-quick-views">
+              <span>Quick Views</span>
+              <div class="records-quick-filters" aria-label="Quick saved repair filters">
+                <button class="btn btn-outline" type="button" data-records-quick-filter="unpaid">Unpaid</button>
+                <button class="btn btn-outline" type="button" data-records-quick-filter="paid">Paid</button>
+                <button class="btn btn-outline" type="button" data-records-quick-filter="notFinished">Not Finished</button>
+                <button class="btn btn-outline" type="button" data-records-quick-filter="forDeposit">For Deposit</button>
+                <button class="btn btn-outline" type="button" data-records-quick-filter="completed">Completed</button>
               </div>
             </div>
-            <div class="records-quick-filters" aria-label="Quick saved repair filters">
-              <button class="btn btn-outline" type="button" data-records-quick-filter="unpaid">Unpaid</button>
-              <button class="btn btn-outline" type="button" data-records-quick-filter="paid">Paid</button>
-              <button class="btn btn-outline" type="button" data-records-quick-filter="notFinished">Not Finished</button>
-              <button class="btn btn-outline" type="button" data-records-quick-filter="forDeposit">For Deposit</button>
-              <button class="btn btn-outline" type="button" data-records-quick-filter="completed">Completed</button>
-            </div>
 
-            <div id="records-status" class="save-status"></div>
+            <div id="records-status" class="save-status records-muted-note"></div>
           </div>
 
           <div class="records-summary">
