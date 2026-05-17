@@ -15,6 +15,31 @@
   <style>
     .cash-edit-modal{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;background:rgba(17,24,39,.58);padding:22px}.cash-edit-modal[hidden]{display:none}.cash-edit-card{width:min(880px,96vw);max-height:90vh;overflow:auto;background:#fff;border-radius:20px;border:1px solid #e5e7eb;box-shadow:0 24px 80px rgba(0,0,0,.24)}.cash-edit-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:20px 22px;border-bottom:1px solid #eef0f3}.cash-edit-head h2{margin:0;font-size:1.25rem}.cash-edit-head p{margin:5px 0 0;color:#6b7280;font-weight:700}.cash-edit-close{border:1px solid #e5e7eb;background:#fff;border-radius:999px;width:38px;height:38px;font-size:1.2rem;cursor:pointer}.cash-edit-body{padding:20px 22px}.cash-edit-section{margin:0 0 18px}.cash-edit-section h3{margin:0 0 12px;font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:#6b7280}.cash-edit-grid{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:12px}.cash-edit-grid label{display:grid;gap:7px;font-size:.8rem;font-weight:900;color:#222}.cash-edit-grid input,.cash-edit-grid select,.cash-edit-grid textarea{width:100%;min-height:44px;border:1px solid #e5e7eb;border-radius:13px;padding:10px 12px;background:#f8f8f8;font:inherit}.cash-edit-grid textarea{min-height:84px;resize:vertical}.cash-edit-wide{grid-column:1/-1}.cash-edit-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;padding:0 22px 22px}.cash-edit-actions .btn{padding:11px 16px}.cash-row-actions button:disabled{opacity:.48;cursor:not-allowed;color:#6b7280;background:#f9fafb}@media(max-width:640px){.cash-edit-grid{grid-template-columns:1fr}.cash-edit-actions .btn{width:100%}}
   </style>
+  <style>
+    /* Cash form card redesign — scoped under .cash-form-wrap */
+    .cash-form-wrap{background:#fff;border:1px solid #d9dde5;border-radius:26px;overflow:hidden;box-shadow:0 18px 52px rgba(17,24,39,.08);margin-bottom:20px}
+    .cash-form-header{display:flex;align-items:flex-start;padding:22px 28px;min-height:72px;background:linear-gradient(135deg,#d71920,#a70f15);color:#fff}
+    .cash-form-header h3{margin:0;font-size:1.35rem;font-weight:900;letter-spacing:-.02em}
+    .cash-form-header p{margin:5px 0 0;font-size:.87rem;font-weight:600;opacity:.82;line-height:1.4}
+    .cash-form-wrap .cash-form{padding:24px 28px;gap:0}
+    .cash-form-wrap .cash-group{border:0;border-top:1px solid #eef0f3;border-radius:0;padding:20px 0;background:transparent}
+    .cash-form-wrap .cash-group:first-child{border-top:0;padding-top:0}
+    .cash-form-wrap .cash-group>h3{font-size:.7rem;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#9ca3af;margin:0 0 14px}
+    .cash-form-wrap .cash-form label{font-size:.76rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em;color:#111827;gap:8px}
+    .cash-form-wrap .cash-form input,.cash-form-wrap .cash-form select{min-height:52px;background:#fff;border:1px solid #d9dde5;border-radius:14px;padding:0 16px;font-size:.94rem;font-weight:500}
+    .cash-form-wrap .cash-form textarea{min-height:100px;padding:14px 16px;background:#fff;border:1px solid #d9dde5;border-radius:14px;font-size:.94rem;resize:vertical}
+    .cash-form-wrap .cash-form input:focus,.cash-form-wrap .cash-form select:focus,.cash-form-wrap .cash-form textarea:focus{outline:none;border-color:rgba(215,25,32,.55);box-shadow:0 0 0 4px rgba(215,25,32,.08)}
+    .cash-form-wrap .more-details{border:1px dashed #d9dde5;border-radius:14px;padding:14px 16px;background:#fafbfc;margin-top:4px}
+    .cash-form-wrap .more-details summary{font-size:.76rem;font-weight:900;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;cursor:pointer}
+    .cash-form-wrap .more-details .cash-field-grid{margin-top:14px}
+    .cash-form-wrap .cash-actions{margin-top:20px;padding-top:20px;border-top:1px solid #eef0f3}
+    .cash-form-wrap .cash-actions .btn{min-height:46px;border-radius:999px;padding:0 22px;font-weight:900}
+    .cash-message-wrap{background:#fff;border:1px solid #d9dde5;border-radius:20px;padding:20px 24px;box-shadow:0 10px 30px rgba(17,24,39,.05);margin-top:4px}
+    .cash-message-wrap .cash-status{margin:0 0 12px}
+    .cash-message-wrap .cash-message-label{margin:0 0 8px;font-size:.72rem;font-weight:900;text-transform:uppercase;letter-spacing:.07em;color:#6b7280}
+    .cash-message-wrap .cash-message{border-radius:14px;border-color:#d9dde5;background:#f9fafb}
+    @media(max-width:640px){.cash-form-wrap .cash-form{padding:18px}.cash-form-header{padding:18px 20px;min-height:62px}.cash-form-header h3{font-size:1.1rem}.cash-message-wrap{padding:16px 18px}}
+  </style>
 </head>
 <body class="cash-page">
   <header class="site-header" id="top">
@@ -73,6 +98,8 @@
         </div>
 
         <section id="diesel-tab" class="cash-tab-panel">
+          <div class="cash-form-wrap">
+            <div class="cash-form-header"><div><h3>Diesel PO</h3><p>Record diesel fuel purchase orders and deposit details</p></div></div>
           <form id="diesel-form" class="cash-form">
             <div class="cash-group"><h3>Truck Details</h3><div class="cash-field-grid"><label><span class="required-label">Date</span><input id="diesel-date" type="date"></label><label><span class="required-label">Plate Number</span><input id="diesel-plate-number" type="text" list="diesel-truck-plates"></label><label><span class="required-label">Group</span><select id="diesel-group-category" class="cash-group-select"><option>Bottle</option><option>Sugar</option><option>Preform / Resin</option><option>Caps / Crown</option><option>General / No Plate</option><option value="">Needs Update / Unknown</option></select></label><label><span>Logged By</span><input id="diesel-logged-by" type="text"></label><label><span>Driver Name</span><input id="diesel-driver-name" type="text"></label><label><span>Helper Name</span><input id="diesel-helper-name" type="text"></label></div></div>
             <div class="cash-group"><h3>Request Details</h3><div class="cash-field-grid"><label><span class="required-label">Fuel Station</span><input id="diesel-fuel-station" type="text"></label><label><span class="required-label">PO Number</span><input id="diesel-po-number" type="text"></label><label><span class="required-label">Diesel Amount</span><input id="diesel-amount" type="number" min="0" step="0.01"></label><label><span>Diesel Liters</span><input id="diesel-liters" type="number" min="0" step="0.01"></label></div></div>
@@ -81,10 +108,15 @@
             <details class="more-details"><summary>More Details</summary><div class="cash-field-grid"><label><span>Route / Trip</span><input id="diesel-route" type="text"></label><label><span>Source</span><input id="diesel-source" type="text"></label><label><span>Destination</span><input id="diesel-destination" type="text"></label><label><span>Reference</span><input id="diesel-reference" type="text"></label></div></details>
             <div class="cash-actions"><button id="save-diesel-button" class="btn btn-primary" type="button">Save PO</button><button id="generate-diesel-button" class="btn btn-outline" type="button">Generate Message</button><button id="copy-diesel-button" class="btn btn-outline" type="button">Copy</button><button id="clear-diesel-button" class="btn btn-outline" type="button">Clear</button></div>
           </form>
+          </div>
+          <div class="cash-message-wrap">
           <div id="diesel-status" class="cash-status"></div><label class="cash-message-label" for="diesel-message">Viber Message Output</label><textarea id="diesel-message" class="cash-message" readonly></textarea>
+          </div>
         </section>
 
         <section id="budget-tab" class="cash-tab-panel">
+          <div class="cash-form-wrap">
+            <div class="cash-form-header"><div><h3>Trip Budget</h3><p>Trip budgets, toll, and other logistics expense requests</p></div></div>
           <form id="budget-form" class="cash-form">
             <div class="cash-group"><h3>Truck Details</h3><div class="cash-field-grid"><label><span class="required-label">Date</span><input id="budget-date" type="date"></label><label><span class="required-label">Plate Number</span><input id="budget-plate-number" type="text" list="budget-truck-plates"></label><label><span class="required-label">Group</span><select id="budget-group-category" class="cash-group-select"><option>Bottle</option><option>Sugar</option><option>Preform / Resin</option><option>Caps / Crown</option><option>General / No Plate</option><option value="">Needs Update / Unknown</option></select></label><label><span>Logged By</span><input id="budget-logged-by" type="text"></label><label><span>Driver Name</span><input id="budget-driver-name" type="text"></label><label><span>Helper Name</span><input id="budget-helper-name" type="text"></label></div></div>
             <div class="cash-group"><h3>Request Details</h3><div class="cash-field-grid"><label><span class="required-label">Budget Amount</span><input id="budget-amount" type="number" min="0" step="0.01"></label><label><span>Budget Type</span><select id="budget-type"><option>Trip Budget</option><option>Toll Budget</option><option>Parking Budget</option><option>Passway Budget</option><option>Other Budget</option></select></label><label><span class="required-label">Source</span><input id="budget-source" type="text"></label><label><span class="required-label">Destination</span><input id="budget-destination" type="text"></label></div></div>
@@ -93,10 +125,15 @@
             <details class="more-details"><summary>More Details</summary><div class="cash-field-grid"><label><span>Shipment / DR No.</span><input id="budget-shipment-number" type="text"></label><label><span>Reference</span><input id="budget-reference" type="text"></label></div></details>
             <div class="cash-actions"><button id="save-budget-button" class="btn btn-primary" type="button">Save Budget</button><button id="generate-budget-button" class="btn btn-outline" type="button">Generate Message</button><button id="copy-budget-button" class="btn btn-outline" type="button">Copy</button><button id="clear-budget-button" class="btn btn-outline" type="button">Clear</button></div>
           </form>
+          </div>
+          <div class="cash-message-wrap">
           <div id="budget-status" class="cash-status"></div><label class="cash-message-label" for="budget-message">Viber Message Output</label><textarea id="budget-message" class="cash-message" readonly></textarea>
+          </div>
         </section>
 
         <section id="bali-tab" class="cash-tab-panel">
+          <div class="cash-form-wrap">
+            <div class="cash-form-header"><div><h3>Bali / Cash Advance</h3><p>Cash advance and Bali requests for drivers and personnel</p></div></div>
           <form id="bali-form" class="cash-form">
             <div class="cash-group"><h3>Truck Details</h3><div class="cash-field-grid"><label><span class="required-label">Date</span><input id="bali-date" type="date"></label><label><span>Plate Number</span><input id="bali-plate-number" type="text" list="bali-truck-plates" placeholder="Plate or No Plate / Not Available"></label><label><span>Group</span><select id="bali-group-category" class="cash-group-select"><option>Bottle</option><option>Sugar</option><option>Preform / Resin</option><option>Caps / Crown</option><option>General / No Plate</option><option value="">Needs Update / Unknown</option></select></label><label><span>Driver Name</span><input id="bali-driver-name" type="text"></label><label><span>Helper Name</span><input id="bali-helper-name" type="text"></label></div></div>
             <div class="cash-group"><h3>Request Details</h3><div class="cash-field-grid"><label><span class="required-label">Role</span><select id="bali-person-type" class="cash-role-select"></select></label><label><span class="required-label">Person Name</span><input id="bali-person-name" type="text"></label><label><span class="required-label">New Bali Amount</span><input id="bali-amount" type="number" min="0" step="0.01"></label><label class="wide-field"><span class="required-label">Reason / Notes</span><textarea id="bali-reason" rows="2"></textarea></label></div></div>
@@ -105,7 +142,10 @@
             <details class="more-details"><summary>More Details</summary><div class="cash-field-grid"><label><span>Current Balance</span><input id="bali-current-balance" type="number" min="0" step="0.01"></label><label><span>Approved By</span><input id="bali-approved-by" type="text"></label><label><span>Reference</span><input id="bali-reference" type="text"></label><label><span>Payment Date</span><input id="bali-payment-date" type="date"></label></div></details>
             <div class="cash-actions"><button id="save-bali-button" class="btn btn-primary" type="button">Save Bali</button><button id="generate-bali-button" class="btn btn-outline" type="button">Generate Message</button><button id="copy-bali-button" class="btn btn-outline" type="button">Copy</button><button id="clear-bali-button" class="btn btn-outline" type="button">Clear</button></div>
           </form>
+          </div>
+          <div class="cash-message-wrap">
           <div id="bali-status" class="cash-status"></div><label class="cash-message-label" for="bali-message">Viber Message Output</label><textarea id="bali-message" class="cash-message" readonly></textarea>
+          </div>
         </section>
 
         <section id="records-tab" class="cash-tab-panel cash-records-card active">
