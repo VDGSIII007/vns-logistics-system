@@ -97,7 +97,7 @@ export function countRepairPending(input) {
   return extractRepairRows(input).rows.filter(isRepairPending).length;
 }
 
-async function fetchRepairSource(env) {
+export async function fetchRepairSource(env) {
   if (!env.REPAIR_WEB_APP_URL) throw new Error("REPAIR_WEB_APP_URL is not configured");
 
   const url = new URL(env.REPAIR_WEB_APP_URL);

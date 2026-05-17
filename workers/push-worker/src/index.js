@@ -5,6 +5,10 @@ import {
   runApprovalPushCheck
 } from "./approval-checker.js";
 import { debugCashSource } from "./checkers/cash.js";
+import {
+  debugPaymentQueueSources,
+  runPaymentQueuePushCheck
+} from "./checkers/payment-queue.js";
 import { debugRepairSource } from "./checkers/repair.js";
 import {
   deleteSubscriptionByEndpoint,
@@ -136,6 +140,26 @@ async function handleDebugSources(env) {
   });
 }
 
+async function handleDebugPaymentQueue(env) {
+  return jsonResponse({
+    ok: true,
+    paymentQueue: await debugPaymentQueueSources(env)
+  });
+}
+
+async function handleRunPaymentCheck(env) {
+  if (!kvReady(env)) return jsonResponse({ ok: false, error: "KV binding is not configured" }, 500);
+
+  try {
+    return jsonResponse(await runPaymentQueuePushCheck(env));
+  } catch (error) {
+    return jsonResponse({
+      ok: false,
+      error: error?.message || "Payment queue checker failed"
+    }, 500);
+  }
+}
+
 async function handleAcknowledge(request, env) {
   if (!kvReady(env)) return jsonResponse({ ok: false, error: "KV binding is not configured" }, 500);
 
@@ -154,10 +178,12 @@ async function routeRequest(request, env) {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/api/push/check") return handleCheck(env);
   if (request.method === "GET" && url.pathname === "/api/push/debug-sources") return handleDebugSources(env);
+  if (request.method === "GET" && url.pathname === "/api/push/debug-payment-queue") return handleDebugPaymentQueue(env);
   if (request.method === "POST" && url.pathname === "/api/push/subscribe") return handleSubscribe(request, env);
   if (request.method === "POST" && url.pathname === "/api/push/unsubscribe") return handleUnsubscribe(request, env);
   if (request.method === "POST" && url.pathname === "/api/push/test") return handleTest(request, env);
   if (request.method === "POST" && url.pathname === "/api/push/run-check") return handleRunCheck(env);
+  if (request.method === "POST" && url.pathname === "/api/push/run-payment-check") return handleRunPaymentCheck(env);
   if (request.method === "POST" && url.pathname === "/api/push/acknowledge") return handleAcknowledge(request, env);
   return jsonResponse({ ok: false, error: "Not found" }, 404);
 }
@@ -168,6 +194,21 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runApprovalPushCheck(env));
+    ctx.waitUntil(runScheduledChecks(env));
   }
 };
+
+async function runScheduledChecks(env) {
+  await Promise.all([
+    safeScheduledCheck(() => runApprovalPushCheck(env)),
+    safeScheduledCheck(() => runPaymentQueuePushCheck(env))
+  ]);
+}
+
+async function safeScheduledCheck(checker) {
+  try {
+    await checker();
+  } catch (error) {
+    console.warn("VNS push scheduled checker failed.", error);
+  }
+}

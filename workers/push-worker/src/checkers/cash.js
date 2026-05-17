@@ -87,7 +87,7 @@ export function countCashPending(input) {
   return extractCashRows(input).rows.filter(isCashPending).length;
 }
 
-async function fetchCashSource(env) {
+export async function fetchCashSource(env) {
   if (!env.CASH_APP_SCRIPT_URL) throw new Error("CASH_APP_SCRIPT_URL is not configured");
   if (!env.CASH_SYNC_KEY) throw new Error("CASH_SYNC_KEY is not configured");
 

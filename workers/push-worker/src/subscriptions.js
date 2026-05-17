@@ -55,19 +55,21 @@ export async function deleteSubscriptionByEndpoint(kv, endpoint) {
   return hash;
 }
 
-export async function listTargetSubscriptions(kv) {
+export async function listSubscriptionsByRoles(kv, roles) {
   const records = [];
   let cursor;
+  const allowedRoles = new Set(roles.map(role => String(role).trim().toLowerCase()));
 
   do {
     const page = await kv.list({ prefix: "push:sub:", cursor });
     await Promise.all(page.keys.map(async item => {
       const record = await kv.get(item.name, "json");
       const role = String(record?.role || "").trim().toLowerCase();
+      // TODO: restrict payment queue push by Cloudflare Access email identity once subscription identity is available.
       if (
         record?.subscription &&
         record.enabled === true &&
-        (role === "admin" || role === "mother" || role === "approver")
+        allowedRoles.has(role)
       ) {
         records.push(record);
       }
@@ -76,4 +78,8 @@ export async function listTargetSubscriptions(kv) {
   } while (cursor);
 
   return records;
+}
+
+export async function listTargetSubscriptions(kv) {
+  return listSubscriptionsByRoles(kv, ["Admin", "Mother", "Approver"]);
 }
