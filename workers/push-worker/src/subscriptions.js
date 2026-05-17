@@ -54,3 +54,26 @@ export async function deleteSubscriptionByEndpoint(kv, endpoint) {
   await kv.delete(subscriptionKey(hash));
   return hash;
 }
+
+export async function listTargetSubscriptions(kv) {
+  const records = [];
+  let cursor;
+
+  do {
+    const page = await kv.list({ prefix: "push:sub:", cursor });
+    await Promise.all(page.keys.map(async item => {
+      const record = await kv.get(item.name, "json");
+      const role = String(record?.role || "").trim().toLowerCase();
+      if (
+        record?.subscription &&
+        record.enabled === true &&
+        (role === "admin" || role === "mother" || role === "approver")
+      ) {
+        records.push(record);
+      }
+    }));
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+
+  return records;
+}

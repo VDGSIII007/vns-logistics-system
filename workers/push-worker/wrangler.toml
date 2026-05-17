@@ -2,9 +2,14 @@ name = "vns-push-worker"
 main = "src/index.js"
 compatibility_date = "2025-12-01"
 
+[triggers]
+crons = ["*/5 * * * *"]
+
 [vars]
 VAPID_PUBLIC_KEY = "BJ5cF8jZG2rfx0tdWiKx19uVrM3c33b6k5sSUUzuDK90sN0v1KjUllYPPSJvfbkpyzUGSfdLdzVSwyWZDtt50ik"
 VAPID_SUBJECT = "mailto:admin@vns-logistics.com"
+CASH_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyu1N444S_vthjIoxcy081CdDZJuy6EwHt5ktKU42U4qNY_HL4F2HHKEQl6HDSZZItf/exec"
+REPAIR_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzSxpVjoHxkXo95FIJL6MBWFsHQBaRbWU-AabblQ1e15jSJpYZTmA4rc41g3uTH2j_x5w/exec"
 
 [[kv_namespaces]]
 binding = "VNS_PUSH_SUBSCRIPTIONS"

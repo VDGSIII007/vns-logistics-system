@@ -1,4 +1,9 @@
 import {
+  runApprovalPushCheck
+} from "./approval-checker.js";
+import { debugCashSource } from "./checkers/cash.js";
+import { debugRepairSource } from "./checkers/repair.js";
+import {
   deleteSubscriptionByEndpoint,
   endpointHash,
   getSubscriptionByEndpoint,
@@ -100,17 +105,49 @@ async function handleTest(request, env) {
   return jsonResponse({ ok: true, sent: 1, failed: 0 });
 }
 
+async function handleRunCheck(env) {
+  if (!kvReady(env)) return jsonResponse({ ok: false, error: "KV binding is not configured" }, 500);
+
+  try {
+    return jsonResponse(await runApprovalPushCheck(env));
+  } catch (error) {
+    return jsonResponse({
+      ok: false,
+      error: error?.message || "Approval checker failed"
+    }, 500);
+  }
+}
+
+async function handleDebugSources(env) {
+  const [cash, repair] = await Promise.all([
+    debugCashSource(env),
+    debugRepairSource(env)
+  ]);
+
+  return jsonResponse({
+    ok: true,
+    cash,
+    repair
+  });
+}
+
 async function routeRequest(request, env) {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/api/push/check") return handleCheck(env);
+  if (request.method === "GET" && url.pathname === "/api/push/debug-sources") return handleDebugSources(env);
   if (request.method === "POST" && url.pathname === "/api/push/subscribe") return handleSubscribe(request, env);
   if (request.method === "POST" && url.pathname === "/api/push/unsubscribe") return handleUnsubscribe(request, env);
   if (request.method === "POST" && url.pathname === "/api/push/test") return handleTest(request, env);
+  if (request.method === "POST" && url.pathname === "/api/push/run-check") return handleRunCheck(env);
   return jsonResponse({ ok: false, error: "Not found" }, 404);
 }
 
 export default {
   fetch(request, env) {
     return routeRequest(request, env);
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runApprovalPushCheck(env));
   }
 };
