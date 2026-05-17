@@ -2535,9 +2535,8 @@ async function loadSavedRepairRecords() {
   savedRecordsBody.innerHTML = '<tr><td colspan="22" class="empty">Loading saved repair records...</td></tr>';
 
   try {
-    const response = await fetch(`${REPAIR_WEB_APP_URL}?action=list`);
-    const data = await response.json();
-    const cloudRecords = normalizeSavedRecords(data);
+    const cloudRecords = await loadRepairRecordsFromSupabase();
+    console.log('Repair data source: Supabase');
     savedRepairRecords = cloudRecords;
     todayRepairRecords = cloudRecords;
     logTodayRepairDebug(todayRepairRecords);
@@ -2546,13 +2545,41 @@ async function loadSavedRepairRecords() {
       recordsStatus.textContent = `Loaded ${savedRepairRecords.length} saved record${savedRepairRecords.length === 1 ? '' : 's'}.`;
     }
   } catch (error) {
-    todayRepairRecords = savedRepairRecords.length ? savedRepairRecords : [];
-    logTodayRepairDebug(todayRepairRecords);
-    renderTodayRepairRequests();
-    updateRecordsSummary([]);
-    savedRecordsBody.innerHTML = '<tr><td colspan="22" class="empty">Unable to load saved records. Please try again.</td></tr>';
-    recordsStatus.textContent = 'Error loading saved records.';
+    console.warn('Repair Supabase list failed; trying Google Sheets fallback', error);
+    try {
+      const cloudRecords = await loadRepairRecordsFromGoogleSheets();
+      console.log('Repair data source: Google Sheets fallback');
+      savedRepairRecords = cloudRecords;
+      todayRepairRecords = cloudRecords;
+      logTodayRepairDebug(todayRepairRecords);
+      renderSavedRecords();
+      if (!hiddenMisalignedRecordCount) {
+        recordsStatus.textContent = `Loaded ${savedRepairRecords.length} saved record${savedRepairRecords.length === 1 ? '' : 's'}.`;
+      }
+    } catch (fallbackError) {
+      todayRepairRecords = savedRepairRecords.length ? savedRepairRecords : [];
+      logTodayRepairDebug(todayRepairRecords);
+      renderTodayRepairRequests();
+      updateRecordsSummary([]);
+      savedRecordsBody.innerHTML = '<tr><td colspan="22" class="empty">Unable to load saved records. Please try again.</td></tr>';
+      recordsStatus.textContent = 'Error loading saved records.';
+    }
   }
+}
+
+async function loadRepairRecordsFromSupabase() {
+  const response = await fetch('/api/repair/list?limit=500');
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.ok) {
+    throw new Error(data?.error || `Supabase repair list failed (${response.status})`);
+  }
+  return normalizeSavedRecords(data);
+}
+
+async function loadRepairRecordsFromGoogleSheets() {
+  const response = await fetch(`${REPAIR_WEB_APP_URL}?action=list`);
+  const data = await response.json();
+  return normalizeSavedRecords(data);
 }
 
 async function updateSavedRecordStatus(recordIndex, button) {
@@ -3341,39 +3368,108 @@ async function saveRepairRows(rows, sourceMessage, statusElement, emptyMessage, 
     return false;
   }
 
-  console.log('[Repair] Syncing', dataToSend.length, 'record(s) to cloud...');
+  console.log('[Repair] Saving', dataToSend.length, 'record(s) to Supabase...');
   if (statusElement === saveStatus) {
-    setParsedSaveStatus('Saved locally. Syncing to cloud...', 'save-status-saving');
+    setParsedSaveStatus('Saving repair request...', 'save-status-saving');
   } else {
-    statusElement.textContent = 'Saved locally. Syncing to cloud...';
+    statusElement.textContent = 'Saving repair request...';
   }
 
   try {
-    await fetch(REPAIR_WEB_APP_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8"
-      },
-      body: JSON.stringify(dataToSend)
-    });
-    console.log('[Repair] Sync success:', dataToSend.length, 'record(s) sent.');
+    await saveRepairRowsToSupabase(dataToSend);
+    console.log('Repair saved to Supabase');
     if (statusElement === saveStatus) {
-      setParsedSaveStatus('Saved locally and synced to cloud.', 'save-status-success');
+      setParsedSaveStatus(successMessage || 'Saved successfully.', 'save-status-success');
     } else {
-      statusElement.textContent = 'Saved locally and synced to cloud.';
+      statusElement.textContent = successMessage || 'Saved successfully.';
+    }
+    loadSavedRepairRecords();
+    backupRepairRowsToGoogleSheets(dataToSend);
+    return true;
+  } catch (supabaseError) {
+    console.warn('Repair Supabase save failed; falling back to Google Sheets', supabaseError);
+  }
+
+  try {
+    await saveRepairRowsToGoogleSheets(dataToSend);
+    console.log('Repair saved to Google Sheets fallback');
+    if (statusElement === saveStatus) {
+      setParsedSaveStatus(successMessage || 'Saved successfully.', 'save-status-success');
+    } else {
+      statusElement.textContent = successMessage || 'Saved successfully.';
     }
     loadSavedRepairRecords();
     return true;
-  } catch (error) {
-    console.error('[Repair] Sync failed:', error);
+  } catch (sheetsError) {
+    console.error('[Repair] Supabase and Google Sheets save failed:', sheetsError);
     if (statusElement === saveStatus) {
-      setParsedSaveStatus('Saved locally. Cloud sync failed.', 'save-status-error');
+      setParsedSaveStatus('Save failed. Please try again.', 'save-status-error');
     } else {
-      statusElement.textContent = 'Saved locally. Cloud sync failed.';
+      statusElement.textContent = 'Save failed. Please try again.';
     }
     return false;
   }
+}
+
+async function saveRepairRowsToSupabase(records) {
+  const response = await fetch('/api/repair/create', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ records })
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result?.ok) {
+    throw new Error(result?.error || `Supabase repair save failed (${response.status})`);
+  }
+  return result;
+}
+
+async function saveRepairRowsToGoogleSheets(records) {
+  await fetch(REPAIR_WEB_APP_URL, {
+    method: "POST",
+    mode: "no-cors",
+    headers: {
+      "Content-Type": "text/plain;charset=utf-8"
+    },
+    body: JSON.stringify(records)
+  });
+}
+
+function backupRepairRowsToGoogleSheets(records) {
+  console.log('Repair Google Sheets backup started');
+  saveRepairRowsToGoogleSheets(records)
+    .then(async () => {
+      console.log('Repair Google Sheets backup succeeded');
+      await updateRepairBackupStatuses(records, 'synced');
+    })
+    .catch(async error => {
+      console.warn('Repair Google Sheets backup failed', error);
+      await updateRepairBackupStatuses(records, 'failed', error?.message || 'Google Sheets backup failed');
+    });
+}
+
+async function updateRepairBackupStatuses(records, backupStatus, backupError = '') {
+  await Promise.all(records.map(async record => {
+    const requestId = record?.Request_ID || record?.request_id;
+    if (!requestId) return;
+    try {
+      await fetch('/api/repair/backup-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          request_id: requestId,
+          backup_status: backupStatus,
+          backup_error: backupError
+        })
+      });
+    } catch (error) {
+      console.warn('Repair backup status update failed', error);
+    }
+  }));
 }
 
 function buildCompletedRepairPayload(row) {

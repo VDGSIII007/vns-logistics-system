@@ -18,6 +18,11 @@ import {
   saveSubscription,
   subscriptionKey
 } from "./subscriptions.js";
+import {
+  listRepairRequestsFromSupabase,
+  updateRepairBackupStatus,
+  upsertRepairRequestToSupabase
+} from "./repair-api.js";
 import { sendWebPush } from "./webpush.js";
 
 const JSON_HEADERS = {
@@ -204,8 +209,58 @@ async function handleAcknowledge(request, env) {
   }
 }
 
+async function handleRepairCreate(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
+
+  const result = await upsertRepairRequestToSupabase(env, input);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Repair save failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse({
+    ok: true,
+    request_id: result.request_id,
+    count: result.count,
+    source: result.source
+  });
+}
+
+async function handleRepairList(url, env) {
+  const result = await listRepairRequestsFromSupabase(env, url.searchParams);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Repair list failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse(result);
+}
+
+async function handleRepairBackupStatus(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
+
+  const result = await updateRepairBackupStatus(env, input);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Backup status update failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse(result);
+}
+
 async function routeRequest(request, env) {
   const url = new URL(request.url);
+  if (request.method === "POST" && url.pathname === "/api/repair/create") return handleRepairCreate(request, env);
+  if (request.method === "GET" && url.pathname === "/api/repair/list") return handleRepairList(url, env);
+  if (request.method === "POST" && url.pathname === "/api/repair/backup-status") return handleRepairBackupStatus(request, env);
   if (request.method === "GET" && url.pathname === "/api/push/check") return handleCheck(env);
   if (request.method === "GET" && url.pathname === "/api/push/debug-sources") return handleDebugSources(env);
   if (request.method === "GET" && url.pathname === "/api/push/debug-payment-queue") return handleDebugPaymentQueue(env);
