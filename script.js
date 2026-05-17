@@ -109,6 +109,7 @@ const forRepairLocalStatus = document.getElementById('for-repair-local-status');
 const forRepairLocalBody = document.getElementById('for-repair-local-body');
 
 let savedRepairRecords = [];
+let todayRepairRecords = [];
 let hiddenMisalignedRecordCount = 0;
 let garageTruckRecords = [];
 let garageTruckSearchQuery = '';
@@ -1210,7 +1211,11 @@ function buildRepairPayload(rows, sourceMessage, createdAt, paymentMessage) {
 function normalizeSavedRecords(data) {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data.records)) return data.records;
+  if (Array.isArray(data.entries)) return data.entries;
   if (Array.isArray(data.data)) return data.data;
+  if (Array.isArray(data.items)) return data.items;
+  if (Array.isArray(data.rows)) return data.rows;
+  if (Array.isArray(data.result)) return data.result;
   return [];
 }
 
@@ -2205,7 +2210,10 @@ function normalizeDateForFilter(dateValue) {
 
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return '';
-  return parsed.toISOString().slice(0, 10);
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function getRepairRecordDateByType(record, dateType = 'dateRequested') {
@@ -2330,15 +2338,31 @@ function todayDateKey() {
   return `${year}-${month}-${day}`;
 }
 
+function todayRepairDateValues(record) {
+  return ['Date_Requested', 'Created_At', 'Last_Updated', 'Date_Finished']
+    .map(key => getRecordValue(record, key))
+    .filter(value => String(value || '').trim());
+}
+
 function isTodayRepairRecord(record) {
   const today = todayDateKey();
-  return ['Date_Requested', 'Created_At', 'Last_Updated'].some(key => normalizeDateForFilter(getRecordValue(record, key)) === today);
+  return todayRepairDateValues(record).some(value => normalizeDateForFilter(value) === today);
 }
 
 function isActiveRepairRecord(record) {
   if (!record || String(getRecordValue(record, 'Is_Deleted')).toUpperCase() === 'TRUE') return false;
   const status = normalizeStatusFilterValue(getRecordValue(record, 'Status'));
   return status !== 'deleted' && status !== 'cancelled' && status !== 'canceled';
+}
+
+function logTodayRepairDebug(records) {
+  const filtered = records.filter(record => isActiveRepairRecord(record) && isTodayRepairRecord(record));
+  const sampleDates = records
+    .flatMap(todayRepairDateValues)
+    .slice(0, 12);
+  console.log('Today repair cloud records loaded', records.length);
+  console.log('Today repair records after date filter', filtered.length);
+  console.log('Today repair sample dates', sampleDates);
 }
 
 function todayRepairAmount(record) {
@@ -2353,8 +2377,7 @@ function todayRepairAmount(record) {
 
 function getTodayRepairRecords() {
   const deletedIds = readRepairDeletedIds();
-  return savedRepairRecords.filter(record =>
-    !isMisalignedSavedRecord(record) &&
+  return todayRepairRecords.filter(record =>
     !deletedIds.has(getRepairRecordId(record)) &&
     isActiveRepairRecord(record) &&
     isTodayRepairRecord(record)
@@ -2376,9 +2399,10 @@ function renderTodayRepairRequests() {
   }
 
   todayRepairRecordsBody.innerHTML = records.map(record => {
-    const recordIndex = savedRepairRecords.indexOf(record);
+    const recordIndex = todayRepairRecords.indexOf(record);
     const date = getRepairRecordDateByType(record, 'dateRequested') ||
       getRepairRecordDateByType(record, 'createdAt') ||
+      normalizeDateForFilter(getRecordValue(record, 'Date_Finished')) ||
       normalizeDateForFilter(getRecordValue(record, 'Last_Updated'));
     const details = getRecordValue(record, 'Repair_Parts') ||
       getRecordValue(record, 'Work_Done') ||
@@ -2473,13 +2497,17 @@ async function loadSavedRepairRecords() {
   try {
     const response = await fetch(`${REPAIR_WEB_APP_URL}?action=list`);
     const data = await response.json();
-    savedRepairRecords = normalizeSavedRecords(data);
+    const cloudRecords = normalizeSavedRecords(data);
+    savedRepairRecords = cloudRecords;
+    todayRepairRecords = cloudRecords;
+    logTodayRepairDebug(todayRepairRecords);
     renderSavedRecords();
     if (!hiddenMisalignedRecordCount) {
       recordsStatus.textContent = `Loaded ${savedRepairRecords.length} saved record${savedRepairRecords.length === 1 ? '' : 's'}.`;
     }
   } catch (error) {
-    savedRepairRecords = [];
+    todayRepairRecords = savedRepairRecords.length ? savedRepairRecords : [];
+    logTodayRepairDebug(todayRepairRecords);
     renderTodayRepairRequests();
     updateRecordsSummary([]);
     savedRecordsBody.innerHTML = '<tr><td colspan="22" class="empty">Unable to load saved records. Please try again.</td></tr>';
@@ -3802,7 +3830,7 @@ if (todayRepairRecordsBody) {
   todayRepairRecordsBody.addEventListener('click', event => {
     const detailsButton = event.target.closest('[data-today-record-index]');
     if (!detailsButton) return;
-    const record = savedRepairRecords[Number(detailsButton.dataset.todayRecordIndex)];
+    const record = todayRepairRecords[Number(detailsButton.dataset.todayRecordIndex)];
     if (record) showRecordDetails(record);
   });
 }
