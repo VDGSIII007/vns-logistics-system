@@ -9,6 +9,7 @@ const STORAGE_KEYS = {
 };
 const CASH_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyu1N444S_vthjIoxcy081CdDZJuy6EwHt5ktKU42U4qNY_HL4F2HHKEQl6HDSZZItf/exec";
 const CASH_SYNC_KEY = "vns-cash-sync-2026-Jay";
+const REPAIR_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzSxpVjoHxkXo95FIJL6MBWFsHQBaRbWU-AabblQ1e15jSJpYZTmA4rc41g3uTH2j_x5w/exec";
 
 const PAYMENT_READY_STATUSES = [
   "approved",
@@ -147,6 +148,38 @@ function isPaymentUnpaid(record, allowed = ["", "unpaid", "for payment"]) {
   return !paymentStatus || allowed.includes(paymentStatus) || paymentStatus !== "paid";
 }
 
+function isRepairPaymentReady(record) {
+  if (record?.isDeleted || String(record?.Is_Deleted || "").trim().toLowerCase() === "true") return false;
+
+  const statuses = valuesFrom(record, [
+    "Approval_Status",
+    "approvalStatus",
+    "Status",
+    "status",
+    "Repair_Status",
+    "repairStatus",
+    "Payment_Status",
+    "paymentStatus"
+  ]);
+  if (statuses.some(value => statusMatches(value, PAYMENT_FINAL_STATUSES))) return false;
+
+  const approvalStatus = normalizedValue(record, ["Approval_Status", "approvalStatus"]);
+  const status = normalizedValue(record, ["Status", "status"]);
+  const paymentStatus = normalizedValue(record, ["Payment_Status", "paymentStatus"]);
+  const approvedForPayment = [approvalStatus, status].some(value => statusMatches(value, [
+    "approved",
+    "for payment",
+    "for release",
+    "ready for payment",
+    "ready for release"
+  ]));
+  const unpaidPaymentStatus = !paymentStatus && status === "approved"
+    ? true
+    : statusMatches(paymentStatus, ["unpaid", "pending payment", "for payment", "ready for payment"]);
+
+  return approvedForPayment && unpaidPaymentStatus;
+}
+
 function isApprovedForPayment(type, record) {
   if (isPaid(record) || record?.isDeleted) return false;
   const status = normalizedValue(record, ["status", "Status"]);
@@ -162,6 +195,7 @@ function isApprovedForPayment(type, record) {
     if (statuses.some(value => statusMatches(value, PAYMENT_FINAL_STATUSES))) return false;
     return statuses.some(value => statusMatches(value, PAYMENT_READY_STATUSES)) && isPaymentUnpaid(record);
   }
+  if (type === "repair") return isRepairPaymentReady(record);
   return (status === "approved" || approvalStatus === "approved") && isPaymentUnpaid(record, ["", "unpaid", "for deposit"]);
 }
 
@@ -170,14 +204,37 @@ function paymentStatusLabel(record) {
   return text(valueFrom(record, ["paymentStatus", "Payment_Status"]), "For Payment");
 }
 
+function approvalStatusLabel(record) {
+  return text(valueFrom(record, ["Approval_Status", "approvalStatus", "Review_Status", "reviewStatus", "Status", "status"]), "Approved");
+}
+
+function repairRequestType(record) {
+  return text(record.Request_Type || record.requestType || record.Category || record.category || record.type || record.Type, "Repair / Labor");
+}
+
+function repairDetails(record) {
+  return text(record.Work_Done || record.workDone || record.Repair_Issue || record.repairIssue || record.Repair_Parts || record.repairParts || record.Parts_Item || record.partsItem || record.Description || record.description || record.Remarks || record.remarks, "View details");
+}
+
+function cashRequestType(record) {
+  return text(record.Transaction_Type || record.transactionType || record.Request_Type || record.requestType || record.Type || record.type || record.cashType, "Cash / PO / Bali");
+}
+
+function cashDetails(record) {
+  return text(record.Description || record.description || record.Reason || record.reason || record.Remarks || record.remarks || record.Source_Message || record.sourceMessage || record.Route || record.route, "View details");
+}
+
 function makeItem(type, module, record, fallbackId) {
   const common = {
     source: module,
     type,
     raw: record,
-    id: text(record.id || record.referenceId || record.Reference_ID || record.poNumber || record.PO_Number || fallbackId),
+    id: text(record.Request_ID || record.requestId || record.Repair_Record_ID || record.repairRecordId || record.Record_ID || record.Cash_ID || record.id || record.referenceId || record.Reference_ID || record.poNumber || record.PO_Number || fallbackId),
     plate: text(record.plateNumber || record.Plate_Number || record.plate || record.truckPlate, "No Plate"),
     group: normalizeGroup(record.groupCategory || record.Group_Category || record.plateGroup || record.group),
+    requestType: module,
+    details: text(record.description || record.Description || record.remarks || record.Remarks, "View details"),
+    approvalStatus: approvalStatusLabel(record),
     status: paymentStatusLabel(record),
     paid: isPaid(record)
   };
@@ -186,6 +243,8 @@ function makeItem(type, module, record, fallbackId) {
     return {
       ...common,
       payee: text([record.driverName || record.Driver_Name, record.helperName || record.Helper_Name].filter(Boolean).join(" / ")),
+      requestType: "Payroll",
+      details: text(record.payrollNumber || record.Payroll_Number || record.Liquidation_Number || record.remarks || record.Remarks, "Payroll liquidation"),
       date: record.date || record.payrollDate || record.Liquidation_Date || record.cutoffEnd || record.Period_End || record.createdAt,
       amount: (Number(record.driverNetPay || record.Driver_Net_Pay || record.totals?.driverNetPay) || 0) +
         (Number(record.helperNetPay || record.Helper_Net_Pay || record.totals?.helperNetPay) || 0)
@@ -196,20 +255,24 @@ function makeItem(type, module, record, fallbackId) {
     return {
       ...common,
       payee: text(record.payee || record.Payee || record.mechanic || record.shopName || record.supplierName || record.requestedBy),
-      date: record.dateRequested || record.Date_Requested || record.date || record.timestamp || record.createdAt,
-      amount: Number(record.totalCost || record.Total_Cost || record.finalCost || record.Final_Cost || record.laborCost || record.partsCost) || 0
+      requestType: repairRequestType(record),
+      details: repairDetails(record),
+      date: record.dateRequested || record.Date_Requested || record.Date_Finished || record.date || record.timestamp || record.createdAt || record.Created_At,
+      amount: Number(record.Final_Cost || record.finalCost || record.Approved_Cost || record.approvedCost || record.Total_Cost || record.totalCost || record.Labor_Cost || record.laborCost || record.Parts_Cost || record.partsCost || record.Original_Total_Cost || record.originalTotalCost) || 0
     };
   }
 
   return {
     ...common,
     payee: text(record.personName || record.Person_Name || record.payee || record.Payee || record.supplierName || record.driverName || record.receiverName || record.fuelStation),
+    requestType: cashRequestType(record),
+    details: cashDetails(record),
     date: record.date || record.Date || record.createdAt || record.Created_At || record.timestamp,
     amount: Number(record.amount || record.Amount || record.budgetAmount || record.Budget_Amount || record.Diesel_Amount || record.totalAmount) || 0
   };
 }
 
-function normalizeCashListResponse(data) {
+function normalizeListResponse(data) {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.entries)) return data.entries;
   if (Array.isArray(data?.records)) return data.records;
@@ -219,6 +282,8 @@ function normalizeCashListResponse(data) {
   if (Array.isArray(data?.result)) return data.result;
   return [];
 }
+
+const normalizeCashListResponse = normalizeListResponse;
 
 async function loadCloudCashRecords() {
   const params = new URLSearchParams({
@@ -242,6 +307,21 @@ function loadLocalCashRecords() {
   ];
 }
 
+async function loadCloudRepairRecords() {
+  const response = await fetch(`${REPAIR_WEB_APP_URL}?action=list`);
+  if (!response.ok) throw new Error(`Repair list failed: ${response.status}`);
+  const data = await response.json();
+  if (data && data.ok === false) throw new Error(data.error || data.message || "Repair list returned an error.");
+  if (data && data.success === false) throw new Error(data.error || data.message || "Repair list returned an error.");
+  const records = normalizeListResponse(data).filter(record => record && typeof record === "object");
+  console.log("Payment Queue cloud repair records loaded", records.length);
+  return records;
+}
+
+function loadLocalRepairRecords() {
+  return readJson(STORAGE_KEYS.repair);
+}
+
 async function loadCashPaymentItems() {
   let records;
   try {
@@ -256,16 +336,29 @@ async function loadCashPaymentItems() {
   return approved.map((record, index) => makeItem("cash", "Cash / PO / Bali", record, `CASH-${index + 1}`));
 }
 
+async function loadRepairPaymentItems() {
+  let records;
+  try {
+    records = await loadCloudRepairRecords();
+  } catch (error) {
+    console.warn("Payment Queue repair cloud load failed; using local fallback.", error);
+    records = loadLocalRepairRecords();
+  }
+
+  const approved = records.filter(record => record && (isRepairPaymentReady(record) || isPaid(record)));
+  console.log("Payment Queue approved repair records", approved.filter(record => !isPaid(record)).length);
+  return approved.map((record, index) => makeItem("repair", "Repair / Labor", record, `REP-${index + 1}`));
+}
+
 async function loadItems() {
   const payroll = readJson(STORAGE_KEYS.payroll)
     .filter(record => record && !record.isDeleted && (isApprovedForPayment("payroll", record) || isPaid(record)))
     .map((record, index) => makeItem("payroll", "Payroll", record, `PAY-${index + 1}`));
 
-  const repair = readJson(STORAGE_KEYS.repair)
-    .filter(record => record && !record.isDeleted && (isApprovedForPayment("repair", record) || isPaid(record)))
-    .map((record, index) => makeItem("repair", "Repair / Labor", record, `REP-${index + 1}`));
-
-  const cash = await loadCashPaymentItems();
+  const [cash, repair] = await Promise.all([
+    loadCashPaymentItems(),
+    loadRepairPaymentItems()
+  ]);
 
   state.items = [...payroll, ...cash, ...repair];
 }
@@ -280,7 +373,7 @@ function applyFilters() {
   if (state.type !== "all") list = list.filter(item => item.type === state.type);
   if (state.group !== "all") list = list.filter(item => item.group === state.group);
   if (query) {
-    list = list.filter(item => [item.source, item.id, item.plate, item.group, item.payee, item.status]
+    list = list.filter(item => [item.source, item.id, item.plate, item.group, item.requestType, item.details, item.payee, item.approvalStatus, item.status]
       .join(" ")
       .toLowerCase()
       .includes(query));
@@ -326,13 +419,14 @@ function renderSummary() {
 function rowHtml(item, index) {
   return `
     <tr>
-      <td><span class="ops-pill">${escapeHtml(item.source)}</span></td>
+      <td>${escapeHtml(formatDate(item.date))}</td>
       <td class="ops-mono">${escapeHtml(item.id)}</td>
       <td>${escapeHtml(item.plate)}</td>
-      <td>${escapeHtml(item.group)}</td>
+      <td><span class="ops-pill">${escapeHtml(item.requestType)}</span></td>
+      <td>${escapeHtml(item.details)}</td>
       <td>${escapeHtml(item.payee)}</td>
-      <td>${escapeHtml(formatDate(item.date))}</td>
       <td class="ops-amount">${escapeHtml(money(item.amount))}</td>
+      <td>${escapeHtml(item.approvalStatus)}</td>
       <td>${escapeHtml(item.status)}</td>
       <td class="ops-actions">
         <button type="button" class="ops-secondary-btn" data-detail="${index}">View Details</button>
@@ -353,9 +447,11 @@ function cardHtml(item, index) {
       <dl>
         <div><dt>Reference ID</dt><dd>${escapeHtml(item.id)}</dd></div>
         <div><dt>Plate / No Plate</dt><dd>${escapeHtml(item.plate)}</dd></div>
-        <div><dt>Group</dt><dd>${escapeHtml(item.group)}</dd></div>
+        <div><dt>Request Type</dt><dd>${escapeHtml(item.requestType)}</dd></div>
+        <div><dt>Details</dt><dd>${escapeHtml(item.details)}</dd></div>
         <div><dt>Payee / Person / Supplier</dt><dd>${escapeHtml(item.payee)}</dd></div>
         <div><dt>Date</dt><dd>${escapeHtml(formatDate(item.date))}</dd></div>
+        <div><dt>Status</dt><dd>${escapeHtml(item.approvalStatus)}</dd></div>
         <div><dt>Payment Status</dt><dd>${escapeHtml(item.status)}</dd></div>
       </dl>
       <div class="ops-actions">
@@ -379,7 +475,7 @@ function renderList() {
         <span>Once Mother approves payroll, cash/PO/Bali, repair, or labor requests, they will appear here for payment.</span>
       </div>
     `;
-    body.innerHTML = `<tr><td colspan="9" class="ops-empty">${message}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="10" class="ops-empty">${message}</td></tr>`;
     mobile.innerHTML = message;
     return;
   }
@@ -404,10 +500,12 @@ function openDetail(index) {
     <h2 id="pq-modal-title">${escapeHtml(item.source)} - ${escapeHtml(item.id)}</h2>
     <div class="ops-detail-grid">
       <div><span>Plate / No Plate</span><strong>${escapeHtml(item.plate)}</strong></div>
-      <div><span>Group</span><strong>${escapeHtml(item.group)}</strong></div>
+      <div><span>Request Type</span><strong>${escapeHtml(item.requestType)}</strong></div>
+      <div><span>Details</span><strong>${escapeHtml(item.details)}</strong></div>
       <div><span>Payee / Person / Supplier</span><strong>${escapeHtml(item.payee)}</strong></div>
       <div><span>Date</span><strong>${escapeHtml(formatDate(item.date))}</strong></div>
       <div><span>Amount</span><strong>${escapeHtml(money(item.amount))}</strong></div>
+      <div><span>Status</span><strong>${escapeHtml(item.approvalStatus)}</strong></div>
       <div><span>Payment Status</span><strong>${escapeHtml(item.status)}</strong></div>
     </div>
     <div class="ops-actions modal-actions">
