@@ -294,12 +294,16 @@ export async function updateRepairRequestStatus(env, input = {}) {
   if (result.error) {
     return { ok: false, error: SAFE_ERROR, details: result.error, status: result.status || 500 };
   }
+  const records = Array.isArray(result.body) ? result.body : [];
+  if (!records.length) {
+    return { ok: false, error: `No repair request found for request_id ${requestId}`, status: 404 };
+  }
 
   return {
     ok: true,
     source: "supabase",
     request_id: requestId,
-    records: Array.isArray(result.body) ? result.body : []
+    records
   };
 }
 

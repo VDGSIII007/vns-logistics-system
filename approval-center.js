@@ -447,9 +447,13 @@ function normalizeRepairListResponse(data) {
 }
 
 function normalizeSupabaseRepairRecord(record = {}) {
+  const canonicalRequestId = record.request_id || record.Request_ID || record.requestId || record.Record_ID || record.Sheet_Log_ID || record.source_row_id;
   return {
     ...record,
-    Request_ID: record.Request_ID || record.request_id || record.requestId,
+    Request_ID: canonicalRequestId,
+    request_id: canonicalRequestId,
+    requestId: canonicalRequestId,
+    Supabase_Request_ID: record.request_id || canonicalRequestId,
     Request_Type: record.Request_Type || record.request_type || record.requestType,
     Date_Requested: record.Date_Requested || record.date_requested || record.dateRequested,
     Date_Finished: record.Date_Finished || record.date_finished || record.dateFinished,
@@ -1717,7 +1721,19 @@ function currentRepairApprover() {
 }
 
 function getRepairApprovalId(record = {}) {
-  return acText(record.Request_ID || record.requestId || record.Repair_Record_ID || record.repairRecordId || record.id, "");
+  return acText(
+    record.request_id ||
+    record.Supabase_Request_ID ||
+    record.Request_ID ||
+    record.requestId ||
+    record.Record_ID ||
+    record.Sheet_Log_ID ||
+    record.source_row_id ||
+    record.Repair_Record_ID ||
+    record.repairRecordId ||
+    record.id,
+    ""
+  );
 }
 
 function buildRepairApprovalPayload(record = {}) {
@@ -1753,6 +1769,7 @@ function buildRepairApprovalPayload(record = {}) {
 
 async function approveRepairRecord(record) {
   const requestId = getRepairApprovalId(record);
+  console.log("Repair approval Supabase request_id", requestId, record);
   if (!requestId) throw new Error("Repair request ID is missing.");
   if (!["repair-supabase-list", "repair-cloud-list"].includes(record.__approvalCenterSource)) {
     throw new Error("Repair backend is not available for this record. Refresh and try again.");
