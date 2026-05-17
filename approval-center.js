@@ -974,17 +974,17 @@ function updateRepairBatchUi() {
   const note = ac$("ac-preview-note");
   if (button) {
     button.hidden = acState.view === "history" || (acState.tab !== "repair" && acState.tab !== "cash");
-    button.disabled = true;
-    button.title = acState.tab === "cash"
-      ? "Batch approval will be enabled after cash approval actions are connected."
-      : "Batch approval will be enabled after repair backend approval actions are connected.";
     const selectedCount = acState.tab === "cash" ? acState.selectedCashIds.size : acState.selectedRepairIds.size;
+    button.disabled = acState.tab !== "cash" || selectedCount === 0;
+    button.title = acState.tab === "cash"
+      ? selectedCount ? "Approve selected Cash / PO / Bali requests." : "Select one or more Cash / PO / Bali requests to approve."
+      : "Batch approval will be enabled after repair backend approval actions are connected.";
     button.textContent = selectedCount ? `Approve Selected (${selectedCount})` : "Approve Selected";
   }
   if (note) {
     if (acState.view === "history") note.textContent = "Approval History is read-only.";
     else if (acState.tab === "repair") note.textContent = "Preview mode: repair approval buttons are temporarily disabled.";
-    else if (acState.tab === "cash") note.textContent = "Preview mode: cash approval buttons are temporarily disabled.";
+    else if (acState.tab === "cash") note.textContent = "Cash approval actions are active. Approved requests move to Payment Queue.";
     else note.textContent = "Preview mode: central approval actions are disabled until backend role checks are connected.";
   }
   const tableNote = ac$("ac-table-note");
@@ -1436,20 +1436,23 @@ function buildRepairCategoryFields(category, record, item) {
 }
 
 function buildModalActions(item) {
-  const disabled = item.type !== "payroll";
+  const approveDisabled = item.type !== "payroll" && item.type !== "cash";
+  const secondaryDisabled = item.type !== "payroll";
   const disabledMessage = item.type === "repair"
     ? "Repair approval is not active yet. This screen is for review/testing only."
     : item.type === "cash"
-      ? "Cash approval is not active yet. This screen is for review/testing only."
+      ? "Cash revise/reject actions are not active yet. Use Approve only."
       : "Approval button is not active yet for this request.";
-  const disabledAttr = disabled ? ` disabled title="${acEscape(disabledMessage)}"` : "";
-  const disabledClass = disabled ? " ops-disabled-btn" : "";
-  const note = disabled ? `<p class="ops-modal-note">${acEscape(disabledMessage)}</p>` : "";
+  const approveAttr = approveDisabled ? ` disabled title="${acEscape(disabledMessage)}"` : "";
+  const approveClass = approveDisabled ? " ops-disabled-btn" : "";
+  const secondaryAttr = secondaryDisabled ? ` disabled title="${acEscape(disabledMessage)}"` : "";
+  const secondaryClass = secondaryDisabled ? " ops-disabled-btn" : "";
+  const note = secondaryDisabled ? `<p class="ops-modal-note">${acEscape(disabledMessage)}</p>` : "";
   return `
     <div class="approval-modal-actions">
-      <button type="button" class="ops-primary-btn${disabledClass}" data-modal-action="approve"${disabledAttr}>Approve</button>
-      <button type="button" class="ops-secondary-btn${disabledClass}" data-modal-action="revise"${disabledAttr}>Ask to Revise</button>
-      <button type="button" class="ops-danger-btn${disabledClass}" data-modal-action="reject"${disabledAttr}>Reject</button>
+      <button type="button" class="ops-primary-btn${approveClass}" data-modal-action="approve"${approveAttr}>Approve</button>
+      <button type="button" class="ops-secondary-btn${secondaryClass}" data-modal-action="revise"${secondaryAttr}>Ask to Revise</button>
+      <button type="button" class="ops-danger-btn${secondaryClass}" data-modal-action="reject"${secondaryAttr}>Reject</button>
       <button type="button" class="ops-secondary-btn" data-modal-action="close">Close</button>
     </div>
     ${note}
@@ -1464,11 +1467,126 @@ function bindModalApprovalButtons() {
       const action = button.dataset.modalAction;
       if (action === "close") closeApprovalDetail();
       if (button.disabled) return;
-      if (action === "approve") approvePayrollFromModal();
+      if (action === "approve" && acState.activeItem?.type === "cash") approveCashFromModal();
+      else if (action === "approve") approvePayrollFromModal();
       if (action === "revise") returnPayrollFromModal();
       if (action === "reject") rejectPayrollFromModal();
     });
   });
+}
+
+function cashApprovalPost(action, payload = {}) {
+  return fetch(CASH_APPROVAL_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({
+      syncKey: CASH_APPROVAL_SYNC_KEY,
+      action,
+      ...payload
+    })
+  }).then(response => response.json());
+}
+
+function currentCashApprover() {
+  return window.VNSAuth?.getRole ? window.VNSAuth.getRole() : "Admin";
+}
+
+function getCashApprovalId(record = {}) {
+  return acText(record.Cash_ID || record.Record_ID || record.cashId || record.recordId || record.id, "");
+}
+
+function buildCashApprovalRecord(record = {}) {
+  const now = new Date().toISOString();
+  const approver = currentCashApprover() || "Admin";
+  const cashId = getCashApprovalId(record);
+  return {
+    ...record,
+    Cash_ID: cashId,
+    Review_Status: "Approved",
+    Status: "Approved",
+    status: "Approved",
+    approvalStatus: "Approved",
+    Approved_By: approver,
+    approvedBy: approver,
+    Approved_At: now,
+    approvedAt: now,
+    Updated_At: now,
+    updatedAt: now
+  };
+}
+
+async function approveCashRecord(record) {
+  const cashId = getCashApprovalId(record);
+  if (!cashId) throw new Error("Cash record ID is missing.");
+  if (record.__approvalCenterSource !== "cash-cloud-list") {
+    throw new Error("Cash backend is not available for this record. Refresh and try again.");
+  }
+
+  const result = await cashApprovalPost("updateEntry", {
+    record: buildCashApprovalRecord(record)
+  });
+  if (!isCloudSuccess(result)) throw new Error(result?.error || "Cash approval failed.");
+  return result;
+}
+
+async function approveCashFromModal() {
+  const item = acState.activeItem;
+  if (!item || item.type !== "cash") return;
+  if (!confirm("Approve this Cash / PO / Bali request?")) return;
+
+  setApprovalMessage("Approving Cash / PO / Bali request...", "info");
+  try {
+    await approveCashRecord(item.raw);
+    closeApprovalDetail();
+    acState.selectedCashIds.delete(item.id);
+    await refreshCashApprovalList("Cash / PO / Bali request approved.");
+  } catch (error) {
+    console.warn("Cash approval failed", error);
+    setApprovalMessage(error?.message || "Cash approval failed. Please try again.", "error");
+  }
+}
+
+async function approveSelectedCashRecords() {
+  const selectedIds = [...acState.selectedCashIds];
+  if (!selectedIds.length) {
+    setApprovalMessage("Select one or more Cash / PO / Bali requests to approve.", "warning");
+    return;
+  }
+  if (!confirm(`Approve ${selectedIds.length} selected Cash / PO / Bali request${selectedIds.length === 1 ? "" : "s"}?`)) return;
+
+  const selected = acState.items.filter(item => item.type === "cash" && selectedIds.includes(item.id) && item.isPending);
+  if (!selected.length) {
+    setApprovalMessage("Selected Cash / PO / Bali requests are no longer pending.", "warning");
+    acState.selectedCashIds.clear();
+    applyApprovalFilters();
+    return;
+  }
+
+  const button = ac$("ac-approve-selected");
+  if (button) button.disabled = true;
+  setApprovalMessage(`Approving ${selected.length} Cash / PO / Bali request${selected.length === 1 ? "" : "s"}...`, "info");
+
+  const results = await Promise.allSettled(selected.map(item => approveCashRecord(item.raw)));
+  const approvedIds = selected
+    .filter((item, index) => results[index].status === "fulfilled")
+    .map(item => item.id);
+  approvedIds.forEach(id => acState.selectedCashIds.delete(id));
+  const failed = results.filter(result => result.status === "rejected");
+
+  if (failed.length) {
+    console.warn("Some Cash approvals failed", failed);
+    setApprovalMessage(`${approvedIds.length} approved, ${failed.length} failed. Failed rows remain pending.`, approvedIds.length ? "warning" : "error");
+    if (approvedIds.length) await refreshCashApprovalList();
+    else updateRepairBatchUi();
+    return;
+  }
+
+  acState.selectedCashIds.clear();
+  await refreshCashApprovalList(`${approvedIds.length} Cash / PO / Bali request${approvedIds.length === 1 ? "" : "s"} approved.`);
+}
+
+function refreshCashApprovalList(message = "") {
+  return refreshApprovalItems(message);
 }
 
 function payrollCloudPost(action, payload = {}) {
@@ -1627,6 +1745,7 @@ function bindApprovalEvents() {
   const search = ac$("ac-search");
   const sort = ac$("ac-sort");
   const refresh = ac$("ac-refresh");
+  const approveSelected = ac$("ac-approve-selected");
   const close = ac$("ac-close");
   const modal = ac$("ac-modal");
 
@@ -1640,6 +1759,9 @@ function bindApprovalEvents() {
   });
   if (refresh) refresh.addEventListener("click", () => {
     refreshApprovalItems();
+  });
+  if (approveSelected) approveSelected.addEventListener("click", () => {
+    if (acState.tab === "cash") approveSelectedCashRecords();
   });
   document.addEventListener("click", event => {
     const trigger = event.target.closest("[data-detail]");
