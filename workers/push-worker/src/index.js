@@ -14,7 +14,9 @@ import {
   deleteSubscriptionByEndpoint,
   endpointHash,
   getSubscriptionByEndpoint,
-  saveSubscription
+  listSubscriptionsByRoles,
+  saveSubscription,
+  subscriptionKey
 } from "./subscriptions.js";
 import { sendWebPush } from "./webpush.js";
 
@@ -160,6 +162,34 @@ async function handleRunPaymentCheck(env) {
   }
 }
 
+async function handleNotifyPaid(request, env) {
+  if (!kvReady(env)) return jsonResponse({ ok: false, error: "KV binding is not configured" }, 500);
+
+  const input = await readJson(request) || {};
+  const payload = {
+    title: "VNS Payment Released",
+    body: "A payment item has been marked paid/released.",
+    url: "/payment-queue.html?tab=paid"
+  };
+
+  const TARGET_ROLES = ["Sister", "Payment", "Admin", "Encoder"];
+  const targets = await listSubscriptionsByRoles(env.VNS_PUSH_SUBSCRIPTIONS, TARGET_ROLES);
+  let sent = 0;
+  let failed = 0;
+
+  await Promise.all(targets.map(async record => {
+    try {
+      const result = await sendWebPush(record.subscription, payload, env);
+      if (result.expired) await env.VNS_PUSH_SUBSCRIPTIONS.delete(subscriptionKey(record.endpointHash));
+      if (result.ok) { sent += 1; } else { failed += 1; }
+    } catch {
+      failed += 1;
+    }
+  }));
+
+  return jsonResponse({ ok: true, sent, failed, module: input.module || null });
+}
+
 async function handleAcknowledge(request, env) {
   if (!kvReady(env)) return jsonResponse({ ok: false, error: "KV binding is not configured" }, 500);
 
@@ -184,6 +214,7 @@ async function routeRequest(request, env) {
   if (request.method === "POST" && url.pathname === "/api/push/test") return handleTest(request, env);
   if (request.method === "POST" && url.pathname === "/api/push/run-check") return handleRunCheck(env);
   if (request.method === "POST" && url.pathname === "/api/push/run-payment-check") return handleRunPaymentCheck(env);
+  if (request.method === "POST" && url.pathname === "/api/push/notify-paid") return handleNotifyPaid(request, env);
   if (request.method === "POST" && url.pathname === "/api/push/acknowledge") return handleAcknowledge(request, env);
   return jsonResponse({ ok: false, error: "Not found" }, 404);
 }

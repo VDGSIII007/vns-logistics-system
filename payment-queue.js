@@ -139,7 +139,7 @@ function statusMatches(value, statuses) {
 }
 
 function isPaid(record) {
-  const statuses = valuesFrom(record, ["paymentStatus", "Payment_Status", "Posted_Status", "postedStatus", "status", "Status"]);
+  const statuses = valuesFrom(record, ["paymentStatus", "Payment_Status", "Posted_Status", "postedStatus", "status", "Status", "Review_Status", "reviewStatus"]);
   return statuses.some(status => statusMatches(status, PAYMENT_PAID_STATUSES));
 }
 
@@ -236,7 +236,12 @@ function makeItem(type, module, record, fallbackId) {
     details: text(record.description || record.Description || record.remarks || record.Remarks, "View details"),
     approvalStatus: approvalStatusLabel(record),
     status: paymentStatusLabel(record),
-    paid: isPaid(record)
+    paid: isPaid(record),
+    cloudId: type === "cash"
+      ? String(record.Cash_ID || record.Record_ID || "").trim()
+      : type === "repair"
+        ? String(record.Request_ID || record.requestId || record.Repair_Record_ID || "").trim()
+        : ""
   };
 
   if (type === "payroll") {
@@ -270,6 +275,109 @@ function makeItem(type, module, record, fallbackId) {
     date: record.date || record.Date || record.createdAt || record.Created_At || record.timestamp,
     amount: Number(record.amount || record.Amount || record.budgetAmount || record.Budget_Amount || record.Diesel_Amount || record.totalAmount) || 0
   };
+}
+
+function isCloudSuccess(result) {
+  return result?.ok === true || result?.success === true || result?.status === "success";
+}
+
+function currentUser() {
+  try {
+    return String(window.VNSAuth?.user?.name || window.VNSAuth?.user?.email || "Payment User").trim() || "Payment User";
+  } catch {
+    return "Payment User";
+  }
+}
+
+async function cashMarkPaidPost(raw) {
+  const now = new Date().toISOString();
+  const user = currentUser();
+  const record = {
+    ...raw,
+    Review_Status: "Paid",
+    Status: "Paid",
+    Posted_Status: "Paid",
+    Payment_Status: "Paid",
+    Paid_By: user,
+    Paid_At: now,
+    Released_By: user,
+    Released_At: now,
+    Updated_At: now
+  };
+  const response = await fetch(CASH_APP_SCRIPT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ syncKey: CASH_SYNC_KEY, action: "updateEntry", record })
+  });
+  if (!response.ok) throw new Error(`Cash update failed: ${response.status}`);
+  const result = await response.json();
+  if (!isCloudSuccess(result)) throw new Error(result?.error || result?.message || "Cash update returned an error.");
+  return result;
+}
+
+async function repairMarkPaidPost(raw) {
+  const now = new Date().toISOString();
+  const requestId = String(raw.Request_ID || raw.requestId || raw.Repair_Record_ID || "").trim();
+  if (!requestId) throw new Error("Repair record has no Request_ID — cannot mark paid.");
+  const response = await fetch(REPAIR_WEB_APP_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "updateStatus",
+      Request_ID: requestId,
+      requestId,
+      Status: "Paid",
+      Payment_Status: "Paid",
+      Approval_Status: "Approved",
+      Last_Updated: now
+    })
+  });
+  if (!response.ok) throw new Error(`Repair update failed: ${response.status}`);
+  const result = await response.json();
+  if (!isCloudSuccess(result)) throw new Error(result?.error || result?.message || "Repair update returned an error.");
+  return result;
+}
+
+function notifyPaid(module) {
+  const base = window.VNS_PUSH_API_BASE || "/api/push";
+  fetch(`${base}/notify-paid`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ module })
+  }).catch(error => console.warn("Payment notify-paid push failed (non-blocking).", error));
+}
+
+async function handleMarkPaid(index, button) {
+  const item = state.filtered[index];
+  if (!item || item.paid || !item.cloudId || (item.type !== "cash" && item.type !== "repair")) return;
+
+  const label = item.type === "cash" ? "Cash / PO / Bali" : "Repair / Labor";
+  const confirmed = window.confirm(`Mark this ${label} record as Paid / Released?\n\nReference: ${item.id}`);
+  if (!confirmed) return;
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Saving...";
+  }
+
+  try {
+    if (item.type === "cash") {
+      await cashMarkPaidPost(item.raw);
+    } else {
+      await repairMarkPaidPost(item.raw);
+    }
+    notifyPaid(item.source);
+    closeDetail();
+    await loadItems();
+    applyFilters();
+  } catch (error) {
+    console.error("Mark paid failed.", error);
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Mark Paid / Released";
+    }
+    window.alert(`Could not mark as paid: ${error?.message || "Unknown error. Please try again."}`);
+  }
 }
 
 function normalizeListResponse(data) {
@@ -417,6 +525,10 @@ function renderSummary() {
 }
 
 function rowHtml(item, index) {
+  const canMarkPaid = !item.paid && !!item.cloudId && (item.type === "cash" || item.type === "repair");
+  const markPaidBtn = canMarkPaid
+    ? `<button type="button" class="ops-secondary-btn" data-mark-paid="${index}">Mark Paid / Released</button>`
+    : `<button type="button" class="ops-disabled-btn" disabled title="Not available for this record.">Mark Paid / Released</button>`;
   return `
     <tr>
       <td>${escapeHtml(formatDate(item.date))}</td>
@@ -430,7 +542,7 @@ function rowHtml(item, index) {
       <td>${escapeHtml(item.status)}</td>
       <td class="ops-actions">
         <button type="button" class="ops-secondary-btn" data-detail="${index}">View Details</button>
-        <button type="button" class="ops-disabled-btn" disabled title="Backend payment action not connected yet.">Mark Paid / Released</button>
+        ${markPaidBtn}
         <button type="button" class="ops-disabled-btn" disabled title="Backend payment action not connected yet.">Report Issue</button>
       </td>
     </tr>
@@ -438,6 +550,10 @@ function rowHtml(item, index) {
 }
 
 function cardHtml(item, index) {
+  const canMarkPaid = !item.paid && !!item.cloudId && (item.type === "cash" || item.type === "repair");
+  const markPaidBtn = canMarkPaid
+    ? `<button type="button" class="ops-secondary-btn" data-mark-paid="${index}">Mark Paid / Released</button>`
+    : `<button type="button" class="ops-disabled-btn" disabled title="Not available for this record.">Mark Paid / Released</button>`;
   return `
     <article class="ops-mobile-card">
       <div class="ops-mobile-card-head">
@@ -456,7 +572,7 @@ function cardHtml(item, index) {
       </dl>
       <div class="ops-actions">
         <button type="button" class="ops-secondary-btn" data-detail="${index}">View Details</button>
-        <button type="button" class="ops-disabled-btn" disabled title="Backend payment action not connected yet.">Mark Paid / Released</button>
+        ${markPaidBtn}
         <button type="button" class="ops-disabled-btn" disabled title="Backend payment action not connected yet.">Report Issue</button>
       </div>
     </article>
@@ -495,6 +611,10 @@ function openDetail(index) {
   const modal = $("pq-modal");
   if (!item) return;
   if (!detail || !modal) return;
+  const canMarkPaid = !item.paid && !!item.cloudId && (item.type === "cash" || item.type === "repair");
+  const markPaidBtn = canMarkPaid
+    ? `<button type="button" class="ops-secondary-btn" data-mark-paid="${index}">Mark Paid / Released</button>`
+    : `<button type="button" class="ops-disabled-btn" disabled title="Not available for this record.">Mark Paid / Released</button>`;
   detail.innerHTML = `
     <p class="ops-eyebrow">Payment Details</p>
     <h2 id="pq-modal-title">${escapeHtml(item.source)} - ${escapeHtml(item.id)}</h2>
@@ -509,10 +629,9 @@ function openDetail(index) {
       <div><span>Payment Status</span><strong>${escapeHtml(item.status)}</strong></div>
     </div>
     <div class="ops-actions modal-actions">
-      <button type="button" class="ops-disabled-btn" disabled title="Backend payment action not connected yet.">Mark Paid / Released</button>
+      ${markPaidBtn}
       <button type="button" class="ops-disabled-btn" disabled title="Backend payment action not connected yet.">Report Issue</button>
     </div>
-    <p class="ops-modal-note">Technical note: backend payment action not connected yet. This central queue does not write to localStorage or call payroll, repair, cash, or Apps Script backends.</p>
   `;
   modal.hidden = false;
 }
@@ -564,7 +683,9 @@ function bindEvents() {
   });
   document.addEventListener("click", event => {
     const trigger = event.target.closest("[data-detail]");
-    if (trigger) openDetail(Number(trigger.dataset.detail));
+    if (trigger) { openDetail(Number(trigger.dataset.detail)); return; }
+    const markPaidTrigger = event.target.closest("[data-mark-paid]");
+    if (markPaidTrigger) handleMarkPaid(Number(markPaidTrigger.dataset.markPaid), markPaidTrigger);
   });
   if (close) close.addEventListener("click", closeDetail);
   if (modal) modal.addEventListener("click", event => {
@@ -574,6 +695,14 @@ function bindEvents() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   setPaymentAccess();
+  const urlTab = new URLSearchParams(window.location.search).get("tab");
+  if (urlTab && ["all", "payroll", "cash", "repair", "paid"].includes(urlTab)) {
+    state.tab = urlTab;
+    document.querySelectorAll(".ops-tab").forEach(tab => {
+      tab.classList.toggle("active", tab.dataset.tab === urlTab);
+      tab.setAttribute("aria-selected", tab.dataset.tab === urlTab ? "true" : "false");
+    });
+  }
   bindEvents();
   await loadItems();
   applyFilters();
