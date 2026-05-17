@@ -2601,3 +2601,170 @@ body.payroll-page{
     gap:2px;
   }
 }
+
+.vns-table-card{
+  overflow:auto;
+  border:1px solid #e1e6ee;
+  border-radius:18px;
+  background:#fff;
+  box-shadow:0 16px 42px rgba(15,23,42,.06);
+}
+.vns-clean-table{
+  width:100%;
+  border-collapse:collapse;
+  color:#1f2937;
+}
+.vns-clean-table th{
+  position:sticky;
+  top:0;
+  z-index:6;
+  background:#f3f6fb;
+  color:#4b5563;
+  padding:12px 14px;
+  border-bottom:1px solid #d8dde6;
+  text-align:left;
+  font-size:.72rem;
+  font-weight:900;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
+.vns-clean-table td{
+  padding:13px 14px;
+  border-bottom:1px solid #edf0f5;
+  color:#1f2937;
+  font-size:.86rem;
+  line-height:1.45;
+  vertical-align:middle;
+}
+.vns-clean-table tbody tr:hover td{
+  background:#fff8f8;
+}
+.vns-clean-table .empty,
+.vns-clean-table td.empty{
+  padding:34px;
+  color:#6b7280;
+  text-align:center;
+}
+.status-chip{
+  display:inline-flex;
+  align-items:center;
+  min-height:26px;
+  max-width:100%;
+  border:1px solid #d1d5db;
+  border-radius:999px;
+  background:#f3f4f6;
+  color:#374151;
+  padding:0 10px;
+  font-size:.72rem;
+  font-weight:900;
+  line-height:1.2;
+  white-space:nowrap;
+}
+.status-chip-pending{
+  border-color:#dbe3ef;
+  background:#f8fafc;
+  color:#475569;
+}
+.status-chip-approved{
+  border-color:#bbf7d0;
+  background:#ecfdf3;
+  color:#166534;
+}
+.status-chip-paid{
+  border-color:#14532d;
+  background:#14532d;
+  color:#fff;
+}
+.status-chip-danger{
+  border-color:#fecaca;
+  background:#fef2f2;
+  color:#991b1b;
+}
+.status-chip-neutral{
+  border-color:#d1d5db;
+  background:#f3f4f6;
+  color:#374151;
+}
+.repair-page .saved-records .vns-table-card,
+.cash-page .cash-table-wrap.vns-table-card{
+  max-height:68vh;
+}
+.repair-page .saved-records .saved-records-table.vns-clean-table{
+  min-width:2100px;
+}
+.cash-page .cash-table.vns-clean-table{
+  min-width:920px;
+}
+.repair-page .saved-records .saved-records-table.vns-clean-table th,
+.cash-page .cash-table.vns-clean-table th{
+  background:#f3f6fb;
+  color:#4b5563;
+  padding:12px 14px;
+  border-right:0;
+  border-bottom:1px solid #d8dde6;
+  font-size:.72rem;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+.repair-page .saved-records .saved-records-table.vns-clean-table td,
+.cash-page .cash-table.vns-clean-table td{
+  padding:13px 14px;
+  border-right:0;
+  border-bottom:1px solid #edf0f5;
+  color:#1f2937;
+  font-size:.86rem;
+  line-height:1.45;
+  vertical-align:middle;
+}
+.repair-page .saved-records .saved-records-table.vns-clean-table tbody tr:hover td,
+.cash-page .cash-table.vns-clean-table tbody tr:hover td{
+  background:#fff8f8;
+}
+.repair-page .saved-records .saved-records-table.vns-clean-table tbody tr.paid-repair-row td{
+  background:#f8fbf9;
+}
+.repair-page .saved-records .saved-records-table.vns-clean-table tbody tr.paid-repair-row:hover td{
+  background:#f1fbf5;
+}
+.repair-page .saved-records .saved-records-table.vns-clean-table th.selection-cell,
+.repair-page .saved-records .saved-records-table.vns-clean-table td.selection-cell{
+  background:#fff;
+}
+.repair-page .saved-records .saved-records-table.vns-clean-table th.selection-cell{
+  background:#f3f6fb;
+}
+.repair-page .status-badge,
+.repair-page .repair-paid-hint{
+  min-height:26px;
+  padding:0 10px;
+  font-size:.72rem;
+}
+.repair-page .change-request-actions{
+  width:auto;
+}
+.repair-page .change-request-actions .details-button,
+.cash-page .cash-row-actions button{
+  min-height:34px;
+  border:1px solid #d1d5db;
+  border-radius:10px;
+  background:#fff;
+  color:#111827;
+  padding:0 12px;
+  font-size:.76rem;
+  font-weight:900;
+  box-shadow:none;
+}
+.repair-page .change-request-actions .details-button:hover,
+.cash-page .cash-row-actions button:hover{
+  border-color:#111827;
+  background:#fff;
+}
+.cash-page .cash-row-actions{
+  gap:8px;
+}
+.cash-page .cash-row-actions button:disabled{
+  border-color:#e5e7eb;
+  background:#f3f4f6;
+  color:#6b7280;
+}

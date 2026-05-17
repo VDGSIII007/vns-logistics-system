@@ -803,6 +803,21 @@ function cashRecordStatus(record = {}) {
   return firstCashValue(record, ["Review_Status", "Status", "status", "reviewStatus"], record.status || "");
 }
 
+function cashStatusClass(status = "") {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (!normalized || normalized === "draft") return "status-chip-pending";
+  if (["for approval", "pending", "pending approval", "submitted", "for review"].includes(normalized)) return "status-chip-pending";
+  if (normalized === "approved") return "status-chip-approved";
+  if (["paid", "deposited", "used"].includes(normalized)) return "status-chip-paid";
+  if (["returned", "rejected", "cancelled", "canceled", "deleted"].includes(normalized)) return "status-chip-danger";
+  return "status-chip-neutral";
+}
+
+function renderCashStatusChip(status = "") {
+  const label = String(status || "").trim() || "Draft";
+  return `<span class="status-chip ${cashStatusClass(label)}">${escapeHtml(label)}</span>`;
+}
+
 function isCashDraftRecord(record = {}) {
   const status = String(cashRecordStatus(record) || "").trim().toLowerCase();
   return !status || status === "draft";
@@ -938,7 +953,7 @@ function renderSavedCashRecords() {
     const lockedTitle = "Only Draft records can be edited/deleted here. Ask Mother/Admin to return this request if changes are needed.";
     const editAttrs = isDraft ? "" : ` disabled title="${lockedTitle}"`;
     const deleteAttrs = isDraft ? "" : ` disabled title="${lockedTitle}"`;
-    return `<tr><td>${escapeHtml(display.date || "")}</td><td>${escapeHtml(display.type)}</td><td>${escapeHtml(display.plate)}</td><td>${escapeHtml(display.group)}</td><td>${formatCurrency(display.amount)}</td><td>${escapeHtml(display.receiver)}</td><td>${escapeHtml(display.status)}</td><td class="cash-row-actions"><button data-action="edit" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}"${editAttrs}>Edit</button><button data-action="message" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}">Message</button><button data-action="delete" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}"${deleteAttrs}>Delete</button></td></tr>`;
+    return `<tr><td>${escapeHtml(display.date || "")}</td><td>${escapeHtml(display.type)}</td><td>${escapeHtml(display.plate)}</td><td>${escapeHtml(display.group)}</td><td>${formatCurrency(display.amount)}</td><td>${escapeHtml(display.receiver)}</td><td>${renderCashStatusChip(display.status)}</td><td class="cash-row-actions"><button data-action="edit" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}"${editAttrs}>Edit</button><button data-action="message" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}">Message</button><button data-action="delete" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}"${deleteAttrs}>Delete</button></td></tr>`;
   }).join("") : '<tr><td colspan="8" class="empty">No saved records found.</td></tr>';
 }
 
