@@ -1,4 +1,7 @@
 import {
+  acknowledgeLastNotification,
+  getLastNotification,
+  publicLastNotification,
   runApprovalPushCheck
 } from "./approval-checker.js";
 import { debugCashSource } from "./checkers/cash.js";
@@ -44,11 +47,13 @@ function kvReady(env) {
 }
 
 async function handleCheck(env) {
+  const lastNotification = await getLastNotification(env);
   return jsonResponse({
     ok: true,
     pushReady: kvReady(env),
     hasPublicKey: Boolean(env.VAPID_PUBLIC_KEY && env.VAPID_PUBLIC_KEY !== "PUBLIC_KEY_PLACEHOLDER"),
-    kvReady: kvReady(env)
+    kvReady: kvReady(env),
+    lastNotification: publicLastNotification(lastNotification)
   });
 }
 
@@ -131,6 +136,20 @@ async function handleDebugSources(env) {
   });
 }
 
+async function handleAcknowledge(request, env) {
+  if (!kvReady(env)) return jsonResponse({ ok: false, error: "KV binding is not configured" }, 500);
+
+  const input = await readJson(request) || {};
+  try {
+    return jsonResponse(await acknowledgeLastNotification(env, input));
+  } catch (error) {
+    return jsonResponse({
+      ok: false,
+      error: error?.message || "Unable to acknowledge notification"
+    }, 500);
+  }
+}
+
 async function routeRequest(request, env) {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/api/push/check") return handleCheck(env);
@@ -139,6 +158,7 @@ async function routeRequest(request, env) {
   if (request.method === "POST" && url.pathname === "/api/push/unsubscribe") return handleUnsubscribe(request, env);
   if (request.method === "POST" && url.pathname === "/api/push/test") return handleTest(request, env);
   if (request.method === "POST" && url.pathname === "/api/push/run-check") return handleRunCheck(env);
+  if (request.method === "POST" && url.pathname === "/api/push/acknowledge") return handleAcknowledge(request, env);
   return jsonResponse({ ok: false, error: "Not found" }, 404);
 }
 

@@ -40,7 +40,9 @@
     registered: false,
     subscribed: false,
     status: "Checking...",
-    message: ""
+    message: "",
+    lastNotification: null,
+    acknowledgementMessage: ""
   };
 
   function readJson(key) {
@@ -333,6 +335,66 @@
     }
   }
 
+  function formatAlertSentTime(value) {
+    const date = value ? new Date(value) : null;
+    if (!date || Number.isNaN(date.getTime())) return "Sent: --";
+    return `Sent: ${date.toLocaleString("en-PH", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit"
+    })}`;
+  }
+
+  function ensureBackgroundAlertPanel() {
+    const controls = document.querySelector(".notification-alert-controls");
+    if (!controls) return null;
+
+    let panel = controls.querySelector("[data-vns-background-alert-ack]");
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.className = "notification-background-alert";
+      panel.dataset.vnsBackgroundAlertAck = "";
+      controls.appendChild(panel);
+    }
+    return panel;
+  }
+
+  function renderBackgroundAlertAcknowledgement() {
+    const panel = ensureBackgroundAlertPanel();
+    if (!panel) return;
+
+    const lastNotification = pushState.lastNotification;
+    panel.replaceChildren();
+    if (!lastNotification?.sentAt) {
+      panel.hidden = true;
+      return;
+    }
+
+    panel.hidden = false;
+    if (lastNotification.acknowledgedAt) {
+      const message = document.createElement("p");
+      message.textContent = pushState.acknowledgementMessage || "Last background alert acknowledged.";
+      panel.appendChild(message);
+      return;
+    }
+
+    const details = document.createElement("span");
+    const title = document.createElement("strong");
+    const sent = document.createElement("small");
+    const button = document.createElement("button");
+
+    title.textContent = `Last background alert: ${lastNotification.title || "VNS Alert"}`;
+    sent.textContent = formatAlertSentTime(lastNotification.sentAt);
+    button.type = "button";
+    button.className = "notification-alert-button";
+    button.dataset.vnsAcknowledgePush = "";
+    button.textContent = "Mark background alert as read";
+
+    details.append(title, sent);
+    panel.append(details, button);
+  }
+
   function renderBackgroundPushStatus(messageOverride = "") {
     const status = document.querySelector("[data-vns-background-push-status]");
     const message = document.querySelector("[data-vns-background-push-message]");
@@ -354,6 +416,7 @@
       testButton.hidden = !pushState.subscribed;
       testButton.disabled = !pushState.supported || !pushState.registered;
     }
+    renderBackgroundAlertAcknowledgement();
   }
 
   function pushSupported() {
@@ -369,6 +432,16 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.error || `Push API failed: ${response.status}`);
+    return data;
+  }
+
+  async function getPushApi(path) {
+    const response = await fetch(`${PUSH_API_BASE}${path}`, {
+      method: "GET",
+      headers: { "Accept": "application/json" }
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.ok === false) throw new Error(data.error || `Push API failed: ${response.status}`);
@@ -420,6 +493,19 @@
     return subscription;
   }
 
+  async function syncPushServerStatus() {
+    if (!hasConfiguredPushKey()) return null;
+    try {
+      const response = await getPushApi("/check");
+      pushState.lastNotification = response.lastNotification || null;
+      renderBackgroundPushStatus();
+      return response;
+    } catch (error) {
+      console.warn("VNS notifications: unable to load background push status.", error);
+      return null;
+    }
+  }
+
   async function registerServiceWorker() {
     if (!pushSupported()) {
       pushState = {
@@ -453,6 +539,29 @@
       pushState.message = "Background push registration failed.";
       renderBackgroundPushStatus();
       return null;
+    }
+  }
+
+  async function acknowledgeBackgroundAlert() {
+    const button = document.querySelector("[data-vns-acknowledge-push]");
+    if (button) button.disabled = true;
+
+    try {
+      const response = await postPushApi("/acknowledge", {
+        source: "portal",
+        role: currentRole()
+      });
+      pushState.lastNotification = response.lastNotification || null;
+      pushState.acknowledgementMessage = response.acknowledged
+        ? "Last background alert acknowledged."
+        : "No background alert to acknowledge.";
+      renderBackgroundPushStatus();
+    } catch (error) {
+      console.warn("VNS notifications: background alert acknowledgement failed.", error);
+      pushState.acknowledgementMessage = "Background alert could not be marked as read.";
+      renderBackgroundPushStatus();
+    } finally {
+      if (button) button.disabled = false;
     }
   }
 
@@ -756,10 +865,16 @@
     document.querySelector("[data-vns-subscribe-push]")?.addEventListener("click", subscribeToPushAlerts);
     document.querySelector("[data-vns-unsubscribe-push]")?.addEventListener("click", unsubscribeFromPushAlerts);
     document.querySelector("[data-vns-test-push]")?.addEventListener("click", sendTestPush);
+    document.addEventListener("click", event => {
+      if (!event.target.closest("[data-vns-acknowledge-push]")) return;
+      event.preventDefault();
+      acknowledgeBackgroundAlert();
+    });
     window.addEventListener("vns-role-change", () => {
       if (latestSummary) renderNotifications(latestSummary);
     });
     registerServiceWorker();
+    syncPushServerStatus();
     refreshNotifications();
     window.setInterval(refreshNotifications, REFRESH_INTERVAL_MS);
   }

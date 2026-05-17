@@ -1313,6 +1313,30 @@ body.payroll-page{
   font-weight:800;
   line-height:1.35;
 }
+.notification-background-alert{
+  display:grid;
+  gap:8px;
+  padding:10px;
+  border:1px solid #edf0f4;
+  border-radius:10px;
+  background:#fff;
+}
+.notification-background-alert span,
+.notification-background-alert strong,
+.notification-background-alert small{
+  display:block;
+}
+.notification-background-alert strong{
+  color:#111827;
+  font-size:.8rem;
+  line-height:1.3;
+}
+.notification-background-alert small{
+  margin-top:2px;
+  color:#5b6472;
+  font-size:.72rem;
+  font-weight:800;
+}
 .notification-list{
   display:grid;
   gap:8px;
