@@ -1735,6 +1735,22 @@ function setApprovalMessage(message, type = "info") {
   target.className = `ops-status-line ${type}`;
 }
 
+function tabFromUrl() {
+  const tab = new URLSearchParams(window.location.search).get("tab");
+  return ["cash", "repair", "payroll"].includes(tab) ? tab : "";
+}
+
+function activateApprovalTab(tab) {
+  if (!tab) return;
+  const button = document.querySelector(`.ops-tab[data-tab="${tab}"]`);
+  if (!button) return;
+  document.querySelectorAll(".ops-tab").forEach(tabButton => {
+    tabButton.classList.toggle("active", tabButton === button);
+    tabButton.setAttribute("aria-selected", tabButton === button ? "true" : "false");
+  });
+  acState.tab = tab;
+}
+
 function bindApprovalEvents() {
   document.querySelectorAll(".ops-tab").forEach(button => {
     button.addEventListener("click", () => {
@@ -1793,6 +1809,7 @@ function bindApprovalEvents() {
 document.addEventListener("DOMContentLoaded", () => {
   setApprovalAccess();
   bindApprovalEvents();
+  activateApprovalTab(tabFromUrl());
   acState.repairRecords = readRealLocalRepairRecords();
   if (!acState.repairRecords.length) acState.repairRecords = readFallbackRepairRecords();
   acState.cashRecords = readLocalCashRecords();

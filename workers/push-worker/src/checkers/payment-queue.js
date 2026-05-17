@@ -196,7 +196,7 @@ export async function runPaymentQueuePushCheck(env) {
   const payload = {
     title: "VNS Payment Queue",
     body: "New item ready for payment release.",
-    url: "/approval-center.html?tab=payment"
+    url: "/payment-queue.html"
   };
 
   let sent = 0;

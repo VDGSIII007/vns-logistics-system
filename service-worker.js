@@ -35,6 +35,7 @@ self.addEventListener("push", event => {
 self.addEventListener("notificationclick", event => {
   event.notification.close();
   const targetUrl = new URL(event.notification.data?.url || "/portal.html", self.location.origin).href;
+  const target = new URL(targetUrl);
 
   event.waitUntil((async () => {
     const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
@@ -42,7 +43,16 @@ self.addEventListener("notificationclick", event => {
       if ("focus" in client && client.url === targetUrl) return client.focus();
     }
     for (const client of clientList) {
-      if ("focus" in client && client.url.endsWith("/portal.html")) return client.focus();
+      if ("focus" in client) {
+        const clientUrl = new URL(client.url);
+        if (clientUrl.origin === target.origin && clientUrl.pathname === target.pathname) {
+          if ("navigate" in client) {
+            const navigated = await client.navigate(targetUrl);
+            return navigated ? navigated.focus() : client.focus();
+          }
+          return client.focus();
+        }
+      }
     }
     if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
     return undefined;
