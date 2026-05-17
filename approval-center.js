@@ -1529,6 +1529,21 @@ async function approveCashRecord(record) {
   return result;
 }
 
+async function triggerPaymentQueuePushCheck() {
+  try {
+    console.log("Payment queue push check triggered");
+
+    const response = await fetch("/api/push/run-payment-check", {
+      method: "POST"
+    });
+
+    const result = await response.json().catch(() => null);
+    console.log("Payment queue push check result", result);
+  } catch (error) {
+    console.warn("Payment queue push check failed", error);
+  }
+}
+
 async function approveCashFromModal() {
   const item = acState.activeItem;
   if (!item || item.type !== "cash") return;
@@ -1540,6 +1555,7 @@ async function approveCashFromModal() {
     closeApprovalDetail();
     acState.selectedCashIds.delete(item.id);
     await refreshCashApprovalList("Cash / PO / Bali request approved.");
+    triggerPaymentQueuePushCheck();
   } catch (error) {
     console.warn("Cash approval failed", error);
     setApprovalMessage(error?.message || "Cash approval failed. Please try again.", "error");
@@ -1583,6 +1599,7 @@ async function approveSelectedCashRecords() {
 
   acState.selectedCashIds.clear();
   await refreshCashApprovalList(`${approvedIds.length} Cash / PO / Bali request${approvedIds.length === 1 ? "" : "s"} approved.`);
+  triggerPaymentQueuePushCheck();
 }
 
 function refreshCashApprovalList(message = "") {
