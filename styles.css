@@ -2774,7 +2774,7 @@ body.payroll-page{
   gap:4px;
   position:relative;
   z-index:3;
-  padding:0 10px;
+  padding:0;
   margin:0;
   border:0;
   border-bottom:0;
@@ -2806,6 +2806,15 @@ body.payroll-page{
   background:var(--red);
   color:#fff;
   box-shadow:0 12px 24px rgba(215,25,32,.16);
+}
+.repair-page .repair-tab-button.active::after{
+  content:"";
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:-2px;
+  height:2px;
+  background:#fff;
 }
 .repair-page .repair-tab-panel.active{
   display:block;
