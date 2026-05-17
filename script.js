@@ -157,6 +157,7 @@ function switchRepairTab(tabId) {
 }
 
 const REPAIR_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzSxpVjoHxkXo95FIJL6MBWFsHQBaRbWU-AabblQ1e15jSJpYZTmA4rc41g3uTH2j_x5w/exec";
+const VNS_WORKER_API_BASE = "https://vns-push-worker.santosvicenteiii.workers.dev";
 const VIBER_EXAMPLES = {
   'Auto Detect': `PARTS REQUEST
 Date: 5/7/2026
@@ -2568,7 +2569,9 @@ async function loadSavedRepairRecords() {
 }
 
 async function loadRepairRecordsFromSupabase() {
-  const response = await fetch('/api/repair/list?limit=500');
+  const url = `${VNS_WORKER_API_BASE}/api/repair/list?limit=500`;
+  console.log('Calling repair API', url);
+  const response = await fetch(url);
   const data = await response.json().catch(() => null);
   if (!response.ok || !data?.ok) {
     throw new Error(data?.error || `Supabase repair list failed (${response.status})`);
@@ -3412,7 +3415,9 @@ async function saveRepairRows(rows, sourceMessage, statusElement, emptyMessage, 
 }
 
 async function saveRepairRowsToSupabase(records) {
-  const response = await fetch('/api/repair/create', {
+  const url = `${VNS_WORKER_API_BASE}/api/repair/create`;
+  console.log('Calling repair API', url);
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -3420,6 +3425,7 @@ async function saveRepairRowsToSupabase(records) {
     body: JSON.stringify({ records })
   });
   const result = await response.json().catch(() => null);
+  console.log('Repair Supabase create response', result);
   if (!response.ok || !result?.ok) {
     throw new Error(result?.error || `Supabase repair save failed (${response.status})`);
   }
@@ -3455,7 +3461,9 @@ async function updateRepairBackupStatuses(records, backupStatus, backupError = '
     const requestId = record?.Request_ID || record?.request_id;
     if (!requestId) return;
     try {
-      await fetch('/api/repair/backup-status', {
+      const url = `${VNS_WORKER_API_BASE}/api/repair/backup-status`;
+      console.log('Calling repair API', url);
+      await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
