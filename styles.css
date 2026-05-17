@@ -2772,10 +2772,12 @@ body.payroll-page{
 .repair-page .repair-tabs{
   align-items:flex-end;
   gap:4px;
-  padding:0 8px;
-  margin:0 0 -1px;
+  position:relative;
+  z-index:3;
+  padding:0 10px;
+  margin:0;
   border:0;
-  border-bottom:1px solid #d8dde6;
+  border-bottom:0;
   border-radius:0;
   background:transparent;
   box-shadow:none;
@@ -2800,13 +2802,28 @@ body.payroll-page{
   position:relative;
   z-index:2;
   border-color:var(--red);
-  border-bottom-color:var(--red);
+  border-bottom-color:#fff;
   background:var(--red);
   color:#fff;
   box-shadow:0 12px 24px rgba(215,25,32,.16);
 }
 .repair-page .repair-tab-panel.active{
-  border-top-left-radius:0;
+  display:block;
+  margin-top:0;
+  padding:22px;
+  border:1px solid #d8dde6;
+  border-radius:0 22px 22px 22px;
+  background:#fff;
+  box-shadow:0 18px 46px rgba(15,23,42,.07);
+}
+.repair-page .repair-tab-panel.active > :first-child{
+  margin-top:0;
+}
+.repair-page .repair-tab-panel.active > :last-child{
+  margin-bottom:0;
+}
+.repair-page .repair-tab-panel.saved-records{
+  margin-top:0;
 }
 .repair-page .saved-records-filter-panel{
   display:grid;
