@@ -1609,7 +1609,9 @@ function getStatusBadgeClass(type, value) {
 }
 
 function renderStatusBadge(type, value) {
-  const text = truncateRecordValue(value || 'Not set', 24);
+  const rawText = String(value || '').trim();
+  const displayText = normalizeStatusFilterValue(rawText) === 'draft' ? 'For Approval' : rawText;
+  const text = truncateRecordValue(displayText || 'Not set', 24);
   return `<span class="status-badge ${getStatusBadgeClass(type, value)}">${escapeHtml(text)}</span>`;
 }
 
@@ -2028,21 +2030,9 @@ function buildStatusOptions(options, currentValue) {
 }
 
 function buildPaymentStatusActions(record, recordIndex) {
-  const hasPaymentUpdate = getRepairPaymentValue(record, 'hasPaymentUpdate');
-  const updatedAt = getRepairPaymentValue(record, 'updatedAt');
-  const updatedTitle = updatedAt ? `Payment / final cost updated: ${formatDateTimeDisplay(updatedAt)}` : 'Payment / final cost updated';
   return `
     <div class="change-request-actions">
       <button class="details-button action-mini-button" type="button" data-record-index="${recordIndex}">View</button>
-      <button class="payment-cost-button action-mini-button" type="button" data-payment-cost="${recordIndex}">Payment</button>
-      <div class="more-actions-wrap">
-        <button class="more-actions-button action-mini-button" type="button" data-more-actions="${recordIndex}" aria-expanded="false">More</button>
-        <div class="more-actions-menu" data-more-menu="${recordIndex}" hidden>
-          <button class="request-edit-button" type="button" data-change-request="edit" data-record-index="${recordIndex}">Request Edit</button>
-          <button class="request-delete-button" type="button" data-change-request="delete" data-record-index="${recordIndex}">Delete</button>
-        </div>
-      </div>
-      ${hasPaymentUpdate ? `<span class="payment-updated-indicator" title="${escapeHtml(updatedTitle)}">Updated</span>` : ''}
       <span class="row-status-message" data-row-status="${recordIndex}"></span>
     </div>
   `;
@@ -2159,6 +2149,7 @@ function requestSavedRepairChange(recordIndex, requestType, button) {
   const rowStatus = button?.closest('.change-request-actions')?.querySelector(`[data-row-status="${recordIndex}"]`);
   if (rowStatus) rowStatus.textContent = 'Edit request saved';
   recordsStatus.textContent = `Edit request saved to ${REPAIR_CHANGE_REQUESTS_KEY}. Saved record was not changed.`;
+  window.alert('Edit request noted. Manager review is required.');
 }
 
 async function deleteRepairRecordLocal(recordIndex) {
@@ -2297,6 +2288,9 @@ function filterSavedRecords(records) {
     const normalizedRepairStatus = normalizeStatusFilterValue(recordRepairStatus);
     const normalizedPaymentStatus = normalizeStatusFilterValue(recordPaymentStatus);
     const normalizedApprovalStatus = normalizeStatusFilterValue(recordApprovalStatus);
+    const matchesApprovalStatus = !approvalStatus ||
+      normalizedApprovalStatus === approvalStatus ||
+      (approvalStatus === 'for approval' && normalizedApprovalStatus === 'draft');
     const recordDate = getRepairRecordDateByType(record, dateType);
     const matchesQuickFilter =
       !savedRecordsQuickFilter ||
@@ -2310,7 +2304,7 @@ function filterSavedRecords(records) {
       (!requestType || recordType === requestType) &&
       (!repairStatus || normalizedRepairStatus === repairStatus) &&
       (!paymentStatus || normalizedPaymentStatus === paymentStatus) &&
-      (!approvalStatus || normalizedApprovalStatus === approvalStatus) &&
+      matchesApprovalStatus &&
       (!dateFilterActive || (recordDate && (!dateFrom || recordDate >= dateFrom) && (!dateTo || recordDate <= dateTo))) &&
       matchesQuickFilter;
   });
@@ -2726,11 +2720,12 @@ function buildDetailBlock(label, value) {
   `;
 }
 
-function showRecordDetails(record) {
+function showRecordDetails(record, recordIndex = -1) {
   if (!recordDetailsPanel || !recordDetailsContent) return;
   const updatedAt = getRepairPaymentValue(record, 'updatedAt');
   const updatedBy = getRepairPaymentValue(record, 'updatedBy');
   const paidBy = getRepairPaidBy(record);
+  const savedRecordIndex = recordIndex >= 0 ? recordIndex : savedRepairRecords.indexOf(record);
   const detailBlocks = [
     buildDetailBlock('Original Cost', formatPeso(getOriginalTotalCost(record) || getRecordValue(record, 'Total_Cost'))),
     buildDetailBlock('Final Cost', formatPeso(getRepairPaymentValue(record, 'finalCost'))),
@@ -2747,7 +2742,10 @@ function showRecordDetails(record) {
   if (paidBy) detailBlocks.push(buildDetailBlock('Paid by', paidBy));
   if (updatedAt) detailBlocks.push(buildDetailBlock('Updated At', formatDateTimeDisplay(updatedAt)));
   if (updatedBy) detailBlocks.push(buildDetailBlock('Updated By', updatedBy));
-  recordDetailsContent.innerHTML = detailBlocks.join('');
+  const actions = savedRecordIndex >= 0
+    ? `<div class="record-details-actions"><button class="details-button" type="button" data-detail-change-request="${savedRecordIndex}">Request to Edit</button></div>`
+    : '';
+  recordDetailsContent.innerHTML = `${detailBlocks.join('')}${actions}`;
   recordDetailsPanel.hidden = false;
 }
 
@@ -3827,8 +3825,9 @@ if (savedRecordsBody) {
   savedRecordsBody.addEventListener('click', event => {
     const detailsButton = event.target.closest('.details-button');
     if (detailsButton) {
-      const record = savedRepairRecords[Number(detailsButton.dataset.recordIndex)];
-      if (record) showRecordDetails(record);
+      const recordIndex = Number(detailsButton.dataset.recordIndex);
+      const record = savedRepairRecords[recordIndex];
+      if (record) showRecordDetails(record, recordIndex);
       return;
     }
 
@@ -3879,7 +3878,7 @@ if (todayRepairRecordsBody) {
     const detailsButton = event.target.closest('[data-today-record-index]');
     if (!detailsButton) return;
     const record = todayRepairRecords[Number(detailsButton.dataset.todayRecordIndex)];
-    if (record) showRecordDetails(record);
+    if (record) showRecordDetails(record, savedRepairRecords.indexOf(record));
   });
 }
 
@@ -3890,6 +3889,10 @@ if (closeRecordDetails) {
 if (recordDetailsPanel) {
   recordDetailsPanel.addEventListener('click', event => {
     if (event.target === recordDetailsPanel) hideRecordDetails();
+    const editButton = event.target.closest('[data-detail-change-request]');
+    if (editButton) {
+      requestSavedRepairChange(Number(editButton.dataset.detailChangeRequest), 'edit', editButton);
+    }
   });
 }
 

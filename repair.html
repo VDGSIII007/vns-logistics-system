@@ -264,10 +264,10 @@
     }
 
     .change-request-actions {
-      display: grid;
-      grid-template-columns: 52px 68px 52px;
+      display: inline-grid;
+      grid-template-columns: 52px;
       gap: 5px;
-      width: 172px;
+      width: auto;
       align-items: center;
       position: relative;
     }
@@ -309,6 +309,13 @@
     .change-request-actions .details-button {
       color: #1f2937;
       border-color: #cbd5e1;
+    }
+
+    .record-details-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 4px;
     }
 
     .more-actions-wrap {
@@ -1182,7 +1189,6 @@
                 <span>Approval Status</span>
                 <select id="records-approval-status-filter">
                   <option value="">All Approval Statuses</option>
-                  <option value="Draft">Draft</option>
                   <option value="Pending">Pending</option>
                   <option value="For Approval">For Approval</option>
                   <option value="Approved">Approved</option>
