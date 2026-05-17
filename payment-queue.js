@@ -7,6 +7,40 @@ const STORAGE_KEYS = {
   budget: "vnsTripBudgets",
   bali: "vnsBaliCashAdvances"
 };
+const CASH_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyu1N444S_vthjIoxcy081CdDZJuy6EwHt5ktKU42U4qNY_HL4F2HHKEQl6HDSZZItf/exec";
+const CASH_SYNC_KEY = "vns-cash-sync-2026-Jay";
+
+const PAYMENT_READY_STATUSES = [
+  "approved",
+  "for payment",
+  "for release",
+  "unpaid",
+  "pending payment",
+  "ready for payment",
+  "ready for release"
+];
+const PAYMENT_FINAL_STATUSES = [
+  "paid",
+  "deposited",
+  "used",
+  "released",
+  "completed",
+  "done",
+  "rejected",
+  "returned",
+  "cancelled",
+  "canceled",
+  "deleted",
+  "draft"
+];
+const PAYMENT_PAID_STATUSES = [
+  "paid",
+  "deposited",
+  "used",
+  "released",
+  "completed",
+  "done"
+];
 
 const state = {
   items: [],
@@ -94,10 +128,18 @@ function normalizedValue(record, keys) {
   return valueFrom(record, keys).toLowerCase();
 }
 
+function valuesFrom(record, keys) {
+  return keys.map(key => String(record?.[key] ?? "").trim().toLowerCase()).filter(Boolean);
+}
+
+function statusMatches(value, statuses) {
+  const status = String(value || "").trim().toLowerCase();
+  return statuses.some(target => status === target || (target.length > 4 && status.includes(target)));
+}
+
 function isPaid(record) {
-  const paymentStatus = normalizedValue(record, ["paymentStatus", "Payment_Status"]);
-  const status = normalizedValue(record, ["status", "Status"]);
-  return paymentStatus === "paid" || status === "paid" || status === "deposited" || status === "used";
+  const statuses = valuesFrom(record, ["paymentStatus", "Payment_Status", "Posted_Status", "postedStatus", "status", "Status"]);
+  return statuses.some(status => statusMatches(status, PAYMENT_PAID_STATUSES));
 }
 
 function isPaymentUnpaid(record, allowed = ["", "unpaid", "for payment"]) {
@@ -116,8 +158,9 @@ function isApprovedForPayment(type, record) {
     return (status === "approved" || approvalStatus === "approved" || workflowStatus === "approved") && isPaymentUnpaid(record);
   }
   if (type === "cash") {
-    const blockedStatus = ["deposited", "used", "paid"].includes(status);
-    return !blockedStatus && (status === "approved" || reviewStatus === "approved") && isPaymentUnpaid(record);
+    const statuses = valuesFrom(record, ["Review_Status", "reviewStatus", "Status", "status", "Approval_Status", "approvalStatus", "Payment_Status", "paymentStatus", "Posted_Status", "postedStatus"]);
+    if (statuses.some(value => statusMatches(value, PAYMENT_FINAL_STATUSES))) return false;
+    return statuses.some(value => statusMatches(value, PAYMENT_READY_STATUSES)) && isPaymentUnpaid(record);
   }
   return (status === "approved" || approvalStatus === "approved") && isPaymentUnpaid(record, ["", "unpaid", "for deposit"]);
 }
@@ -161,12 +204,59 @@ function makeItem(type, module, record, fallbackId) {
   return {
     ...common,
     payee: text(record.personName || record.Person_Name || record.payee || record.Payee || record.supplierName || record.driverName || record.receiverName || record.fuelStation),
-    date: record.date || record.createdAt || record.timestamp,
-    amount: Number(record.amount || record.budgetAmount || record.totalAmount) || 0
+    date: record.date || record.Date || record.createdAt || record.Created_At || record.timestamp,
+    amount: Number(record.amount || record.Amount || record.budgetAmount || record.Budget_Amount || record.Diesel_Amount || record.totalAmount) || 0
   };
 }
 
-function loadItems() {
+function normalizeCashListResponse(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.entries)) return data.entries;
+  if (Array.isArray(data?.records)) return data.records;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.rows)) return data.rows;
+  if (Array.isArray(data?.result)) return data.result;
+  return [];
+}
+
+async function loadCloudCashRecords() {
+  const params = new URLSearchParams({
+    action: "listEntries",
+    syncKey: CASH_SYNC_KEY
+  });
+  const response = await fetch(`${CASH_APP_SCRIPT_URL}?${params.toString()}`);
+  if (!response.ok) throw new Error(`Cash list failed: ${response.status}`);
+  const data = await response.json();
+  if (data && data.ok === false) throw new Error(data.error || "Cash list returned an error.");
+  const records = normalizeCashListResponse(data).filter(record => record && typeof record === "object");
+  console.log("Payment Queue cloud cash records loaded", records.length);
+  return records;
+}
+
+function loadLocalCashRecords() {
+  return [
+    ...readJson(STORAGE_KEYS.bali),
+    ...readJson(STORAGE_KEYS.budget),
+    ...readJson(STORAGE_KEYS.diesel)
+  ];
+}
+
+async function loadCashPaymentItems() {
+  let records;
+  try {
+    records = await loadCloudCashRecords();
+  } catch (error) {
+    console.warn("Payment Queue cash cloud load failed; using local fallback.", error);
+    records = loadLocalCashRecords();
+  }
+
+  const approved = records.filter(record => record && !record.isDeleted && (isApprovedForPayment("cash", record) || isPaid(record)));
+  console.log("Payment Queue approved cash records", approved.filter(record => !isPaid(record)).length);
+  return approved.map((record, index) => makeItem("cash", "Cash / PO / Bali", record, `CASH-${index + 1}`));
+}
+
+async function loadItems() {
   const payroll = readJson(STORAGE_KEYS.payroll)
     .filter(record => record && !record.isDeleted && (isApprovedForPayment("payroll", record) || isPaid(record)))
     .map((record, index) => makeItem("payroll", "Payroll", record, `PAY-${index + 1}`));
@@ -175,13 +265,7 @@ function loadItems() {
     .filter(record => record && !record.isDeleted && (isApprovedForPayment("repair", record) || isPaid(record)))
     .map((record, index) => makeItem("repair", "Repair / Labor", record, `REP-${index + 1}`));
 
-  const cash = [
-    ...readJson(STORAGE_KEYS.bali),
-    ...readJson(STORAGE_KEYS.budget),
-    ...readJson(STORAGE_KEYS.diesel)
-  ]
-    .filter(record => record && !record.isDeleted && (isApprovedForPayment("cash", record) || isPaid(record)))
-    .map((record, index) => makeItem("cash", "Cash / PO / Bali", record, `CASH-${index + 1}`));
+  const cash = await loadCashPaymentItems();
 
   state.items = [...payroll, ...cash, ...repair];
 }
@@ -376,8 +460,8 @@ function bindEvents() {
     state.sort = event.target.value;
     applyFilters();
   });
-  if (refresh) refresh.addEventListener("click", () => {
-    loadItems();
+  if (refresh) refresh.addEventListener("click", async () => {
+    await loadItems();
     applyFilters();
   });
   document.addEventListener("click", event => {
@@ -390,9 +474,9 @@ function bindEvents() {
   });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   setPaymentAccess();
   bindEvents();
-  loadItems();
+  await loadItems();
   applyFilters();
 });
