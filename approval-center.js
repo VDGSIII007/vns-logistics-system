@@ -975,15 +975,16 @@ function updateRepairBatchUi() {
   if (button) {
     button.hidden = acState.view === "history" || (acState.tab !== "repair" && acState.tab !== "cash");
     const selectedCount = acState.tab === "cash" ? acState.selectedCashIds.size : acState.selectedRepairIds.size;
-    button.disabled = acState.tab !== "cash" || selectedCount === 0;
+    const canBatchApprove = acState.tab === "cash" || acState.tab === "repair";
+    button.disabled = !canBatchApprove || selectedCount === 0;
     button.title = acState.tab === "cash"
       ? selectedCount ? "Approve selected Cash / PO / Bali requests." : "Select one or more Cash / PO / Bali requests to approve."
-      : "Batch approval will be enabled after repair backend approval actions are connected.";
+      : selectedCount ? "Approve selected Repair / Labor requests." : "Select one or more Repair / Labor requests to approve.";
     button.textContent = selectedCount ? `Approve Selected (${selectedCount})` : "Approve Selected";
   }
   if (note) {
     if (acState.view === "history") note.textContent = "Approval History is read-only.";
-    else if (acState.tab === "repair") note.textContent = "Preview mode: repair approval buttons are temporarily disabled.";
+    else if (acState.tab === "repair") note.textContent = "Repair approval actions are active. Approved requests move to Payment Queue.";
     else if (acState.tab === "cash") note.textContent = "Cash approval actions are active. Approved requests move to Payment Queue.";
     else note.textContent = "Preview mode: central approval actions are disabled until backend role checks are connected.";
   }
@@ -1436,10 +1437,10 @@ function buildRepairCategoryFields(category, record, item) {
 }
 
 function buildModalActions(item) {
-  const approveDisabled = item.type !== "payroll" && item.type !== "cash";
+  const approveDisabled = item.type !== "payroll" && item.type !== "cash" && item.type !== "repair";
   const secondaryDisabled = item.type !== "payroll";
   const disabledMessage = item.type === "repair"
-    ? "Repair approval is not active yet. This screen is for review/testing only."
+    ? "Repair revise/reject actions are not active yet. Use Approve only."
     : item.type === "cash"
       ? "Cash revise/reject actions are not active yet. Use Approve only."
       : "Approval button is not active yet for this request.";
@@ -1468,6 +1469,7 @@ function bindModalApprovalButtons() {
       if (action === "close") closeApprovalDetail();
       if (button.disabled) return;
       if (action === "approve" && acState.activeItem?.type === "cash") approveCashFromModal();
+      else if (action === "approve" && acState.activeItem?.type === "repair") approveRepairFromModal();
       else if (action === "approve") approvePayrollFromModal();
       if (action === "revise") returnPayrollFromModal();
       if (action === "reject") rejectPayrollFromModal();
@@ -1603,6 +1605,130 @@ async function approveSelectedCashRecords() {
 }
 
 function refreshCashApprovalList(message = "") {
+  return refreshApprovalItems(message);
+}
+
+function repairApprovalPost(payload = {}) {
+  return fetch(REPAIR_WEB_APP_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({
+      action: "updateStatus",
+      ...payload
+    })
+  }).then(response => response.json());
+}
+
+function currentRepairApprover() {
+  return window.VNSAuth?.getRole ? window.VNSAuth.getRole() : "Admin";
+}
+
+function getRepairApprovalId(record = {}) {
+  return acText(record.Request_ID || record.requestId || record.Repair_Record_ID || record.repairRecordId || record.id, "");
+}
+
+function buildRepairApprovalPayload(record = {}) {
+  const now = new Date().toISOString();
+  const approver = currentRepairApprover() || "Admin";
+  const requestId = getRepairApprovalId(record);
+  const amount = repairAmount(record);
+  return {
+    Request_ID: requestId,
+    requestId,
+    Status: "Approved",
+    status: "Approved",
+    Approval_Status: "Approved",
+    approvalStatus: "Approved",
+    Repair_Status: "Approved",
+    repairStatus: "Approved",
+    Payment_Status: "Unpaid",
+    paymentStatus: "Unpaid",
+    Approved_By: approver,
+    approvedBy: approver,
+    Approved_At: now,
+    approvedAt: now,
+    Updated_By: approver,
+    updatedBy: approver,
+    Last_Updated: now,
+    Original_Total_Cost: record.Original_Total_Cost || record.originalTotalCost || record.Total_Cost || record.totalCost || amount || "",
+    Final_Cost: record.Final_Cost || record.finalCost || record.Approved_Cost || record.approvedCost || record.Total_Cost || record.totalCost || amount || "",
+    Approved_Cost: record.Approved_Cost || record.approvedCost || record.Final_Cost || record.finalCost || record.Total_Cost || record.totalCost || amount || "",
+    Payee: record.Payee || record.payee || record.Supplier || record.supplierName || record.Shop_Name || record.shopName || "",
+    Remarks: record.Remarks || record.remarks || ""
+  };
+}
+
+async function approveRepairRecord(record) {
+  const requestId = getRepairApprovalId(record);
+  if (!requestId) throw new Error("Repair request ID is missing.");
+  if (record.__approvalCenterSource !== "repair-cloud-list") {
+    throw new Error("Repair backend is not available for this record. Refresh and try again.");
+  }
+
+  const result = await repairApprovalPost(buildRepairApprovalPayload(record));
+  if (!isCloudSuccess(result)) throw new Error(result?.message || result?.error || "Repair approval failed.");
+  return result;
+}
+
+async function approveRepairFromModal() {
+  const item = acState.activeItem;
+  if (!item || item.type !== "repair") return;
+  if (!confirm("Approve this Repair / Labor request?")) return;
+
+  setApprovalMessage("Approving Repair / Labor request...", "info");
+  try {
+    await approveRepairRecord(item.raw);
+    closeApprovalDetail();
+    acState.selectedRepairIds.delete(item.id);
+    await refreshRepairApprovalList("Repair / Labor request approved.");
+    triggerPaymentQueuePushCheck();
+  } catch (error) {
+    console.warn("Repair approval failed", error);
+    setApprovalMessage(error?.message || "Repair approval failed. Please try again.", "error");
+  }
+}
+
+async function approveSelectedRepairRecords() {
+  const selectedIds = [...acState.selectedRepairIds];
+  if (!selectedIds.length) {
+    setApprovalMessage("Select one or more Repair / Labor requests to approve.", "warning");
+    return;
+  }
+  if (!confirm(`Approve ${selectedIds.length} selected Repair / Labor request${selectedIds.length === 1 ? "" : "s"}?`)) return;
+
+  const selected = acState.items.filter(item => item.type === "repair" && selectedIds.includes(item.id) && item.isPending);
+  if (!selected.length) {
+    setApprovalMessage("Selected Repair / Labor requests are no longer pending.", "warning");
+    acState.selectedRepairIds.clear();
+    applyApprovalFilters();
+    return;
+  }
+
+  const button = ac$("ac-approve-selected");
+  if (button) button.disabled = true;
+  setApprovalMessage(`Approving ${selected.length} Repair / Labor request${selected.length === 1 ? "" : "s"}...`, "info");
+
+  const results = await Promise.allSettled(selected.map(item => approveRepairRecord(item.raw)));
+  const approvedIds = selected
+    .filter((item, index) => results[index].status === "fulfilled")
+    .map(item => item.id);
+  approvedIds.forEach(id => acState.selectedRepairIds.delete(id));
+  const failed = results.filter(result => result.status === "rejected");
+
+  if (failed.length) {
+    console.warn("Some Repair approvals failed", failed);
+    setApprovalMessage(`${approvedIds.length} approved, ${failed.length} failed. Failed rows remain pending.`, approvedIds.length ? "warning" : "error");
+    if (approvedIds.length) await refreshRepairApprovalList();
+    else updateRepairBatchUi();
+    return;
+  }
+
+  acState.selectedRepairIds.clear();
+  await refreshRepairApprovalList(`${approvedIds.length} Repair / Labor request${approvedIds.length === 1 ? "" : "s"} approved.`);
+  triggerPaymentQueuePushCheck();
+}
+
+function refreshRepairApprovalList(message = "") {
   return refreshApprovalItems(message);
 }
 
@@ -1795,6 +1921,7 @@ function bindApprovalEvents() {
   });
   if (approveSelected) approveSelected.addEventListener("click", () => {
     if (acState.tab === "cash") approveSelectedCashRecords();
+    else if (acState.tab === "repair") approveSelectedRepairRecords();
   });
   document.addEventListener("click", event => {
     const trigger = event.target.closest("[data-detail]");
