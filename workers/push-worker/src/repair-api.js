@@ -243,6 +243,66 @@ export async function updateRepairBackupStatus(env, input = {}) {
   };
 }
 
+export async function updateRepairRequestStatus(env, input = {}) {
+  const requestId = textOrNull(input.request_id || input.Request_ID || input.requestId);
+  if (!requestId) {
+    return { ok: false, error: "request_id is required", status: 400 };
+  }
+
+  const now = new Date().toISOString();
+  const payload = {
+    status: textOrNull(input.status || input.Status),
+    approval_status: textOrNull(input.approval_status || input.Approval_Status || input.approvalStatus),
+    repair_status: textOrNull(input.repair_status || input.Repair_Status || input.repairStatus),
+    payment_status: textOrNull(input.payment_status || input.Payment_Status || input.paymentStatus),
+    approved_by: textOrNull(input.approved_by || input.Approved_By || input.approvedBy),
+    approved_at: input.approved_at || input.Approved_At || input.approvedAt || null,
+    paid_by: textOrNull(input.paid_by || input.Paid_By || input.paidBy),
+    paid_at: input.paid_at || input.Paid_At || input.paidAt || null,
+    updated_at: timestampOrNow(input.updated_at || input.Updated_At || input.updatedAt || now),
+    backup_status: textOrNull(input.backup_status || input.Backup_Status || input.backupStatus) || "pending",
+    backup_synced_at: null,
+    backup_error: null
+  };
+
+  // TODO: insert approval/payment audit rows into repair_events after the event schema is finalized.
+  Object.keys(payload).forEach(key => {
+    if (payload[key] === null || payload[key] === undefined || payload[key] === "") delete payload[key];
+  });
+
+  const filters = new URLSearchParams({
+    request_id: `eq.${requestId}`
+  });
+  let result = await supabaseFetch(env, `repair_requests?${filters.toString()}`, {
+    method: "PATCH",
+    prefer: "return=representation",
+    body: JSON.stringify(payload)
+  });
+
+  if (result.error && /approved_at|paid_by|paid_at/i.test(String(result.details?.message || result.error || ""))) {
+    const fallbackPayload = { ...payload };
+    delete fallbackPayload.approved_at;
+    delete fallbackPayload.paid_by;
+    delete fallbackPayload.paid_at;
+    result = await supabaseFetch(env, `repair_requests?${filters.toString()}`, {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: JSON.stringify(fallbackPayload)
+    });
+  }
+
+  if (result.error) {
+    return { ok: false, error: SAFE_ERROR, details: result.error, status: result.status || 500 };
+  }
+
+  return {
+    ok: true,
+    source: "supabase",
+    request_id: requestId,
+    records: Array.isArray(result.body) ? result.body : []
+  };
+}
+
 export function repairArrayFromAnyResponse(payload) {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];

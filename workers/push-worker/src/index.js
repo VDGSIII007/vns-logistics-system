@@ -20,6 +20,7 @@ import {
 } from "./subscriptions.js";
 import {
   listRepairRequestsFromSupabase,
+  updateRepairRequestStatus,
   updateRepairBackupStatus,
   upsertRepairRequestToSupabase
 } from "./repair-api.js";
@@ -32,6 +33,7 @@ const JSON_HEADERS = {
 const REPAIR_API_PATHS = new Set([
   "/api/repair/create",
   "/api/repair/list",
+  "/api/repair/update-status",
   "/api/repair/backup-status"
 ]);
 const CORS_ALLOWED_ORIGINS = new Set([
@@ -299,12 +301,32 @@ async function handleRepairBackupStatus(request, env) {
   return jsonResponse(result);
 }
 
+async function handleRepairUpdateStatus(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
+
+  const result = await updateRepairRequestStatus(env, input);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Repair status update failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse({
+    ok: true,
+    source: result.source,
+    request_id: result.request_id
+  });
+}
+
 async function routeRequest(request, env) {
   const url = new URL(request.url);
   const isRepairApiRoute = REPAIR_API_PATHS.has(url.pathname);
   if (isRepairApiRoute && request.method === "OPTIONS") return handleOptions(request);
   if (request.method === "POST" && url.pathname === "/api/repair/create") return withCors(await handleRepairCreate(request, env), request);
   if (request.method === "GET" && url.pathname === "/api/repair/list") return withCors(await handleRepairList(url, env), request);
+  if (request.method === "POST" && url.pathname === "/api/repair/update-status") return withCors(await handleRepairUpdateStatus(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/repair/backup-status") return withCors(await handleRepairBackupStatus(request, env), request);
   if (isRepairApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
   if (request.method === "GET" && url.pathname === "/api/push/check") return handleCheck(env);

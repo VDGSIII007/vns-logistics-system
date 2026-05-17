@@ -11,6 +11,7 @@ const AC_KEYS = {
 const PAYROLL_LIQUIDATION_API_URL = "https://script.google.com/macros/s/AKfycbx2JOUTm1ESJ8Ce6zGu7PzqDLBaPTjNoHeRskU-Akc5JipoUJXXPQ1BibY04paConwM/exec";
 const PAYROLL_LIQUIDATION_SYNC_KEY = "vns-payroll-liquidation-sync-2026-Jay";
 const REPAIR_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzSxpVjoHxkXo95FIJL6MBWFsHQBaRbWU-AabblQ1e15jSJpYZTmA4rc41g3uTH2j_x5w/exec";
+const VNS_WORKER_API_BASE = "https://vns-push-worker.santosvicenteiii.workers.dev";
 const CASH_APPROVAL_API_URL = "https://script.google.com/macros/s/AKfycbyu1N444S_vthjIoxcy081CdDZJuy6EwHt5ktKU42U4qNY_HL4F2HHKEQl6HDSZZItf/exec";
 const CASH_APPROVAL_SYNC_KEY = "vns-cash-sync-2026-Jay";
 
@@ -445,6 +446,43 @@ function normalizeRepairListResponse(data) {
   return [];
 }
 
+function normalizeSupabaseRepairRecord(record = {}) {
+  return {
+    ...record,
+    Request_ID: record.Request_ID || record.request_id || record.requestId,
+    Request_Type: record.Request_Type || record.request_type || record.requestType,
+    Date_Requested: record.Date_Requested || record.date_requested || record.dateRequested,
+    Date_Finished: record.Date_Finished || record.date_finished || record.dateFinished,
+    Requested_By: record.Requested_By || record.requested_by || record.requestedBy,
+    Plate_Number: record.Plate_Number || record.plate_number || record.plateNumber,
+    Truck_Type: record.Truck_Type || record.truck_type || record.truckType,
+    Driver: record.Driver || record.driver,
+    Helper: record.Helper || record.helper,
+    Category: record.Category || record.category,
+    Repair_Parts: record.Repair_Parts || record.repair_parts || record.repairParts,
+    Work_Done: record.Work_Done || record.work_done || record.workDone,
+    Quantity: record.Quantity || record.quantity,
+    Unit_Cost: record.Unit_Cost || record.unit_cost || record.unitCost,
+    Parts_Cost: record.Parts_Cost || record.parts_cost || record.partsCost,
+    Labor_Cost: record.Labor_Cost || record.labor_cost || record.laborCost,
+    Total_Cost: record.Total_Cost || record.total_cost || record.totalCost,
+    Original_Total_Cost: record.Original_Total_Cost || record.original_total_cost || record.originalTotalCost || record.total_cost,
+    Final_Cost: record.Final_Cost || record.final_cost || record.finalCost || record.total_cost,
+    Supplier: record.Supplier || record.supplier,
+    Payee: record.Payee || record.payee,
+    Status: record.Status || record.status,
+    Repair_Status: record.Repair_Status || record.repair_status || record.repairStatus,
+    Approval_Status: record.Approval_Status || record.approval_status || record.approvalStatus,
+    Payment_Status: record.Payment_Status || record.payment_status || record.paymentStatus,
+    Approved_By: record.Approved_By || record.approved_by || record.approvedBy,
+    Source_Message: record.Source_Message || record.source_message || record.sourceMessage,
+    Remarks: record.Remarks || record.remarks,
+    Created_At: record.Created_At || record.created_at || record.createdAt,
+    Last_Updated: record.Last_Updated || record.updated_at || record.updatedAt,
+    Is_Deleted: record.Is_Deleted || record.is_deleted || record.isDeleted
+  };
+}
+
 function readRealLocalRepairRecords() {
   return acReadJson(AC_KEYS.forRepairTrucks)
     .filter(record => record && !record.isDeleted)
@@ -472,13 +510,28 @@ function readFallbackRepairRecords() {
 
 async function loadRepairRecordsForApproval() {
   try {
+    const response = await fetch(`${VNS_WORKER_API_BASE}/api/repair/list?limit=500`);
+    if (!response.ok) throw new Error(`Repair Supabase list failed: ${response.status}`);
+    const data = await response.json();
+    if (data && data.ok === false) throw new Error(data.error || "Repair Supabase list returned an error.");
+    const records = normalizeRepairListResponse(data).map(record => ({
+      ...normalizeSupabaseRepairRecord(record),
+      __approvalCenterSource: "repair-supabase-list"
+    }));
+    acState.repairSource = "Repair Supabase list";
+    return records;
+  } catch (error) {
+    console.warn("Approval Center repair Supabase list unavailable; using Google Sheets fallback.", error);
+  }
+
+  try {
     const response = await fetch(`${REPAIR_WEB_APP_URL}?action=list`);
     if (!response.ok) throw new Error(`Repair list failed: ${response.status}`);
     const records = normalizeRepairListResponse(await response.json()).map(record => ({
       ...record,
       __approvalCenterSource: "repair-cloud-list"
     }));
-    acState.repairSource = "Repair cloud list action";
+    acState.repairSource = "Repair Google Sheets list action";
     return records;
   } catch (error) {
     console.warn("Approval Center repair cloud list unavailable; using local fallback.", error);
@@ -1619,6 +1672,46 @@ function repairApprovalPost(payload = {}) {
   }).then(response => response.json());
 }
 
+async function repairSupabaseStatusPost(payload = {}) {
+  const response = await fetch(`${VNS_WORKER_API_BASE}/api/repair/update-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result?.ok) {
+    throw new Error(result?.error || `Repair Supabase update failed (${response.status})`);
+  }
+  return result;
+}
+
+function repairBackupStatusPost(requestId, backupStatus, backupError = "") {
+  if (!requestId) return Promise.resolve();
+  return fetch(`${VNS_WORKER_API_BASE}/api/repair/backup-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      request_id: requestId,
+      backup_status: backupStatus,
+      backup_error: backupError
+    })
+  }).catch(error => console.warn("Repair backup status update failed", error));
+}
+
+function backupRepairApprovalToSheets(payload = {}) {
+  console.log("Repair approval Sheets backup started");
+  repairApprovalPost(payload)
+    .then(result => {
+      if (!isCloudSuccess(result)) throw new Error(result?.message || result?.error || "Repair approval Sheets backup failed.");
+      console.log("Repair approval Sheets backup succeeded");
+      return repairBackupStatusPost(payload.request_id || payload.requestId || payload.Request_ID, "synced");
+    })
+    .catch(error => {
+      console.warn("Repair approval Sheets backup failed", error);
+      repairBackupStatusPost(payload.request_id || payload.requestId || payload.Request_ID, "failed", error?.message || "Repair approval Sheets backup failed");
+    });
+}
+
 function currentRepairApprover() {
   return window.VNSAuth?.getRole ? window.VNSAuth.getRole() : "Admin";
 }
@@ -1661,13 +1754,34 @@ function buildRepairApprovalPayload(record = {}) {
 async function approveRepairRecord(record) {
   const requestId = getRepairApprovalId(record);
   if (!requestId) throw new Error("Repair request ID is missing.");
-  if (record.__approvalCenterSource !== "repair-cloud-list") {
+  if (!["repair-supabase-list", "repair-cloud-list"].includes(record.__approvalCenterSource)) {
     throw new Error("Repair backend is not available for this record. Refresh and try again.");
   }
 
-  const result = await repairApprovalPost(buildRepairApprovalPayload(record));
-  if (!isCloudSuccess(result)) throw new Error(result?.message || result?.error || "Repair approval failed.");
-  return result;
+  const sheetsPayload = buildRepairApprovalPayload(record);
+  const supabasePayload = {
+    request_id: requestId,
+    status: "Approved",
+    approval_status: "Approved",
+    repair_status: "Approved",
+    payment_status: "Unpaid",
+    approved_by: sheetsPayload.Approved_By || "Admin",
+    approved_at: sheetsPayload.Approved_At,
+    updated_at: sheetsPayload.Last_Updated,
+    backup_status: "pending"
+  };
+
+  try {
+    const result = await repairSupabaseStatusPost(supabasePayload);
+    console.log("Repair approval saved to Supabase");
+    backupRepairApprovalToSheets(sheetsPayload);
+    return result;
+  } catch (error) {
+    console.warn("Repair approval Supabase update failed; using Sheets fallback.", error);
+    const result = await repairApprovalPost(sheetsPayload);
+    if (!isCloudSuccess(result)) throw new Error(result?.message || result?.error || "Repair approval failed.");
+    return result;
+  }
 }
 
 async function approveRepairFromModal() {

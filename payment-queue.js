@@ -10,6 +10,7 @@ const STORAGE_KEYS = {
 const CASH_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyu1N444S_vthjIoxcy081CdDZJuy6EwHt5ktKU42U4qNY_HL4F2HHKEQl6HDSZZItf/exec";
 const CASH_SYNC_KEY = "vns-cash-sync-2026-Jay";
 const REPAIR_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzSxpVjoHxkXo95FIJL6MBWFsHQBaRbWU-AabblQ1e15jSJpYZTmA4rc41g3uTH2j_x5w/exec";
+const VNS_WORKER_API_BASE = "https://vns-push-worker.santosvicenteiii.workers.dev";
 
 const PAYMENT_READY_STATUSES = [
   "approved",
@@ -123,6 +124,43 @@ function valueFrom(record, keys) {
     if (value) return value;
   }
   return "";
+}
+
+function normalizeSupabaseRepairRecord(record = {}) {
+  return {
+    ...record,
+    Request_ID: record.Request_ID || record.request_id || record.requestId,
+    Request_Type: record.Request_Type || record.request_type || record.requestType,
+    Date_Requested: record.Date_Requested || record.date_requested || record.dateRequested,
+    Date_Finished: record.Date_Finished || record.date_finished || record.dateFinished,
+    Requested_By: record.Requested_By || record.requested_by || record.requestedBy,
+    Plate_Number: record.Plate_Number || record.plate_number || record.plateNumber,
+    Truck_Type: record.Truck_Type || record.truck_type || record.truckType,
+    Driver: record.Driver || record.driver,
+    Helper: record.Helper || record.helper,
+    Category: record.Category || record.category,
+    Repair_Parts: record.Repair_Parts || record.repair_parts || record.repairParts,
+    Work_Done: record.Work_Done || record.work_done || record.workDone,
+    Quantity: record.Quantity || record.quantity,
+    Unit_Cost: record.Unit_Cost || record.unit_cost || record.unitCost,
+    Parts_Cost: record.Parts_Cost || record.parts_cost || record.partsCost,
+    Labor_Cost: record.Labor_Cost || record.labor_cost || record.laborCost,
+    Total_Cost: record.Total_Cost || record.total_cost || record.totalCost,
+    Original_Total_Cost: record.Original_Total_Cost || record.original_total_cost || record.originalTotalCost || record.total_cost,
+    Final_Cost: record.Final_Cost || record.final_cost || record.finalCost || record.total_cost,
+    Supplier: record.Supplier || record.supplier,
+    Payee: record.Payee || record.payee,
+    Status: record.Status || record.status,
+    Repair_Status: record.Repair_Status || record.repair_status || record.repairStatus,
+    Approval_Status: record.Approval_Status || record.approval_status || record.approvalStatus,
+    Payment_Status: record.Payment_Status || record.payment_status || record.paymentStatus,
+    Approved_By: record.Approved_By || record.approved_by || record.approvedBy,
+    Source_Message: record.Source_Message || record.source_message || record.sourceMessage,
+    Remarks: record.Remarks || record.remarks,
+    Created_At: record.Created_At || record.created_at || record.createdAt,
+    Last_Updated: record.Last_Updated || record.updated_at || record.updatedAt,
+    Is_Deleted: record.Is_Deleted || record.is_deleted || record.isDeleted
+  };
 }
 
 function normalizedValue(record, keys) {
@@ -344,6 +382,98 @@ async function repairMarkPaidPost(raw) {
   return result;
 }
 
+async function repairMarkPaidSupabaseFirst(raw) {
+  const now = new Date().toISOString();
+  const user = currentUser() || "Payment";
+  const requestId = String(raw.Request_ID || raw.requestId || raw.Repair_Record_ID || "").trim();
+  if (!requestId) throw new Error("Repair record has no Request_ID - cannot mark paid.");
+  const sheetsPayload = {
+    action: "updateStatus",
+    Request_ID: requestId,
+    requestId,
+    Status: "Paid",
+    Payment_Status: "Paid",
+    Approval_Status: "Approved",
+    Repair_Status: "Approved",
+    Paid_By: user,
+    Paid_At: now,
+    Released_By: user,
+    Released_At: now,
+    Last_Updated: now
+  };
+
+  try {
+    const response = await fetch(`${VNS_WORKER_API_BASE}/api/repair/update-status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        request_id: requestId,
+        status: "Paid",
+        payment_status: "Paid",
+        approval_status: "Approved",
+        repair_status: "Approved",
+        paid_by: user,
+        paid_at: now,
+        updated_at: now,
+        backup_status: "pending"
+      })
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok || !result?.ok) {
+      throw new Error(result?.error || `Repair Supabase update failed (${response.status})`);
+    }
+    console.log("Repair payment saved to Supabase");
+    backupRepairPaymentToSheets(sheetsPayload);
+    return result;
+  } catch (error) {
+    console.warn("Repair payment Supabase update failed; using Sheets fallback.", error);
+  }
+
+  const result = await repairSheetsUpdateStatus(sheetsPayload);
+  if (!isCloudSuccess(result)) throw new Error(result?.error || result?.message || "Repair update returned an error.");
+  return result;
+}
+
+async function repairSheetsUpdateStatus(payload) {
+  const response = await fetch(REPAIR_WEB_APP_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Repair update failed (${response.status}): ${text || response.statusText}`);
+  }
+  return response.json();
+}
+
+function backupRepairPaymentToSheets(payload) {
+  console.log("Repair payment Sheets backup started");
+  repairSheetsUpdateStatus(payload)
+    .then(result => {
+      if (!isCloudSuccess(result)) throw new Error(result?.error || result?.message || "Repair payment Sheets backup failed.");
+      console.log("Repair payment Sheets backup succeeded");
+      return repairBackupStatusPost(payload.requestId || payload.Request_ID, "synced");
+    })
+    .catch(error => {
+      console.warn("Repair payment Sheets backup failed", error);
+      repairBackupStatusPost(payload.requestId || payload.Request_ID, "failed", error?.message || "Repair payment Sheets backup failed");
+    });
+}
+
+function repairBackupStatusPost(requestId, backupStatus, backupError = "") {
+  if (!requestId) return Promise.resolve();
+  return fetch(`${VNS_WORKER_API_BASE}/api/repair/backup-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      request_id: requestId,
+      backup_status: backupStatus,
+      backup_error: backupError
+    })
+  }).catch(error => console.warn("Repair backup status update failed", error));
+}
+
 function notifyPaid(module) {
   const base = window.VNS_PUSH_API_BASE || "/api/push";
   fetch(`${base}/notify-paid`, {
@@ -370,7 +500,7 @@ async function handleMarkPaid(index, button) {
     if (item.type === "cash") {
       await cashMarkPaidPost(item.raw);
     } else {
-      await repairMarkPaidPost(item.raw);
+      await repairMarkPaidSupabaseFirst(item.raw);
     }
     notifyPaid(item.source);
     closeDetail();
@@ -423,6 +553,20 @@ function loadLocalCashRecords() {
 }
 
 async function loadCloudRepairRecords() {
+  try {
+    const response = await fetch(`${VNS_WORKER_API_BASE}/api/repair/list?limit=500`);
+    if (!response.ok) throw new Error(`Repair Supabase list failed: ${response.status}`);
+    const data = await response.json();
+    if (data && data.ok === false) throw new Error(data.error || data.message || "Repair Supabase list returned an error.");
+    const records = normalizeListResponse(data)
+      .filter(record => record && typeof record === "object")
+      .map(normalizeSupabaseRepairRecord);
+    console.log("Payment Queue cloud repair records loaded", records.length);
+    return records;
+  } catch (error) {
+    console.warn("Payment Queue repair Supabase load failed; using Google Sheets fallback.", error);
+  }
+
   const response = await fetch(`${REPAIR_WEB_APP_URL}?action=list`);
   if (!response.ok) throw new Error(`Repair list failed: ${response.status}`);
   const data = await response.json();
