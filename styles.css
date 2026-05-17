@@ -667,13 +667,11 @@ body.payroll-page{
 .repair-page .section-heading.module-hero{
   max-width:none;
   margin:0 0 26px;
-  padding:44px 38px 34px;
-  border:1px solid rgba(231,231,234,.9);
-  border-radius:30px;
-  background:
-    radial-gradient(circle at 16% 18%,rgba(215,25,32,.12),transparent 34%),
-    linear-gradient(135deg,#fff 0,#fff7f7 100%);
-  box-shadow:0 18px 48px rgba(17,24,39,.055);
+  padding:44px 0 34px;
+  border:0;
+  border-radius:0;
+  background:radial-gradient(circle at 16% 18%,rgba(215,25,32,.05),transparent 38%);
+  box-shadow:none;
 }
 .repair-page .repair-panel,
 .repair-page .manual-entry-form,
@@ -2867,6 +2865,15 @@ body.payroll-page{
   background:transparent;
   box-shadow:none;
 }
+.repair-page .repair-tabs::after{
+  content:"";
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:0;
+  border-bottom:1px solid #d8dde6;
+  z-index:0;
+}
 .repair-page .repair-tab-button{
   min-height:46px;
   margin-bottom:-1px;
@@ -2878,6 +2885,8 @@ body.payroll-page{
   padding:0 18px;
   font-size:.84rem;
   box-shadow:0 -1px 0 rgba(255,255,255,.9) inset;
+  position:relative;
+  z-index:1;
 }
 .repair-page .repair-tab-button:hover{
   border-color:#c5ccd8;
@@ -2888,8 +2897,8 @@ body.payroll-page{
   z-index:4;
   border-color:var(--red);
   border-bottom-color:#fff;
-  background:#fff;
-  color:var(--red);
+  background:var(--red);
+  color:#fff;
   box-shadow:0 -4px 18px rgba(215,25,32,.08);
 }
 .repair-page .repair-tab-panel.active{
@@ -2900,6 +2909,9 @@ body.payroll-page{
   border-radius:0 22px 22px 22px;
   background:#fff;
   box-shadow:0 18px 46px rgba(15,23,42,.07);
+}
+.repair-page #today-repairs-tab.active{
+  padding-top:38px;
 }
 .repair-page .repair-tab-panel.active > :first-child{
   margin-top:0;
