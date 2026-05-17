@@ -29,11 +29,54 @@ const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store"
 };
+const REPAIR_API_PATHS = new Set([
+  "/api/repair/create",
+  "/api/repair/list",
+  "/api/repair/backup-status"
+]);
+const CORS_ALLOWED_ORIGINS = new Set([
+  "https://portal.vns-logistics.com",
+  "http://localhost:5500",
+  "http://127.0.0.1:5500"
+]);
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: JSON_HEADERS
+  });
+}
+
+function getCorsHeaders(request) {
+  const origin = request.headers.get("origin") || "";
+  const allowOrigin = CORS_ALLOWED_ORIGINS.has(origin) ? origin : "https://portal.vns-logistics.com";
+
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin"
+  };
+}
+
+function withCors(response, request) {
+  const headers = new Headers(response.headers);
+  for (const [key, value] of Object.entries(getCorsHeaders(request))) {
+    headers.set(key, value);
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+function handleOptions(request) {
+  return new Response(null, {
+    status: 204,
+    headers: getCorsHeaders(request)
   });
 }
 
@@ -258,9 +301,12 @@ async function handleRepairBackupStatus(request, env) {
 
 async function routeRequest(request, env) {
   const url = new URL(request.url);
-  if (request.method === "POST" && url.pathname === "/api/repair/create") return handleRepairCreate(request, env);
-  if (request.method === "GET" && url.pathname === "/api/repair/list") return handleRepairList(url, env);
-  if (request.method === "POST" && url.pathname === "/api/repair/backup-status") return handleRepairBackupStatus(request, env);
+  const isRepairApiRoute = REPAIR_API_PATHS.has(url.pathname);
+  if (isRepairApiRoute && request.method === "OPTIONS") return handleOptions(request);
+  if (request.method === "POST" && url.pathname === "/api/repair/create") return withCors(await handleRepairCreate(request, env), request);
+  if (request.method === "GET" && url.pathname === "/api/repair/list") return withCors(await handleRepairList(url, env), request);
+  if (request.method === "POST" && url.pathname === "/api/repair/backup-status") return withCors(await handleRepairBackupStatus(request, env), request);
+  if (isRepairApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
   if (request.method === "GET" && url.pathname === "/api/push/check") return handleCheck(env);
   if (request.method === "GET" && url.pathname === "/api/push/debug-sources") return handleDebugSources(env);
   if (request.method === "GET" && url.pathname === "/api/push/debug-payment-queue") return handleDebugPaymentQueue(env);
