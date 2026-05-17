@@ -186,6 +186,36 @@
       box-shadow: inset 3px 0 0 #facc15;
     }
 
+    .saved-records .saved-records-table tbody tr.paid-repair-row td {
+      background: #f8fbf9;
+    }
+
+    .saved-records .saved-records-table tbody tr.paid-repair-row td:first-child {
+      box-shadow: inset 3px 0 0 #86efac;
+    }
+
+    .repair-paid-hint {
+      display: inline-flex;
+      align-items: center;
+      margin-left: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid #bbf7d0;
+      background: #f0fdf4;
+      color: #166534;
+      font-size: 10px;
+      font-weight: 900;
+      line-height: 1;
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+
+    .repair-paid-hint.recent {
+      border-color: #fde68a;
+      background: #fffbeb;
+      color: #92400e;
+    }
+
     .saved-records .saved-records-table td.actions-cell {
       min-width: 176px;
       width: 176px;
@@ -1182,6 +1212,7 @@
             </div>
             <div class="records-quick-filters" aria-label="Quick saved repair filters">
               <button class="btn btn-outline" type="button" data-records-quick-filter="unpaid">Unpaid</button>
+              <button class="btn btn-outline" type="button" data-records-quick-filter="paid">Paid</button>
               <button class="btn btn-outline" type="button" data-records-quick-filter="notFinished">Not Finished</button>
               <button class="btn btn-outline" type="button" data-records-quick-filter="forDeposit">For Deposit</button>
               <button class="btn btn-outline" type="button" data-records-quick-filter="completed">Completed</button>

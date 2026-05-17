@@ -1613,6 +1613,41 @@ function renderStatusBadge(type, value) {
   return `<span class="status-badge ${getStatusBadgeClass(type, value)}">${escapeHtml(text)}</span>`;
 }
 
+function isRepairPaidRecord(record) {
+  const paymentStatus = normalizeStatusFilterValue(getRepairPaymentValue(record, 'paymentStatus'));
+  const status = normalizeStatusFilterValue(getRecordValue(record, 'Status'));
+  return paymentStatus === 'paid' ||
+    paymentStatus === 'released' ||
+    status === 'paid' ||
+    status === 'released';
+}
+
+function getRepairPaidDate(record) {
+  return getRecordValue(record, 'Paid_At') ||
+    getRecordValue(record, 'paidAt') ||
+    getRecordValue(record, 'Released_At') ||
+    getRecordValue(record, 'releasedAt') ||
+    getRepairPaymentValue(record, 'paymentDate');
+}
+
+function getRepairPaidBy(record) {
+  return getRecordValue(record, 'Paid_By') ||
+    getRecordValue(record, 'paidBy') ||
+    getRecordValue(record, 'Released_By') ||
+    getRecordValue(record, 'releasedBy');
+}
+
+function isRepairPaidToday(record) {
+  const date = normalizeDateForFilter(getRepairPaidDate(record));
+  return Boolean(date && date === todayDateKey());
+}
+
+function renderRepairPaidHint(record) {
+  if (!isRepairPaidRecord(record)) return '';
+  const recent = isRepairPaidToday(record);
+  return `<span class="repair-paid-hint${recent ? ' recent' : ''}">${recent ? 'Recently Paid' : 'Paid'}</span>`;
+}
+
 function formatDateDisplay(value) {
   const text = String(value || '').trim();
   if (!text) return '';
@@ -2266,6 +2301,7 @@ function filterSavedRecords(records) {
     const matchesQuickFilter =
       !savedRecordsQuickFilter ||
       (savedRecordsQuickFilter === 'unpaid' && normalizedPaymentStatus === 'unpaid') ||
+      (savedRecordsQuickFilter === 'paid' && isRepairPaidRecord(record)) ||
       (savedRecordsQuickFilter === 'forDeposit' && normalizedPaymentStatus === 'for deposit') ||
       (savedRecordsQuickFilter === 'notFinished' && !['done', 'completed', 'cancelled'].includes(normalizedRepairStatus)) ||
       (savedRecordsQuickFilter === 'completed' && ['done', 'completed'].includes(normalizedRepairStatus));
@@ -2313,6 +2349,9 @@ function applySavedRecordsQuickFilter(filter) {
   if (filter === 'unpaid') {
     if (recordsRepairStatusFilter) recordsRepairStatusFilter.value = '';
     if (recordsPaymentStatusFilter) recordsPaymentStatusFilter.value = 'Unpaid';
+  } else if (filter === 'paid') {
+    if (recordsRepairStatusFilter) recordsRepairStatusFilter.value = '';
+    if (recordsPaymentStatusFilter) recordsPaymentStatusFilter.value = '';
   } else if (filter === 'forDeposit') {
     if (recordsRepairStatusFilter) recordsRepairStatusFilter.value = '';
     if (recordsPaymentStatusFilter) recordsPaymentStatusFilter.value = 'For Deposit';
@@ -2400,6 +2439,7 @@ function renderTodayRepairRequests() {
 
   todayRepairRecordsBody.innerHTML = records.map(record => {
     const recordIndex = todayRepairRecords.indexOf(record);
+    const paidClass = isRepairPaidRecord(record) ? 'paid-repair-row' : '';
     const date = getRepairRecordDateByType(record, 'dateRequested') ||
       getRepairRecordDateByType(record, 'createdAt') ||
       normalizeDateForFilter(getRecordValue(record, 'Date_Finished')) ||
@@ -2415,7 +2455,7 @@ function renderTodayRepairRequests() {
     const status = getRecordValue(record, 'Approval_Status') || getRecordValue(record, 'Status') || getRecordValue(record, 'Repair_Status');
     const paymentStatus = getRepairPaymentValue(record, 'paymentStatus');
     return `
-      <tr>
+      <tr class="${paidClass}">
         <td>${escapeHtml(formatDateDisplay(date))}</td>
         <td class="record-id-cell cell-muted" title="${escapeHtml(getRecordValue(record, 'Request_ID'))}">${escapeHtml(truncateRecordValue(getRecordValue(record, 'Request_ID'), 30))}</td>
         <td class="cell-plate">${escapeHtml(truncateRecordValue(getRecordValue(record, 'Plate_Number'), 18))}</td>
@@ -2424,7 +2464,7 @@ function renderTodayRepairRequests() {
         <td>${escapeHtml(truncateRecordValue(payee, 28))}</td>
         <td class="cell-money">${escapeHtml(formatPeso(todayRepairAmount(record)))}</td>
         <td>${renderStatusBadge('approval', status)}</td>
-        <td>${renderStatusBadge('payment', paymentStatus)}</td>
+        <td>${renderStatusBadge('payment', paymentStatus)}${renderRepairPaidHint(record)}</td>
         <td><button class="details-button action-mini-button" type="button" data-today-record-index="${recordIndex}">View</button></td>
       </tr>
     `;
@@ -2436,6 +2476,8 @@ function renderSavedRecords() {
   const records = filterSavedRecords(savedRepairRecords);
   renderTodayRepairRequests();
   updateRecordsSummary(records);
+  const paidHintCount = records.filter(isRepairPaidRecord).length;
+  console.log('Repair paid hint records', paidHintCount);
   if (savedRecordsSelectAll) savedRecordsSelectAll.checked = false;
   if (recordsStatus && hiddenMisalignedRecordCount > 0) {
     recordsStatus.textContent = 'Some old test rows may be hidden because they do not match the current VNS_Repair_Master format.';
@@ -2459,8 +2501,12 @@ function renderSavedRecords() {
     const paymentDate = getRepairPaymentValue(record, 'paymentDate');
     const paymentReference = getRepairPaymentValue(record, 'paymentReference');
     const hasPaymentUpdate = getRepairPaymentValue(record, 'hasPaymentUpdate');
+    const rowClasses = [
+      hasPaymentUpdate ? 'has-payment-update' : '',
+      isRepairPaidRecord(record) ? 'paid-repair-row' : ''
+    ].filter(Boolean).join(' ');
     return `
-    <tr class="${hasPaymentUpdate ? 'has-payment-update' : ''}">
+    <tr class="${rowClasses}">
       <td class="selection-cell"><input class="savedRecordCheckbox" type="checkbox" data-record-index="${recordIndex}" aria-label="Select saved repair record"></td>
       <td class="record-id-cell cell-muted" title="${escapeHtml(recordId)}">${escapeHtml(truncateRecordValue(recordId, 30))}</td>
       <td>${escapeHtml(formatDateDisplay(getRecordValue(record, 'Date_Requested')))}</td>
@@ -2476,7 +2522,7 @@ function renderSavedRecords() {
       <td class="cell-money">${escapeHtml(formatPeso(unitCost))}</td>
       <td class="cell-money">${escapeHtml(formatPeso(originalCost))}</td>
       <td class="cell-money">${escapeHtml(formatPeso(finalCost))}</td>
-      <td>${renderStatusBadge('payment', paymentStatus)}</td>
+      <td>${renderStatusBadge('payment', paymentStatus)}${renderRepairPaidHint(record)}</td>
       <td>${escapeHtml(formatDateDisplay(paymentDate))}</td>
       <td>${escapeHtml(truncateRecordValue(paymentReference, 32))}</td>
       <td>${renderStatusBadge('repair', getRecordValue(record, 'Repair_Status'))}</td>
@@ -2684,6 +2730,7 @@ function showRecordDetails(record) {
   if (!recordDetailsPanel || !recordDetailsContent) return;
   const updatedAt = getRepairPaymentValue(record, 'updatedAt');
   const updatedBy = getRepairPaymentValue(record, 'updatedBy');
+  const paidBy = getRepairPaidBy(record);
   const detailBlocks = [
     buildDetailBlock('Original Cost', formatPeso(getOriginalTotalCost(record) || getRecordValue(record, 'Total_Cost'))),
     buildDetailBlock('Final Cost', formatPeso(getRepairPaymentValue(record, 'finalCost'))),
@@ -2697,6 +2744,7 @@ function showRecordDetails(record) {
     buildDetailBlock('Photo Link', getRecordValue(record, 'Photo_Link')),
     buildDetailBlock('Proof Of Payment', getRecordValue(record, 'Proof_Of_Payment'))
   ];
+  if (paidBy) detailBlocks.push(buildDetailBlock('Paid by', paidBy));
   if (updatedAt) detailBlocks.push(buildDetailBlock('Updated At', formatDateTimeDisplay(updatedAt)));
   if (updatedBy) detailBlocks.push(buildDetailBlock('Updated By', updatedBy));
   recordDetailsContent.innerHTML = detailBlocks.join('');
