@@ -41,6 +41,7 @@ const manualRequestCards = document.querySelectorAll('.manual-request-card');
 const manualSaveStatus = document.getElementById('manual-save-status');
 const saveStatusChangesButton = document.getElementById('save-status-changes-button');
 const refreshRecordsButton = document.getElementById('refresh-records-button');
+const refreshTodayRecordsButton = document.getElementById('refresh-today-records-button');
 const savedRecordsSelectAll = document.getElementById('savedRecordsSelectAll');
 const selectAllSavedRecordsBtn = document.getElementById('selectAllSavedRecordsBtn');
 const unselectAllSavedRecordsBtn = document.getElementById('unselectAllSavedRecordsBtn');
@@ -68,6 +69,8 @@ const recordsStatus = document.getElementById('records-status');
 const recordsCount = document.getElementById('records-count');
 const recordsTotalCost = document.getElementById('records-total-cost');
 const savedRecordsBody = document.getElementById('saved-records-body');
+const todayRepairRecordsBody = document.getElementById('today-repair-records-body');
+const todayRecordsStatus = document.getElementById('today-records-status');
 const recordDetailsPanel = document.getElementById('record-details-panel');
 const recordDetailsContent = document.getElementById('record-details-content');
 const closeRecordDetails = document.getElementById('close-record-details');
@@ -2319,9 +2322,95 @@ function applySavedRecordsQuickFilter(filter) {
   renderSavedRecords();
 }
 
+function todayDateKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function isTodayRepairRecord(record) {
+  const today = todayDateKey();
+  return ['Date_Requested', 'Created_At', 'Last_Updated'].some(key => normalizeDateForFilter(getRecordValue(record, key)) === today);
+}
+
+function isActiveRepairRecord(record) {
+  if (!record || String(getRecordValue(record, 'Is_Deleted')).toUpperCase() === 'TRUE') return false;
+  const status = normalizeStatusFilterValue(getRecordValue(record, 'Status'));
+  return status !== 'deleted' && status !== 'cancelled' && status !== 'canceled';
+}
+
+function todayRepairAmount(record) {
+  return getFinalCost(record) ||
+    getOriginalTotalCost(record) ||
+    getRecordValue(record, 'Total_Cost') ||
+    getRecordValue(record, 'Approved_Cost') ||
+    getRecordValue(record, 'Parts_Cost') ||
+    getRecordValue(record, 'Labor_Cost') ||
+    0;
+}
+
+function getTodayRepairRecords() {
+  const deletedIds = readRepairDeletedIds();
+  return savedRepairRecords.filter(record =>
+    !isMisalignedSavedRecord(record) &&
+    !deletedIds.has(getRepairRecordId(record)) &&
+    isActiveRepairRecord(record) &&
+    isTodayRepairRecord(record)
+  );
+}
+
+function renderTodayRepairRequests() {
+  if (!todayRepairRecordsBody) return;
+  const records = getTodayRepairRecords();
+  if (todayRecordsStatus) {
+    todayRecordsStatus.textContent = records.length
+      ? `Showing ${records.length} repair request${records.length === 1 ? '' : 's'} for today.`
+      : 'No repair requests for today yet.';
+  }
+
+  if (!records.length) {
+    todayRepairRecordsBody.innerHTML = '<tr><td colspan="10" class="empty">No repair requests for today yet.</td></tr>';
+    return;
+  }
+
+  todayRepairRecordsBody.innerHTML = records.map(record => {
+    const recordIndex = savedRepairRecords.indexOf(record);
+    const date = getRepairRecordDateByType(record, 'dateRequested') ||
+      getRepairRecordDateByType(record, 'createdAt') ||
+      normalizeDateForFilter(getRecordValue(record, 'Last_Updated'));
+    const details = getRecordValue(record, 'Repair_Parts') ||
+      getRecordValue(record, 'Work_Done') ||
+      getRecordValue(record, 'Source_Message') ||
+      getRecordValue(record, 'Remarks');
+    const payee = getRecordValue(record, 'Payee') ||
+      getRecordValue(record, 'Supplier') ||
+      getRecordValue(record, 'Mechanic') ||
+      getRecordValue(record, 'Requested_By');
+    const status = getRecordValue(record, 'Approval_Status') || getRecordValue(record, 'Status') || getRecordValue(record, 'Repair_Status');
+    const paymentStatus = getRepairPaymentValue(record, 'paymentStatus');
+    return `
+      <tr>
+        <td>${escapeHtml(formatDateDisplay(date))}</td>
+        <td class="record-id-cell cell-muted" title="${escapeHtml(getRecordValue(record, 'Request_ID'))}">${escapeHtml(truncateRecordValue(getRecordValue(record, 'Request_ID'), 30))}</td>
+        <td class="cell-plate">${escapeHtml(truncateRecordValue(getRecordValue(record, 'Plate_Number'), 18))}</td>
+        <td>${renderTypeBadge(getRecordValue(record, 'Request_Type'))}</td>
+        <td>${renderClampedCell(details)}</td>
+        <td>${escapeHtml(truncateRecordValue(payee, 28))}</td>
+        <td class="cell-money">${escapeHtml(formatPeso(todayRepairAmount(record)))}</td>
+        <td>${renderStatusBadge('approval', status)}</td>
+        <td>${renderStatusBadge('payment', paymentStatus)}</td>
+        <td><button class="details-button action-mini-button" type="button" data-today-record-index="${recordIndex}">View</button></td>
+      </tr>
+    `;
+  }).join('');
+}
+
 function renderSavedRecords() {
   if (!savedRecordsBody) return;
   const records = filterSavedRecords(savedRepairRecords);
+  renderTodayRepairRequests();
   updateRecordsSummary(records);
   if (savedRecordsSelectAll) savedRecordsSelectAll.checked = false;
   if (recordsStatus && hiddenMisalignedRecordCount > 0) {
@@ -2391,6 +2480,7 @@ async function loadSavedRepairRecords() {
     }
   } catch (error) {
     savedRepairRecords = [];
+    renderTodayRepairRequests();
     updateRecordsSummary([]);
     savedRecordsBody.innerHTML = '<tr><td colspan="22" class="empty">Unable to load saved records. Please try again.</td></tr>';
     recordsStatus.textContent = 'Error loading saved records.';
@@ -3470,6 +3560,10 @@ if (refreshRecordsButton) {
   refreshRecordsButton.addEventListener('click', loadSavedRepairRecords);
 }
 
+if (refreshTodayRecordsButton) {
+  refreshTodayRecordsButton.addEventListener('click', loadSavedRepairRecords);
+}
+
 if (refreshGarageTrucksButton) {
   refreshGarageTrucksButton.addEventListener('click', loadGarageTrucks);
 }
@@ -3701,6 +3795,15 @@ if (savedRecordsBody) {
     if (statusButton) {
       updateSavedRecordStatus(Number(statusButton.dataset.recordIndex), statusButton);
     }
+  });
+}
+
+if (todayRepairRecordsBody) {
+  todayRepairRecordsBody.addEventListener('click', event => {
+    const detailsButton = event.target.closest('[data-today-record-index]');
+    if (!detailsButton) return;
+    const record = savedRepairRecords[Number(detailsButton.dataset.todayRecordIndex)];
+    if (record) showRecordDetails(record);
   });
 }
 

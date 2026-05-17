@@ -596,6 +596,7 @@
         <div class="repair-tabs" role="tablist" aria-label="Repair module sections">
           <button class="repair-tab-button active" type="button" data-repair-tab="repair-entry-tab" data-vns-permission="repair:entry">Inventory & Repair Request Entry</button>
           <button class="repair-tab-button" type="button" data-repair-tab="repair-truck-tab" data-vns-permission="repair:entry">Repair Truck In/Out</button>
+          <button class="repair-tab-button" type="button" data-repair-tab="today-repairs-tab">Today's Repair Requests</button>
           <button class="repair-tab-button" type="button" data-repair-tab="saved-repairs-tab">Saved Repairs</button>
         </div>
 
@@ -1064,6 +1065,46 @@
           </form>
           </div>
         </section>
+
+        <div id="today-repairs-tab" class="saved-records repair-tab-panel">
+          <div class="saved-records-header-row">
+            <div class="saved-records-title-block">
+              <h2>Today's Repair Requests</h2>
+              <p class="saved-records-kicker">Repair and labor requests created, requested, or updated today.</p>
+            </div>
+          </div>
+
+          <aside class="saved-records-actions-panel">
+            <p>This read-only view uses the same Saved Repair records and only filters today's requests. Saved Repairs remains the full archive.</p>
+            <div class="saved-records-action-buttons">
+              <button id="refresh-today-records-button" class="btn btn-outline" type="button">Refresh Records</button>
+            </div>
+          </aside>
+
+          <div id="today-records-status" class="save-status"></div>
+
+          <div class="table-wrap saved-records-table-wrap">
+            <table class="saved-records-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Request No.</th>
+                  <th>Plate</th>
+                  <th>Request Type</th>
+                  <th>Details</th>
+                  <th>Payee / Supplier</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th>Payment Status</th>
+                  <th>View Details</th>
+                </tr>
+              </thead>
+              <tbody id="today-repair-records-body">
+                <tr><td colspan="10" class="empty">No repair requests for today yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
 
         <div id="saved-repairs-tab" class="saved-records repair-tab-panel">
           <div class="saved-records-header-row">
