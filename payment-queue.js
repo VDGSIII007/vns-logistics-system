@@ -306,10 +306,13 @@ async function cashMarkPaidPost(raw) {
   };
   const response = await fetch(CASH_APP_SCRIPT_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({ syncKey: CASH_SYNC_KEY, action: "updateEntry", record })
   });
-  if (!response.ok) throw new Error(`Cash update failed: ${response.status}`);
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Cash update failed (${response.status}): ${text || response.statusText}`);
+  }
   const result = await response.json();
   if (!isCloudSuccess(result)) throw new Error(result?.error || result?.message || "Cash update returned an error.");
   return result;
@@ -321,7 +324,7 @@ async function repairMarkPaidPost(raw) {
   if (!requestId) throw new Error("Repair record has no Request_ID — cannot mark paid.");
   const response = await fetch(REPAIR_WEB_APP_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({
       action: "updateStatus",
       Request_ID: requestId,
@@ -332,7 +335,10 @@ async function repairMarkPaidPost(raw) {
       Last_Updated: now
     })
   });
-  if (!response.ok) throw new Error(`Repair update failed: ${response.status}`);
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Repair update failed (${response.status}): ${text || response.statusText}`);
+  }
   const result = await response.json();
   if (!isCloudSuccess(result)) throw new Error(result?.error || result?.message || "Repair update returned an error.");
   return result;
@@ -371,7 +377,8 @@ async function handleMarkPaid(index, button) {
     await loadItems();
     applyFilters();
   } catch (error) {
-    console.error("Mark paid failed.", error);
+    const backend = item.type === "cash" ? "Cash Apps Script" : "Repair Apps Script";
+    console.error(`Mark paid failed [${backend}]:`, error?.message || error);
     if (button) {
       button.disabled = false;
       button.textContent = "Mark Paid / Released";
