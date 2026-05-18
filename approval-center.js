@@ -561,7 +561,7 @@ function normalizeCashListResponse(data) {
 }
 
 function normalizeCashBackendRecord(record = {}, index = 0, source = "cash-cloud-list") {
-  const cashId = acFirst(record, ["Record_ID", "Cash_ID", "id", "recordId", "cashId"], `CASH-${index + 1}`);
+  const cashId = acFirst(record, ["request_id", "requestId", "Request_ID", "Record_ID", "Cash_ID", "id", "recordId", "cashId"], `CASH-${index + 1}`);
   const transactionType = acFirst(record, ["Transaction_Type", "Type", "transactionType", "type"]);
   const date = acFirst(record, ["Date", "Message_Date", "Created_At", "createdAt"]);
   const amount = acFirst(record, ["Amount", "amount", "Diesel_Amount", "dieselAmount", "Budget_Amount", "budgetAmount"]);
@@ -573,6 +573,8 @@ function normalizeCashBackendRecord(record = {}, index = 0, source = "cash-cloud
     ...record,
     id: cashId,
     cashId,
+    request_id: acFirst(record, ["request_id", "requestId", "Request_ID"], cashId),
+    requestId: acFirst(record, ["request_id", "requestId", "Request_ID"], cashId),
     recordId: cashId,
     type: transactionType,
     transactionType,
@@ -611,6 +613,22 @@ function readLocalCashRecords() {
 }
 
 async function loadCashRecordsForApproval() {
+  try {
+    const response = await fetch(`${VNS_WORKER_API_BASE}/api/cash/list?limit=500`);
+    if (!response.ok) throw new Error(`Cash Supabase list failed: ${response.status}`);
+    const data = await response.json();
+    if (data && data.ok === false) throw new Error(data.error || "Cash Supabase list returned an error.");
+    const records = normalizeCashListResponse(data)
+      .filter(record => record && typeof record === "object")
+      .map((record, index) => normalizeCashBackendRecord(record, index, "cash-supabase-list"));
+    if (records.length) {
+      acState.cashSource = "Cash Supabase list";
+      return records;
+    }
+  } catch (error) {
+    console.warn("Approval Center cash Supabase list unavailable; using Google Sheets fallback.", error);
+  }
+
   try {
     const params = new URLSearchParams({
       action: "listEntries",
@@ -699,9 +717,15 @@ function needsApproval(type, record) {
   if (type === "repair") return repairNeedsApproval(record);
   if (type === "cash") {
     if (record?.isDeleted || String(record?.Is_Deleted || "").toUpperCase() === "TRUE") return false;
-    const status = cashStatusValue(record).toLowerCase();
-    if (!status || ["draft", "approved", "paid", "deposited", "used", "rejected", "returned", "deleted", "cancelled", "canceled"].includes(status)) return false;
-    return ["for approval", "pending", "pending approval", "submitted", "for review"].some(item => status === item || status.includes(item));
+    const approvalStatus = acStatusValue(record, ["approval_status", "approvalStatus", "Approval_Status"]).toLowerCase();
+    const status = acStatusValue(record, ["status", "Status"]).toLowerCase();
+    const reviewStatus = acStatusValue(record, ["Review_Status", "reviewStatus"]).toLowerCase();
+    const allStatuses = [approvalStatus, status, reviewStatus].filter(Boolean);
+    if (allStatuses.some(value => ["approved", "paid", "deposited", "used", "rejected", "returned", "deleted", "cancelled", "canceled"].includes(value))) return false;
+    return approvalStatus === "pending" ||
+      status === "for approval" ||
+      reviewStatus === "for approval" ||
+      allStatuses.some(value => ["pending approval", "submitted", "for review"].some(item => value === item || value.includes(item)));
   }
   const status = acStatusValue(record, ["status", "Status", "Workflow_Status", "workflowStatus"]).toLowerCase();
   if (record.isDeleted) return false;
@@ -1050,7 +1074,9 @@ function updateRepairBatchUi() {
     if (acState.tab === "repair" && acState.view === "approval") {
       tableNote.textContent = "Showing only repair/labor requests waiting for approval. Approved, paid, completed, rejected, returned, and deleted records are hidden here.";
     } else if (acState.tab === "cash" && acState.view === "approval") {
-      tableNote.textContent = acState.cashSource === "Cash cloud listEntries"
+      tableNote.textContent = acState.cashSource === "Cash Supabase list"
+        ? "Showing Cash / PO / Bali requests waiting for approval from Supabase."
+        : acState.cashSource === "Cash cloud listEntries"
         ? "Showing Cash / PO / Bali requests waiting for approval from the Cash backend."
         : "Showing Cash / PO / Bali requests waiting for approval from local fallback data.";
     } else if (acState.view === "history") {
@@ -1551,7 +1577,7 @@ function currentCashApprover() {
 }
 
 function getCashApprovalId(record = {}) {
-  return acText(record.Cash_ID || record.Record_ID || record.cashId || record.recordId || record.id, "");
+  return acText(record.request_id || record.requestId || record.Request_ID || record.Cash_ID || record.Record_ID || record.cashId || record.recordId || record.id, "");
 }
 
 function buildCashApprovalRecord(record = {}) {
@@ -1564,28 +1590,91 @@ function buildCashApprovalRecord(record = {}) {
     Review_Status: "Approved",
     Status: "Approved",
     status: "Approved",
+    approval_status: "Approved",
     approvalStatus: "Approved",
     Approved_By: approver,
+    approved_by: approver,
     approvedBy: approver,
     Approved_At: now,
+    approved_at: now,
     approvedAt: now,
     Updated_At: now,
     updatedAt: now
   };
 }
 
+async function cashSupabaseStatusPost(payload = {}) {
+  const requestId = payload.request_id || payload.requestId || payload.Request_ID;
+  console.log("Calling cash approval API", requestId, payload);
+  const response = await fetch(`${VNS_WORKER_API_BASE}/api/cash/update-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json().catch(() => null);
+  console.log("Cash approval Supabase response", result);
+  if (!response.ok || !result?.ok) {
+    throw new Error(result?.error || `Cash Supabase approval failed (${response.status})`);
+  }
+  return result;
+}
+
+function cashBackupStatusPost(requestId, backupStatus, backupError = "") {
+  if (!requestId) return Promise.resolve();
+  return fetch(`${VNS_WORKER_API_BASE}/api/cash/backup-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      request_id: requestId,
+      backup_status: backupStatus,
+      backup_error: backupError
+    })
+  }).catch(error => console.warn("Cash approval backup status update failed", error));
+}
+
+function backupCashApprovalToSheets(payload = {}) {
+  console.log("Cash approval backup started");
+  const requestId = payload.request_id || payload.requestId || payload.Request_ID || payload.Cash_ID;
+  cashApprovalPost("updateEntry", { record: payload })
+    .then(result => {
+      if (!isCloudSuccess(result)) throw new Error(result?.message || result?.error || "Cash approval backup failed");
+      console.log("Cash approval backup succeeded");
+      return cashBackupStatusPost(requestId, "synced");
+    })
+    .catch(error => {
+      console.log("Cash approval backup failed", error);
+      cashBackupStatusPost(requestId, "failed", error?.message || "Cash approval backup failed");
+    });
+}
+
 async function approveCashRecord(record) {
   const cashId = getCashApprovalId(record);
   if (!cashId) throw new Error("Cash record ID is missing.");
-  if (record.__approvalCenterSource !== "cash-cloud-list") {
+  if (!["cash-supabase-list", "cash-cloud-list"].includes(record.__approvalCenterSource)) {
     throw new Error("Cash backend is not available for this record. Refresh and try again.");
   }
 
-  const result = await cashApprovalPost("updateEntry", {
-    record: buildCashApprovalRecord(record)
-  });
-  if (!isCloudSuccess(result)) throw new Error(result?.error || "Cash approval failed.");
-  return result;
+  const sheetsPayload = buildCashApprovalRecord(record);
+  const reviewNotes = ac$("ac-review-notes")?.value?.trim() || "";
+  const supabasePayload = {
+    request_id: cashId,
+    status: "Approved",
+    approval_status: "Approved",
+    approved_by: sheetsPayload.Approved_By || "Admin",
+    approved_at: sheetsPayload.Approved_At,
+    notes: reviewNotes
+  };
+
+  try {
+    const result = await cashSupabaseStatusPost(supabasePayload);
+    backupCashApprovalToSheets({ ...sheetsPayload, Remarks: reviewNotes || sheetsPayload.Remarks || sheetsPayload.remarks || "" });
+    return result;
+  } catch (error) {
+    console.warn("Cash approval Supabase update failed; using Sheets fallback.", error);
+    const result = await cashApprovalPost("updateEntry", { record: sheetsPayload });
+    if (!isCloudSuccess(result)) throw new Error(result?.error || "Cash approval failed.");
+    return result;
+  }
 }
 
 async function triggerPaymentQueuePushCheck() {

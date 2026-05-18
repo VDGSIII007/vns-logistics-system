@@ -8,6 +8,7 @@ import { debugCashSource } from "./checkers/cash.js";
 import {
   listCashRequestsFromSupabase,
   updateCashBackupStatus,
+  updateCashRequestStatus,
   upsertCashRequestToSupabase
 } from "./cash-api.js";
 import {
@@ -40,6 +41,7 @@ const JSON_HEADERS = {
 const CASH_API_PATHS = new Set([
   "/api/cash/create",
   "/api/cash/list",
+  "/api/cash/update-status",
   "/api/cash/backup-status"
 ]);
 const REPAIR_API_PATHS = new Set([
@@ -317,6 +319,21 @@ async function handleCashBackupStatus(request, env) {
   return jsonResponse(result);
 }
 
+async function handleCashUpdateStatus(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
+
+  const result = await updateCashRequestStatus(env, input);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Cash status update failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse(result);
+}
+
 async function handleRepairCreate(request, env) {
   const input = await readJson(request);
   if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
@@ -417,6 +434,7 @@ async function routeRequest(request, env) {
   if (isCashApiRoute && request.method === "OPTIONS") return handleOptions(request);
   if (request.method === "POST" && url.pathname === "/api/cash/create") return withCors(await handleCashCreate(request, env), request);
   if (request.method === "GET" && url.pathname === "/api/cash/list") return withCors(await handleCashList(url, env), request);
+  if (request.method === "POST" && url.pathname === "/api/cash/update-status") return withCors(await handleCashUpdateStatus(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/cash/backup-status") return withCors(await handleCashBackupStatus(request, env), request);
   if (isCashApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
   if (isRepairApiRoute && request.method === "OPTIONS") return handleOptions(request);

@@ -329,6 +329,56 @@ export async function updateCashBackupStatus(env, input = {}) {
   };
 }
 
+export async function updateCashRequestStatus(env, input = {}) {
+  const requestId = textOrNull(input.request_id || input.Request_ID || input.cashId || input.Cash_ID || input.id);
+  if (!requestId) {
+    return { ok: false, error: "request_id is required", status: 400 };
+  }
+
+  const now = new Date().toISOString();
+  const payload = {
+    status: textOrNull(input.status || input.Status) || "Approved",
+    approval_status: textOrNull(input.approval_status || input.approvalStatus || input.Approval_Status) || "Approved",
+    approved_by: textOrNull(input.approved_by || input.approvedBy || input.Approved_By),
+    approved_at: timestampOrNull(input.approved_at || input.approvedAt || input.Approved_At) || now,
+    remarks: textOrNull(input.notes || input.Notes || input.remarks || input.Remarks),
+    backup_status: "pending",
+    backup_synced_at: null,
+    backup_error: null,
+    updated_at: now
+  };
+
+  Object.keys(payload).forEach(key => {
+    if (payload[key] === null || payload[key] === undefined || payload[key] === "") delete payload[key];
+  });
+
+  const filters = new URLSearchParams({
+    request_id: `eq.${requestId}`
+  });
+  const result = await supabaseFetch(env, `cash_requests?${filters.toString()}`, {
+    method: "PATCH",
+    prefer: "return=representation",
+    body: JSON.stringify(payload)
+  });
+
+  if (result.error) {
+    return { ok: false, error: SAFE_ERROR, details: result.error, status: result.status || 500 };
+  }
+
+  const records = Array.isArray(result.body) ? result.body : [];
+  if (!records.length) {
+    return { ok: false, error: `No cash request found for request_id ${requestId}`, status: 404 };
+  }
+
+  return {
+    ok: true,
+    source: "supabase",
+    request_id: requestId,
+    record: formatCashRecord(records[0]),
+    records: records.map(formatCashRecord)
+  };
+}
+
 export function cashArrayFromAnyResponse(payload) {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
