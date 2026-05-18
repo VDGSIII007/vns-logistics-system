@@ -2038,15 +2038,6 @@ function buildStatusOptions(options, currentValue) {
   ).join('');
 }
 
-function buildPaymentStatusActions(record, recordIndex) {
-  return `
-    <div class="change-request-actions">
-      <button class="details-button action-mini-button" type="button" data-record-index="${recordIndex}">View</button>
-      <span class="row-status-message" data-row-status="${recordIndex}"></span>
-    </div>
-  `;
-}
-
 function readRepairChangeRequests() {
   try {
     const raw = localStorage.getItem(REPAIR_CHANGE_REQUESTS_KEY);
@@ -2436,7 +2427,7 @@ function renderTodayRepairRequests() {
   }
 
   if (!records.length) {
-    todayRepairRecordsBody.innerHTML = '<tr><td colspan="10" class="empty">No repair requests for today yet.</td></tr>';
+    todayRepairRecordsBody.innerHTML = '<tr><td colspan="9" class="empty">No repair requests for today yet.</td></tr>';
     return;
   }
 
@@ -2458,7 +2449,7 @@ function renderTodayRepairRequests() {
     const status = getRecordValue(record, 'Approval_Status') || getRecordValue(record, 'Status') || getRecordValue(record, 'Repair_Status');
     const paymentStatus = getRepairPaymentValue(record, 'paymentStatus');
     return `
-      <tr class="${paidClass}">
+      <tr class="repair-clickable-row ${paidClass}" data-today-record-index="${recordIndex}" tabindex="0" role="button" aria-label="Open repair details for ${escapeHtml(getRecordValue(record, 'Request_ID') || getRecordValue(record, 'Plate_Number') || 'record')}">
         <td>${escapeHtml(formatDateDisplay(date))}</td>
         <td class="record-id-cell cell-muted" title="${escapeHtml(getRecordValue(record, 'Request_ID'))}">${escapeHtml(truncateRecordValue(getRecordValue(record, 'Request_ID'), 30))}</td>
         <td class="cell-plate">${escapeHtml(truncateRecordValue(getRecordValue(record, 'Plate_Number'), 18))}</td>
@@ -2468,7 +2459,6 @@ function renderTodayRepairRequests() {
         <td class="cell-money">${escapeHtml(formatPeso(todayRepairAmount(record)))}</td>
         <td>${renderStatusBadge('approval', status)}</td>
         <td>${renderStatusBadge('payment', paymentStatus)}${renderRepairPaidHint(record)}</td>
-        <td><button class="details-button action-mini-button" type="button" data-today-record-index="${recordIndex}">View</button></td>
       </tr>
     `;
   }).join('');
@@ -2487,7 +2477,7 @@ function renderSavedRecords() {
   }
 
   if (!records.length) {
-    savedRecordsBody.innerHTML = '<tr><td colspan="22" class="empty">No saved repair records found.</td></tr>';
+    savedRecordsBody.innerHTML = '<tr><td colspan="21" class="empty">No saved repair records found.</td></tr>';
     return;
   }
 
@@ -2509,7 +2499,7 @@ function renderSavedRecords() {
       isRepairPaidRecord(record) ? 'paid-repair-row' : ''
     ].filter(Boolean).join(' ');
     return `
-    <tr class="${rowClasses}">
+    <tr class="repair-clickable-row ${rowClasses}" data-record-row-index="${recordIndex}" tabindex="0" role="button" aria-label="Open repair details for ${escapeHtml(recordId || plateNumber || 'record')}">
       <td class="selection-cell"><input class="savedRecordCheckbox" type="checkbox" data-record-index="${recordIndex}" aria-label="Select saved repair record"></td>
       <td class="record-id-cell cell-muted" title="${escapeHtml(recordId)}">${escapeHtml(truncateRecordValue(recordId, 30))}</td>
       <td>${escapeHtml(formatDateDisplay(getRecordValue(record, 'Date_Requested')))}</td>
@@ -2531,7 +2521,6 @@ function renderSavedRecords() {
       <td>${renderStatusBadge('repair', getRecordValue(record, 'Repair_Status'))}</td>
       <td>${renderStatusBadge('approval', approvalStatus)}</td>
       <td>${renderClampedCell(getRecordValue(record, 'Remarks'))}</td>
-      <td class="actions-cell">${buildPaymentStatusActions(record, recordIndex)}</td>
     </tr>
   `;
   }).join('');
@@ -2541,7 +2530,7 @@ async function loadSavedRepairRecords() {
   if (!savedRecordsBody || !recordsStatus) return;
   recordsStatus.textContent = 'Loading saved records...';
   updateRecordsSummary([]);
-  savedRecordsBody.innerHTML = '<tr><td colspan="22" class="empty">Loading saved repair records...</td></tr>';
+  savedRecordsBody.innerHTML = '<tr><td colspan="21" class="empty">Loading saved repair records...</td></tr>';
 
   try {
     const cloudRecords = await loadRepairRecordsFromSupabase();
@@ -2570,7 +2559,7 @@ async function loadSavedRepairRecords() {
       logTodayRepairDebug(todayRepairRecords);
       renderTodayRepairRequests();
       updateRecordsSummary([]);
-      savedRecordsBody.innerHTML = '<tr><td colspan="22" class="empty">Unable to load saved records. Please try again.</td></tr>';
+      savedRecordsBody.innerHTML = '<tr><td colspan="21" class="empty">Unable to load saved records. Please try again.</td></tr>';
       recordsStatus.textContent = 'Error loading saved records.';
     }
   }
@@ -2780,25 +2769,32 @@ function buildRepairEvidenceSection(record) {
   const videos = getRepairEvidenceLinks(record, 'Video_Links');
   const requestId = getRecordValue(record, 'Request_ID');
 
-  const buttons = [
-    ...photos.map((path, index) => `<button class="details-button repair-media-view-btn" type="button" data-media-path="${escapeHtml(path)}" data-media-type="photo">View Photo${photos.length > 1 ? ` ${index + 1}` : ''}</button>`),
-    ...videos.map((path, index) => `<button class="details-button repair-media-view-btn" type="button" data-media-path="${escapeHtml(path)}" data-media-type="video">View Video${videos.length > 1 ? ` ${index + 1}` : ''}</button>`)
-  ];
-  const existingMedia = buttons.length
-    ? `<div class="repair-evidence-detail-actions">${buttons.join('')}</div>`
-    : '<p class="muted-detail">No evidence uploaded yet.</p>';
+  const photoButtons = photos.map((path, index) => `<button class="repair-media-view-btn" type="button" data-media-path="${escapeHtml(path)}" data-media-type="photo">View Photo ${index + 1}</button>`);
+  const videoButtons = videos.map((path, index) => `<button class="repair-media-view-btn" type="button" data-media-path="${escapeHtml(path)}" data-media-type="video">View Video ${index + 1}</button>`);
+  const existingMedia = photos.length || videos.length
+    ? `
+      <div class="repair-evidence-subsection">
+        <span class="repair-evidence-kicker">Existing Evidence</span>
+        ${photos.length ? `<div class="repair-evidence-row"><span>Photos</span><div class="repair-evidence-detail-actions">${photoButtons.join('')}</div></div>` : ''}
+        ${videos.length ? `<div class="repair-evidence-row"><span>Videos</span><div class="repair-evidence-detail-actions">${videoButtons.join('')}</div></div>` : ''}
+      </div>
+    `
+    : '<p class="repair-evidence-empty">No photos or videos uploaded yet.</p>';
   const uploadControls = requestId
     ? `
-      <div class="repair-evidence-upload-controls">
-        <label class="details-button">Add Photo<input type="file" accept="image/*" capture="environment" multiple data-repair-media-upload="photo"></label>
-        <label class="details-button">Add Video<input type="file" accept="video/*" capture="environment" multiple data-repair-media-upload="video"></label>
+      <div class="repair-evidence-subsection repair-evidence-upload-section">
+        <span class="repair-evidence-kicker">Upload More</span>
+        <div class="repair-evidence-upload-controls">
+          <label class="repair-evidence-add-button">Add Photo<input type="file" accept="image/*" capture="environment" multiple data-repair-media-upload="photo"></label>
+          <label class="repair-evidence-add-button">Add Video<input type="file" accept="video/*" capture="environment" multiple data-repair-media-upload="video"></label>
+        </div>
       </div>
       <div class="repair-evidence-status" data-repair-evidence-status></div>
     `
     : '<p class="repair-evidence-status warning">Cannot upload evidence because this record has no request ID.</p>';
 
   return `
-    <div class="detail-block">
+    <div class="detail-block repair-evidence-detail-block">
       <h3>Repair Evidence</h3>
       ${existingMedia}
       ${uploadControls}
@@ -2996,6 +2992,21 @@ function savePaymentUpdate(event) {
 function hideRecordDetails() {
   if (recordDetailsPanel) recordDetailsPanel.hidden = true;
   currentRecordDetails = null;
+}
+
+function isRepairRowInteractiveTarget(target) {
+  return Boolean(target?.closest('button, input, select, textarea, a, label, .status-actions, .change-request-actions, .more-actions-menu'));
+}
+
+function openSavedRepairRow(row) {
+  const recordIndex = Number(row?.dataset.recordRowIndex);
+  const record = savedRepairRecords[recordIndex];
+  if (record) showRecordDetails(record, recordIndex);
+}
+
+function openTodayRepairRow(row) {
+  const record = todayRepairRecords[Number(row?.dataset.todayRecordIndex)];
+  if (record) showRecordDetails(record, savedRepairRecords.indexOf(record));
 }
 
 function setActiveTab(targetId) {
@@ -4147,22 +4158,16 @@ if (savedRecordsBody) {
   });
 
   savedRecordsBody.addEventListener('click', event => {
-    const detailsButton = event.target.closest('.details-button');
-    if (detailsButton) {
-      const recordIndex = Number(detailsButton.dataset.recordIndex);
-      const record = savedRepairRecords[recordIndex];
-      if (record) showRecordDetails(record, recordIndex);
-      return;
-    }
-
     const paymentCostButton = event.target.closest('[data-payment-cost]');
     if (paymentCostButton) {
+      event.stopPropagation();
       showPaymentUpdateModal(Number(paymentCostButton.dataset.paymentCost));
       return;
     }
 
     const moreActionsButton = event.target.closest('[data-more-actions]');
     if (moreActionsButton) {
+      event.stopPropagation();
       const recordIndex = moreActionsButton.dataset.moreActions;
       const menu = savedRecordsBody.querySelector(`[data-more-menu="${recordIndex}"]`);
       const willOpen = Boolean(menu?.hidden);
@@ -4181,6 +4186,7 @@ if (savedRecordsBody) {
 
     const changeRequestButton = event.target.closest('[data-change-request]');
     if (changeRequestButton) {
+      event.stopPropagation();
       const idx = Number(changeRequestButton.dataset.recordIndex);
       if (changeRequestButton.dataset.changeRequest === 'delete') {
         deleteRepairRecordLocal(idx);
@@ -4192,17 +4198,44 @@ if (savedRecordsBody) {
 
     const statusButton = event.target.closest('.save-status-button');
     if (statusButton) {
+      event.stopPropagation();
       updateSavedRecordStatus(Number(statusButton.dataset.recordIndex), statusButton);
+      return;
     }
+
+    if (isRepairRowInteractiveTarget(event.target)) {
+      event.stopPropagation();
+      return;
+    }
+    const row = event.target.closest('[data-record-row-index]');
+    if (row) openSavedRepairRow(row);
+  });
+
+  savedRecordsBody.addEventListener('keydown', event => {
+    if (!['Enter', ' '].includes(event.key) || isRepairRowInteractiveTarget(event.target)) return;
+    const row = event.target.closest('[data-record-row-index]');
+    if (!row) return;
+    event.preventDefault();
+    openSavedRepairRow(row);
   });
 }
 
 if (todayRepairRecordsBody) {
   todayRepairRecordsBody.addEventListener('click', event => {
-    const detailsButton = event.target.closest('[data-today-record-index]');
-    if (!detailsButton) return;
-    const record = todayRepairRecords[Number(detailsButton.dataset.todayRecordIndex)];
-    if (record) showRecordDetails(record, savedRepairRecords.indexOf(record));
+    if (isRepairRowInteractiveTarget(event.target)) {
+      event.stopPropagation();
+      return;
+    }
+    const row = event.target.closest('[data-today-record-index]');
+    if (row) openTodayRepairRow(row);
+  });
+
+  todayRepairRecordsBody.addEventListener('keydown', event => {
+    if (!['Enter', ' '].includes(event.key) || isRepairRowInteractiveTarget(event.target)) return;
+    const row = event.target.closest('[data-today-record-index]');
+    if (!row) return;
+    event.preventDefault();
+    openTodayRepairRow(row);
   });
 }
 
