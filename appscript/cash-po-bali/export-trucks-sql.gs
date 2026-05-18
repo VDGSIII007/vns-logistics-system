@@ -141,7 +141,7 @@ function buildTruckMasterSql_(rows) {
   sql.push(") values");
   sql.push(rows.map(function(row) {
     return "  (" + TRUCK_MASTER_HEADERS.map(function(header) {
-      return truckSqlLiteral_(row[header], TRUCK_SQL_CASTS[header]);
+      return truckSqlValueForHeader_(header, row[header]);
     }).join(", ") + ")";
   }).join(",\n"));
   sql.push("on conflict (truck_id) do update set");
@@ -159,12 +159,39 @@ function buildTruckMasterSql_(rows) {
   return sql.join("\n");
 }
 
+function truckSqlValueForHeader_(header, value) {
+  if (header === "Last_GPS_Timestamp" || header === "Created_At" || header === "Updated_At") {
+    return sqlTimestampOrNull(value);
+  }
+  if (header === "Insurance_Expiry" || header === "Registration_Expiry") {
+    return sqlDateOrNull(value);
+  }
+  return truckSqlLiteral_(value, TRUCK_SQL_CASTS[header]);
+}
+
 function truckSqlLiteral_(value, castType) {
   var normalized = normalizeTruckSqlValue_(value);
   if (normalized === "") return "null";
   if (castType === "numeric") return normalized;
   if (castType) return "'" + escapeTruckSqlString_(normalized) + "'::" + castType;
   return "'" + escapeTruckSqlString_(normalized) + "'";
+}
+
+function isValidDateValue(value) {
+  var normalized = normalizeTruckSqlValue_(value);
+  if (normalized === "") return false;
+  if (normalized.toUpperCase() === "NO GPS") return false;
+  return !isNaN(new Date(normalized).getTime());
+}
+
+function sqlTimestampOrNull(value) {
+  if (!isValidDateValue(value)) return "null";
+  return "'" + escapeTruckSqlString_(normalizeTruckSqlValue_(value)) + "'::timestamptz";
+}
+
+function sqlDateOrNull(value) {
+  if (!isValidDateValue(value)) return "null";
+  return "'" + escapeTruckSqlString_(normalizeTruckSqlValue_(value)) + "'::date";
 }
 
 function normalizeTruckSqlValue_(value) {
