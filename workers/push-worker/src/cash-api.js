@@ -93,6 +93,16 @@ function boolFromValue(value) {
   return ["true", "yes", "1", "deleted"].includes(String(value ?? "").trim().toLowerCase());
 }
 
+function isDeletedCashRecord(record = {}) {
+  const raw = record.raw_data && typeof record.raw_data === "object" ? record.raw_data : {};
+  return boolFromValue(record.is_deleted) ||
+    boolFromValue(record.isDeleted) ||
+    boolFromValue(record.Is_Deleted) ||
+    boolFromValue(raw.is_deleted) ||
+    boolFromValue(raw.isDeleted) ||
+    boolFromValue(raw.Is_Deleted);
+}
+
 function firstValue(record, keys) {
   for (const key of keys) {
     const value = record?.[key];
@@ -255,12 +265,14 @@ export async function upsertCashRequestToSupabase(env, input) {
 
 export async function listCashRequestsFromSupabase(env, searchParams) {
   const limit = Math.min(Math.max(Number(searchParams.get("limit") || 500), 1), 1000);
+  const includeDeleted = String(searchParams.get("includeDeleted") || "").toLowerCase() === "true";
   const filters = new URLSearchParams({
     select: "*",
     order: "created_at.desc",
     limit: String(limit)
   });
 
+  if (!includeDeleted) filters.set("or", "(is_deleted.is.false,is_deleted.is.null)");
   if (searchParams.get("status")) filters.set("status", `eq.${searchParams.get("status")}`);
   if (searchParams.get("approval_status")) filters.set("approval_status", `eq.${searchParams.get("approval_status")}`);
   if (searchParams.get("payment_status")) filters.set("payment_status", `eq.${searchParams.get("payment_status")}`);
@@ -273,7 +285,8 @@ export async function listCashRequestsFromSupabase(env, searchParams) {
     return { ok: false, error: SAFE_ERROR, details: result.error, status: result.status || 500 };
   }
 
-  const records = Array.isArray(result.body) ? result.body : [];
+  const records = (Array.isArray(result.body) ? result.body : [])
+    .filter(record => includeDeleted || !isDeletedCashRecord(record));
   return {
     ok: true,
     source: "supabase",
