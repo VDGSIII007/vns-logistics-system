@@ -796,6 +796,10 @@ body.payroll-page{
   .repair-page .manual-form-switch{
     position:static;
   }
+  /* equip-bottom-field drops to auto (1 col each) at tablet so Total / Remarks sit side-by-side */
+  .equip-bottom-field{
+    grid-column:auto;
+  }
 }
 @media(max-width:768px){
   .repair-page > .container{
@@ -3070,6 +3074,7 @@ body.payroll-page{
   }
   .repair-page .manual-fields .wide-field,
   .repair-page .manual-fields .parts-bottom-span2,
+  .repair-page .manual-fields .equip-bottom-field,
   .repair-page .repair-evidence-form-section{
     grid-column:1 / -1 !important;
     width:100%;
@@ -3115,6 +3120,10 @@ body.payroll-page{
 }
 /* Payee / Account / Total sit 2-per-row under the repair items section */
 .parts-bottom-span2{
+  grid-column:span 2;
+}
+/* Equipment bottom fields: span 2 on desktop, side-by-side (auto) on tablet */
+.equip-bottom-field{
   grid-column:span 2;
 }
 .repair-items-header{
