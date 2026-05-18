@@ -3389,6 +3389,7 @@ function addRepairItemRow() {
   repairItemRowCounter += 1;
   const rowId = `item_${repairItemRowCounter}`;
   repairItemsList.insertAdjacentHTML('beforeend', createRepairItemRowMarkup(rowId));
+  console.log('Repair item row added');
   calculateRepairItemsTotal();
   return rowId;
 }
@@ -3422,6 +3423,7 @@ function calculateRepairItemsTotal() {
   });
   const totalField = getSimpleManualField('parts', 'totalCost');
   if (totalField) totalField.value = total ? total.toFixed(2) : '';
+  console.log('Repair item total recalculated', total);
   return total;
 }
 

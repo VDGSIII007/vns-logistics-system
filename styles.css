@@ -3069,6 +3069,7 @@ body.payroll-page{
     padding:20px;
   }
   .repair-page .manual-fields .wide-field,
+  .repair-page .manual-fields .parts-bottom-span2,
   .repair-page .repair-evidence-form-section{
     grid-column:1 / -1 !important;
     width:100%;
@@ -3106,6 +3107,15 @@ body.payroll-page{
   border-radius:18px;
   background:#fff;
   padding:16px;
+}
+/* Full-width grid items inside the manual-fields layout */
+.manual-fields .repair-items-section,
+.manual-fields .repair-evidence-form-section{
+  grid-column:1 / -1;
+}
+/* Payee / Account / Total sit 2-per-row under the repair items section */
+.parts-bottom-span2{
+  grid-column:span 2;
 }
 .repair-items-header{
   display:flex;
