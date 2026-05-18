@@ -6,6 +6,11 @@ import {
 } from "./approval-checker.js";
 import { debugCashSource } from "./checkers/cash.js";
 import {
+  listCashRequestsFromSupabase,
+  updateCashBackupStatus,
+  upsertCashRequestToSupabase
+} from "./cash-api.js";
+import {
   debugPaymentQueueSources,
   runPaymentQueuePushCheck
 } from "./checkers/payment-queue.js";
@@ -32,6 +37,11 @@ const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store"
 };
+const CASH_API_PATHS = new Set([
+  "/api/cash/create",
+  "/api/cash/list",
+  "/api/cash/backup-status"
+]);
 const REPAIR_API_PATHS = new Set([
   "/api/repair/create",
   "/api/repair/list",
@@ -258,6 +268,55 @@ async function handleAcknowledge(request, env) {
   }
 }
 
+async function handleCashCreate(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
+
+  const result = await upsertCashRequestToSupabase(env, input);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Cash save failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse({
+    ok: true,
+    request_id: result.request_id,
+    count: result.count,
+    source: result.source,
+    record: result.record,
+    records: result.records
+  });
+}
+
+async function handleCashList(url, env) {
+  const result = await listCashRequestsFromSupabase(env, url.searchParams);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Cash list failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse(result);
+}
+
+async function handleCashBackupStatus(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
+
+  const result = await updateCashBackupStatus(env, input);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Cash backup status update failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse(result);
+}
+
 async function handleRepairCreate(request, env) {
   const input = await readJson(request);
   if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
@@ -353,7 +412,13 @@ async function handleRepairUpdateStatus(request, env) {
 
 async function routeRequest(request, env) {
   const url = new URL(request.url);
+  const isCashApiRoute = CASH_API_PATHS.has(url.pathname);
   const isRepairApiRoute = REPAIR_API_PATHS.has(url.pathname);
+  if (isCashApiRoute && request.method === "OPTIONS") return handleOptions(request);
+  if (request.method === "POST" && url.pathname === "/api/cash/create") return withCors(await handleCashCreate(request, env), request);
+  if (request.method === "GET" && url.pathname === "/api/cash/list") return withCors(await handleCashList(url, env), request);
+  if (request.method === "POST" && url.pathname === "/api/cash/backup-status") return withCors(await handleCashBackupStatus(request, env), request);
+  if (isCashApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
   if (isRepairApiRoute && request.method === "OPTIONS") return handleOptions(request);
   if (request.method === "POST" && url.pathname === "/api/repair/create") return withCors(await handleRepairCreate(request, env), request);
   if (request.method === "GET" && url.pathname === "/api/repair/list") return withCors(await handleRepairList(url, env), request);

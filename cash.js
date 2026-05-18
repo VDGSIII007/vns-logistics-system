@@ -2,6 +2,7 @@ const CASH_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyu1N444S_v
 const CASH_SYNC_KEY       = "vns-cash-sync-2026-Jay";
 const MASTER_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbySWpFu-ZwtsC4uGK4uNgZSRlHUzS4bAMX4X0vAQjt-iuF7pbgT3loFGU2fU2YL4rq6pQ/exec";
 const MASTER_SYNC_KEY       = "vns-truck-sync-2026-Jay";
+const VNS_CASH_WORKER_API_BASE = "https://vns-push-worker.santosvicenteiii.workers.dev";
 
 function cashPost(payload) {
   return fetch(CASH_APP_SCRIPT_URL, {
@@ -48,6 +49,56 @@ function syncCashSilent(record, statusId, action = 'saveEntry') {
   cashPost({ action, record: toCashSheetRecord(record) })
     .then(res => setStatus(statusId, (res && res.ok) ? 'Saved and synced.' : 'Saved locally. Sync failed.', (res && res.ok) ? 'success' : 'warning'))
     .catch(() => setStatus(statusId, 'Saved locally. Sync failed.', 'warning'));
+}
+
+async function saveCashRequestToSupabase(record) {
+  const response = await fetch(`${VNS_CASH_WORKER_API_BASE}/api/cash/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ record })
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result?.ok) {
+    throw new Error(result?.error || `Supabase cash save failed (${response.status})`);
+  }
+  return result;
+}
+
+async function updateCashBackupStatus(record, backupStatus, backupError = '') {
+  const requestId = record?.request_id || record?.requestId || record?.Cash_ID || record?.cashId || record?.id;
+  if (!requestId) return;
+  try {
+    await fetch(`${VNS_CASH_WORKER_API_BASE}/api/cash/backup-status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        request_id: requestId,
+        backup_status: backupStatus,
+        backup_error: backupError
+      })
+    });
+  } catch (error) {
+    console.warn('Cash backup status update failed', error);
+  }
+}
+
+async function saveCashRecordToGoogleSheets(record, action = 'saveEntry') {
+  const result = await cashPost({ action, record: toCashSheetRecord(record) });
+  if (!result || !result.ok) throw new Error(result?.error || 'Google Sheets cash save failed');
+  return result;
+}
+
+function backupCashRecordToGoogleSheets(record, statusId, action = 'saveEntry') {
+  saveCashRecordToGoogleSheets(record, action)
+    .then(async () => {
+      await updateCashBackupStatus(record, 'synced');
+      setStatus(statusId, 'Saved to Supabase and backed up.', 'success');
+    })
+    .catch(async error => {
+      console.warn('Cash Google Sheets backup failed', error);
+      await updateCashBackupStatus(record, 'failed', error?.message || 'Google Sheets backup failed');
+      setStatus(statusId, 'Saved to Supabase. Google Sheets backup failed.', 'warning');
+    });
 }
 
 const DIESEL_KEY = "vnsDieselPOEntries";
@@ -356,7 +407,47 @@ function clearCashErrors(...ids) {
   });
 }
 
-function saveDieselPO() {
+function persistLocalCashRecord(storageKey, record) {
+  const records = readJson(storageKey);
+  writeJson(storageKey, [record].concat(records.filter(item => item.id !== record.id)));
+}
+
+async function saveCashSupabaseFirst(record, storageKey, statusId, action = 'saveEntry') {
+  setStatus(statusId, 'Saving to Supabase...', 'info');
+  try {
+    const result = await saveCashRequestToSupabase(record);
+    const savedRecord = {
+      ...record,
+      ...(result.record || {}),
+      id: record.id || result.request_id || result.record?.id,
+      request_id: result.request_id || result.record?.request_id || record.id
+    };
+    persistLocalCashRecord(storageKey, savedRecord);
+    savedCashRecordsSource = "cloud";
+    savedCashRecordsCache = [normalizeSavedCashRecord(savedRecord, 0, "cloud")]
+      .concat(savedCashRecordsCache.filter(item => item.id !== savedRecord.id));
+    refreshAllCashData();
+    setStatus(statusId, 'Saved to Supabase. Backing up to Google Sheets...', 'success');
+    backupCashRecordToGoogleSheets(savedRecord, statusId, action);
+    return savedRecord;
+  } catch (supabaseError) {
+    console.warn('Cash Supabase save failed; falling back to Google Sheets', supabaseError);
+    persistLocalCashRecord(storageKey, record);
+    savedCashRecordsSource = "local";
+    refreshAllCashData();
+    setStatus(statusId, 'Supabase unavailable. Saving to Google Sheets...', 'warning');
+    try {
+      await saveCashRecordToGoogleSheets(record, action);
+      setStatus(statusId, 'Saved to Google Sheets fallback.', 'success');
+    } catch (sheetsError) {
+      console.error('Cash Supabase and Google Sheets save failed', sheetsError);
+      setStatus(statusId, 'Save failed. Please try again.', 'warning');
+    }
+    return record;
+  }
+}
+
+async function saveDieselPO() {
   const isEditing = Boolean($("diesel-form").dataset.recordId);
   applyTruckToForm("diesel");
   const data = getDieselPOFormData();
@@ -378,12 +469,9 @@ function saveDieselPO() {
     if (data.depositNeeded === "Yes" && !data.depositNumber) markCashError("diesel-deposit-number");
     return setStatus("diesel-status", error, "warning");
   }
-  const records = readJson(DIESEL_KEY);
-  writeJson(DIESEL_KEY, [data].concat(records.filter(item => item.id !== data.id)));
   $("diesel-form").dataset.recordId = data.id;
   $("diesel-form").dataset.createdAt = data.createdAt;
-  refreshAllCashData();
-  syncCashSilent(data, "diesel-status", isEditing ? "updateEntry" : "saveEntry");
+  await saveCashSupabaseFirst(data, DIESEL_KEY, "diesel-status", isEditing ? "updateEntry" : "saveEntry");
 }
 
 function clearDieselPOForm() {
@@ -517,7 +605,7 @@ function validateBudget(data) {
   return "";
 }
 
-function saveBudget() {
+async function saveBudget() {
   const isEditing = Boolean($("budget-form").dataset.recordId);
   applyTruckToForm("budget");
   const data = getBudgetFormData();
@@ -538,12 +626,9 @@ function saveBudget() {
   }
   const dataToSave = { ...data };
   delete dataToSave.depositNeeded;
-  const records = readJson(BUDGET_KEY);
-  writeJson(BUDGET_KEY, [dataToSave].concat(records.filter(item => item.id !== data.id)));
   $("budget-form").dataset.recordId = data.id;
   $("budget-form").dataset.createdAt = data.createdAt;
-  refreshAllCashData();
-  syncCashSilent(dataToSave, "budget-status", isEditing ? "updateEntry" : "saveEntry");
+  await saveCashSupabaseFirst(dataToSave, BUDGET_KEY, "budget-status", isEditing ? "updateEntry" : "saveEntry");
 }
 
 function clearBudgetForm() {
@@ -642,7 +727,7 @@ function validateBali(data) {
   return "";
 }
 
-function saveBali() {
+async function saveBali() {
   const isEditing = Boolean($("bali-form").dataset.recordId);
   applyTruckToForm("bali");
   const data = getBaliFormData();
@@ -662,12 +747,9 @@ function saveBali() {
   }
   const dataToSave = { ...data };
   delete dataToSave.depositNeeded;
-  const records = readJson(BALI_KEY);
-  writeJson(BALI_KEY, [dataToSave].concat(records.filter(item => item.id !== data.id)));
   $("bali-form").dataset.recordId = data.id;
   $("bali-form").dataset.createdAt = data.createdAt;
-  refreshAllCashData();
-  syncCashSilent(dataToSave, "bali-status", isEditing ? "updateEntry" : "saveEntry");
+  await saveCashSupabaseFirst(dataToSave, BALI_KEY, "bali-status", isEditing ? "updateEntry" : "saveEntry");
 }
 
 function clearBaliForm() {
@@ -889,8 +971,8 @@ function setSavedRecordsStatus(message, kind = "info") {
 
 async function loadSavedCashRecordsFromCloud() {
   try {
-    const params = new URLSearchParams({ action: "listEntries", syncKey: CASH_SYNC_KEY });
-    const response = await fetch(`${CASH_APP_SCRIPT_URL}?${params.toString()}`);
+    const params = new URLSearchParams({ limit: "500" });
+    const response = await fetch(`${VNS_CASH_WORKER_API_BASE}/api/cash/list?${params.toString()}`);
     if (!response.ok) throw new Error(`Cloud load failed: ${response.status}`);
     const data = await response.json();
     if (data && data.ok === false) throw new Error(data.error || "Cloud load failed.");
