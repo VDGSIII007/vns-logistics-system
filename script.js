@@ -77,6 +77,10 @@ const todayRecordsStatus = document.getElementById('today-records-status');
 const recordDetailsPanel = document.getElementById('record-details-panel');
 const recordDetailsContent = document.getElementById('record-details-content');
 const closeRecordDetails = document.getElementById('close-record-details');
+const repairMediaViewerModal = document.getElementById('repair-media-viewer-modal');
+const repairMediaViewerBody = document.getElementById('repair-media-viewer-body');
+const repairMediaViewerClose = document.getElementById('repair-media-viewer-close');
+const repairMediaOpenNewTab = document.getElementById('repair-media-open-new-tab');
 const paymentUpdatePanel = document.getElementById('payment-update-panel');
 const paymentUpdateForm = document.getElementById('payment-update-form');
 const closePaymentUpdate = document.getElementById('close-payment-update');
@@ -2777,8 +2781,8 @@ function buildRepairEvidenceSection(record) {
   const requestId = getRecordValue(record, 'Request_ID');
 
   const buttons = [
-    ...photos.map((path, index) => `<button class="details-button" type="button" data-repair-media-path="${escapeHtml(path)}">View Photo${photos.length > 1 ? ` ${index + 1}` : ''}</button>`),
-    ...videos.map((path, index) => `<button class="details-button" type="button" data-repair-media-path="${escapeHtml(path)}">View Video${videos.length > 1 ? ` ${index + 1}` : ''}</button>`)
+    ...photos.map((path, index) => `<button class="details-button" type="button" data-repair-media-path="${escapeHtml(path)}" data-repair-media-kind="photo">View Photo${photos.length > 1 ? ` ${index + 1}` : ''}</button>`),
+    ...videos.map((path, index) => `<button class="details-button" type="button" data-repair-media-path="${escapeHtml(path)}" data-repair-media-kind="video">View Video${videos.length > 1 ? ` ${index + 1}` : ''}</button>`)
   ];
   const existingMedia = buttons.length
     ? `<div class="repair-evidence-detail-actions">${buttons.join('')}</div>`
@@ -2802,13 +2806,43 @@ function buildRepairEvidenceSection(record) {
   `;
 }
 
-async function openRepairMediaPath(path) {
+function showRepairMediaViewer(signedUrl, mediaType) {
+  if (!repairMediaViewerModal || !repairMediaViewerBody) {
+    window.open(signedUrl, '_blank', 'noopener');
+    return;
+  }
+  const safeUrl = escapeHtml(signedUrl);
+  repairMediaViewerBody.innerHTML = mediaType === 'video'
+    ? `<video controls playsinline src="${safeUrl}"></video>`
+    : `<img src="${safeUrl}" alt="Repair evidence">`;
+  if (repairMediaOpenNewTab) repairMediaOpenNewTab.href = signedUrl;
+  repairMediaViewerModal.classList.remove('hidden');
+}
+
+function hideRepairMediaViewer() {
+  if (!repairMediaViewerModal || !repairMediaViewerBody) return;
+  repairMediaViewerBody.querySelectorAll('video').forEach(video => {
+    try {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    } catch {
+      // Clearing the body below also stops playback in supported browsers.
+    }
+  });
+  repairMediaViewerBody.innerHTML = '';
+  if (repairMediaOpenNewTab) repairMediaOpenNewTab.removeAttribute('href');
+  repairMediaViewerModal.classList.add('hidden');
+}
+
+async function openRepairMediaPath(path, mediaType = 'photo') {
+  console.log('Opening repair media path', path);
   const response = await fetch(`${VNS_WORKER_API_BASE}/api/repair/media/signed-url?path=${encodeURIComponent(path)}`);
   const result = await response.json().catch(() => null);
   if (!response.ok || !result?.ok || !result?.url) {
     throw new Error(result?.error || `Unable to open repair media (${response.status})`);
   }
-  window.open(result.url, '_blank', 'noopener');
+  showRepairMediaViewer(result.url, mediaType);
 }
 
 function showRecordDetails(record, recordIndex = -1) {
@@ -4184,7 +4218,7 @@ if (recordDetailsPanel) {
     if (event.target === recordDetailsPanel) hideRecordDetails();
     const mediaButton = event.target.closest('[data-repair-media-path]');
     if (mediaButton) {
-      openRepairMediaPath(mediaButton.dataset.repairMediaPath)
+      openRepairMediaPath(mediaButton.dataset.repairMediaPath, mediaButton.dataset.repairMediaKind || 'photo')
         .catch(error => {
           console.warn('Repair signed URL failed', error);
           alert('Unable to open repair evidence. Please try again.');
@@ -4207,6 +4241,16 @@ if (recordDetailsPanel) {
       });
   });
 }
+
+[repairMediaViewerClose, repairMediaViewerModal?.querySelector('[data-repair-media-viewer-close]')].forEach(button => {
+  if (button) button.addEventListener('click', hideRepairMediaViewer);
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && repairMediaViewerModal && !repairMediaViewerModal.classList.contains('hidden')) {
+    hideRepairMediaViewer();
+  }
+});
 
 if (paymentUpdateForm) {
   paymentUpdateForm.addEventListener('submit', savePaymentUpdate);

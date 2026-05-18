@@ -193,6 +193,24 @@ function safeStoragePath(requestId, fileName) {
   return `repair_requests/${safeRequestId}/${Date.now()}_${safeFileName(fileName)}`;
 }
 
+function decodeMediaPath(path) {
+  const rawPath = textOrNull(path);
+  if (!rawPath) return "";
+  try {
+    return decodeURIComponent(rawPath);
+  } catch {
+    return rawPath;
+  }
+}
+
+function isDangerousMediaPath(path) {
+  return !path || path.includes("..") || path.startsWith("/") || path.includes("\\");
+}
+
+function encodeStorageObjectPath(path) {
+  return path.split("/").map(segment => encodeURIComponent(segment)).join("/");
+}
+
 async function fetchRepairMediaArrays(env, requestId) {
   const filters = new URLSearchParams({
     select: "photo_links,video_links",
@@ -274,12 +292,14 @@ export async function createRepairMediaSignedUrl(env, path) {
   const config = supabaseConfig(env);
   if (config.error) return { ok: false, error: config.error, status: 500 };
 
-  const safePath = textOrNull(path);
-  if (!safePath || safePath.includes("..") || !safePath.startsWith("repair_requests/")) {
+  const safePath = decodeMediaPath(path);
+  if (isDangerousMediaPath(safePath)) {
+    console.warn("Invalid repair media signed URL path", safePath || "(empty)");
     return { ok: false, error: "Valid media path is required", status: 400 };
   }
 
-  const response = await fetch(`${config.url}/storage/v1/object/sign/${REPAIR_MEDIA_BUCKET}/${safePath}`, {
+  const encodedPath = encodeStorageObjectPath(safePath);
+  const response = await fetch(`${config.url}/storage/v1/object/sign/${REPAIR_MEDIA_BUCKET}/${encodedPath}`, {
     method: "POST",
     headers: {
       ...storageHeaders(config, "application/json")
@@ -292,11 +312,16 @@ export async function createRepairMediaSignedUrl(env, path) {
   }
 
   const signedUrl = body?.signedURL || body?.signedUrl || "";
+  const absoluteSignedUrl = signedUrl.startsWith("http")
+    ? signedUrl
+    : signedUrl.startsWith("/storage/v1")
+      ? `${config.url}${signedUrl}`
+      : `${config.url}/storage/v1${signedUrl.startsWith("/") ? signedUrl : `/${signedUrl}`}`;
   return {
     ok: true,
     path: safePath,
     expires_in: 3600,
-    url: signedUrl.startsWith("http") ? signedUrl : `${config.url}${signedUrl}`
+    url: absoluteSignedUrl
   };
 }
 
