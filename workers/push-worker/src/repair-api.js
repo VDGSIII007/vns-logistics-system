@@ -62,6 +62,18 @@ function linkArrayFromValue(value) {
   return [text];
 }
 
+function repairItemsFromValue(value) {
+  if (Array.isArray(value)) return value;
+  const text = String(value ?? "").trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function firstValue(record, keys) {
   for (const key of keys) {
     const value = record?.[key];
@@ -106,6 +118,8 @@ function mapRepairRecord(record) {
     total_cost: numberOrNull(firstValue(record, ["Total_Cost", "total_cost", "totalCost", "Original_Total_Cost"])),
     supplier: textOrNull(firstValue(record, ["Supplier", "supplier"])),
     payee: textOrNull(firstValue(record, ["Payee", "payee"])),
+    account_number: textOrNull(firstValue(record, ["Account_Number", "account_number", "accountNumber"])),
+    repair_items: repairItemsFromValue(firstValue(record, ["Repair_Items", "repair_items", "repairItems"])),
     status: textOrNull(firstValue(record, ["Status", "status"])) || "Draft",
     repair_status: textOrNull(firstValue(record, ["Repair_Status", "repair_status", "repairStatus"])) || "Pending",
     approval_status: textOrNull(firstValue(record, ["Approval_Status", "approval_status", "approvalStatus"])) || "Pending",
@@ -331,11 +345,21 @@ export async function upsertRepairRequestToSupabase(env, input) {
     return { ok: false, error: "No valid repair request records were provided", status: 400 };
   }
 
-  const result = await supabaseFetch(env, "repair_requests?on_conflict=request_id", {
+  let persistedRecords = records;
+  let result = await supabaseFetch(env, "repair_requests?on_conflict=request_id", {
     method: "POST",
     prefer: "resolution=merge-duplicates,return=representation",
-    body: JSON.stringify(records)
+    body: JSON.stringify(persistedRecords)
   });
+
+  if (result.error && /repair_items|account_number|schema cache|column/i.test(JSON.stringify(result.details || result.error || ""))) {
+    persistedRecords = records.map(({ repair_items, account_number, ...record }) => record);
+    result = await supabaseFetch(env, "repair_requests?on_conflict=request_id", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=representation",
+      body: JSON.stringify(persistedRecords)
+    });
+  }
 
   if (result.error) {
     return { ok: false, error: SAFE_ERROR, details: result.error, status: result.status || 500 };

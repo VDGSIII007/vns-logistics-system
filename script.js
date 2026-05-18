@@ -39,6 +39,8 @@ const manualEntryForm = document.getElementById('manual-entry-form');
 const manualRequestTypeSelect = document.getElementById('manual-request-type');
 const manualRequestCards = document.querySelectorAll('.manual-request-card');
 const manualSaveStatus = document.getElementById('manual-save-status');
+const repairItemsList = document.getElementById('repair-items-list');
+const addRepairItemButton = document.getElementById('add-repair-item-button');
 const repairEvidenceFormSection = document.getElementById('repair-evidence-form-section');
 const repairPhotoInput = document.getElementById('repair-photo-input');
 const repairVideoInput = document.getElementById('repair-video-input');
@@ -125,6 +127,7 @@ let savedRecordsQuickFilter = '';
 let savedParsedRequestSignature = '';
 let savedParsedRowKeys = new Set();
 let currentRecordDetails = null;
+let repairItemRowCounter = 0;
 const REPAIR_CHANGE_REQUESTS_KEY = 'vnsRepairChangeRequests';
 const REPAIR_PAYMENT_UPDATES_KEY = 'vnsRepairPaymentUpdates';
 const REPAIR_DELETED_IDS_KEY = 'vnsRepairDeletedIds';
@@ -1147,6 +1150,8 @@ function hasRepairPayloadContent(row) {
     row.outsideShopCost,
     row.supplier,
     row.payee,
+    row.accountNumber,
+    ...(Array.isArray(row.repairItems) ? row.repairItems.map(item => item.item_name || item.line_total) : []),
     row.remarks
   ].some(value => String(value || '').trim());
 }
@@ -1195,6 +1200,8 @@ function buildRepairPayload(rows, sourceMessage, createdAt, paymentMessage) {
       Supplier: row.supplier || '',
       Supplier_Contact: row.supplierContact || '',
       Payee: row.payee || '',
+      Account_Number: row.accountNumber || '',
+      Repair_Items: Array.isArray(row.repairItems) && row.repairItems.length ? JSON.stringify(row.repairItems) : '',
       Assigned_To: row.assignedTo || row.mechanic || '',
       Shop_Name: row.shopName || '',
       Status: row.status,
@@ -2764,6 +2771,52 @@ function getRepairEvidenceLinks(record, key) {
   return parseRepairLinkList(getRecordValue(record, key));
 }
 
+function parseRepairItems(value) {
+  if (Array.isArray(value)) return value;
+  const text = String(value || '').trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function getRepairItems(record) {
+  return parseRepairItems(getRecordValue(record, 'Repair_Items') || getRecordValue(record, 'repair_items'));
+}
+
+function buildRepairItemsSection(record) {
+  const items = getRepairItems(record).map(item => ({
+    item_name: String(item.item_name || item.itemName || item.name || '').trim(),
+    quantity: parseRepairNumber(item.quantity),
+    unit_cost: parseRepairNumber(item.unit_cost ?? item.unitCost),
+    line_total: parseRepairNumber(item.line_total ?? item.lineTotal)
+  })).filter(item => item.item_name || item.quantity || item.unit_cost || item.line_total);
+
+  if (!items.length) return '';
+
+  const rows = items.map(item => `
+    <div class="repair-items-detail-row">
+      <span>${escapeHtml(item.item_name || 'Item')}</span>
+      <span>${escapeHtml(item.quantity || '')}</span>
+      <span>${escapeHtml(formatPeso(item.unit_cost))}</span>
+      <span>${escapeHtml(formatPeso(item.line_total || (item.quantity * item.unit_cost)))}</span>
+    </div>
+  `).join('');
+
+  return `
+    <div class="detail-block repair-items-detail-block">
+      <h3>Repair Items</h3>
+      <div class="repair-items-detail-grid">
+        <div class="repair-items-detail-head"><span>Item</span><span>Qty</span><span>Unit Cost</span><span>Line Total</span></div>
+        ${rows}
+      </div>
+    </div>
+  `;
+}
+
 function buildRepairEvidenceSection(record) {
   const photos = getRepairEvidenceLinks(record, 'Photo_Links');
   const videos = getRepairEvidenceLinks(record, 'Video_Links');
@@ -2852,6 +2905,7 @@ function showRecordDetails(record, recordIndex = -1) {
     buildDetailBlock('Payment Date', formatDateDisplay(getRepairPaymentValue(record, 'paymentDate'))),
     buildDetailBlock('Payment Reference', getRepairPaymentValue(record, 'paymentReference')),
     buildDetailBlock('Payee', getRecordValue(record, 'Payee')),
+    buildDetailBlock('Account / Number', getRecordValue(record, 'Account_Number')),
     buildDetailBlock('Original Message', getRecordValue(record, 'Source_Message')),
     buildDetailBlock('Payment Message', getRecordValue(record, 'Payment_Message')),
     buildDetailBlock('Receipt Link', getRecordValue(record, 'Receipt_Link')),
@@ -2864,7 +2918,7 @@ function showRecordDetails(record, recordIndex = -1) {
   const actions = savedRecordIndex >= 0
     ? `<div class="record-details-actions"><button class="details-button" type="button" data-detail-change-request="${savedRecordIndex}">Request to Edit</button></div>`
     : '';
-  recordDetailsContent.innerHTML = `${buildRepairEvidenceSection(record)}${detailBlocks.join('')}${actions}`;
+  recordDetailsContent.innerHTML = `${buildRepairEvidenceSection(record)}${buildRepairItemsSection(record)}${detailBlocks.join('')}${actions}`;
   recordDetailsPanel.hidden = false;
 }
 
@@ -3299,6 +3353,128 @@ function updateManualTotalFromQuantity(prefix) {
   totalField.value = (quantity * unitCost).toFixed(2);
 }
 
+function parseRepairNumber(value) {
+  const cleaned = cleanMoney(value);
+  if (!cleaned) return 0;
+  const number = Number(cleaned);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function createRepairItemRowMarkup(rowId) {
+  return `
+    <div class="repair-item-row" data-repair-item-row="${rowId}">
+      <label>
+        <span>Parts / Item Name</span>
+        <input type="text" data-repair-item-field="itemName" placeholder="Tire, bolt, brake lining">
+      </label>
+      <label>
+        <span>Qty</span>
+        <input type="number" step="0.01" min="0" data-repair-item-field="quantity">
+      </label>
+      <label>
+        <span>Unit Cost</span>
+        <input type="number" step="0.01" min="0" data-repair-item-field="unitCost">
+      </label>
+      <label>
+        <span>Line Total</span>
+        <input type="number" step="0.01" data-repair-item-field="lineTotal" readonly>
+      </label>
+      <button class="repair-remove-item-button" type="button" data-remove-repair-item="${rowId}" aria-label="Remove repair item">Remove</button>
+    </div>
+  `;
+}
+
+function addRepairItemRow() {
+  if (!repairItemsList) return null;
+  repairItemRowCounter += 1;
+  const rowId = `item_${repairItemRowCounter}`;
+  repairItemsList.insertAdjacentHTML('beforeend', createRepairItemRowMarkup(rowId));
+  calculateRepairItemsTotal();
+  return rowId;
+}
+
+function removeRepairItemRow(rowId) {
+  if (!repairItemsList) return;
+  const rows = repairItemsList.querySelectorAll('[data-repair-item-row]');
+  if (rows.length <= 1) {
+    const row = rows[0];
+    row?.querySelectorAll('input').forEach(input => {
+      input.value = '';
+      input.classList.remove('input-error');
+    });
+    calculateRepairItemsTotal();
+    return;
+  }
+  repairItemsList.querySelector(`[data-repair-item-row="${CSS.escape(rowId)}"]`)?.remove();
+  calculateRepairItemsTotal();
+}
+
+function calculateRepairItemsTotal() {
+  if (!repairItemsList) return 0;
+  let total = 0;
+  repairItemsList.querySelectorAll('[data-repair-item-row]').forEach(row => {
+    const quantity = parseRepairNumber(row.querySelector('[data-repair-item-field="quantity"]')?.value);
+    const unitCost = parseRepairNumber(row.querySelector('[data-repair-item-field="unitCost"]')?.value);
+    const lineTotal = quantity * unitCost;
+    const lineTotalField = row.querySelector('[data-repair-item-field="lineTotal"]');
+    if (lineTotalField) lineTotalField.value = lineTotal ? lineTotal.toFixed(2) : '';
+    total += lineTotal;
+  });
+  const totalField = getSimpleManualField('parts', 'totalCost');
+  if (totalField) totalField.value = total ? total.toFixed(2) : '';
+  return total;
+}
+
+function collectRepairItems() {
+  if (!repairItemsList) return [];
+  return Array.from(repairItemsList.querySelectorAll('[data-repair-item-row]')).map(row => {
+    const itemName = row.querySelector('[data-repair-item-field="itemName"]')?.value.trim() || '';
+    const quantity = parseRepairNumber(row.querySelector('[data-repair-item-field="quantity"]')?.value);
+    const unitCost = parseRepairNumber(row.querySelector('[data-repair-item-field="unitCost"]')?.value);
+    const lineTotal = quantity * unitCost;
+    return {
+      item_name: itemName,
+      quantity,
+      unit_cost: unitCost,
+      line_total: lineTotal
+    };
+  }).filter(item => item.item_name || item.quantity || item.unit_cost);
+}
+
+function formatRepairItemsForText(items) {
+  return items.map((item, index) => (
+    `${index + 1}. ${item.item_name} - Qty ${item.quantity || 0} x ${formatPeso(item.unit_cost)} = ${formatPeso(item.line_total)}`
+  )).join('\n');
+}
+
+function getRepairItemsValidationError() {
+  const items = collectRepairItems();
+  repairItemsList?.querySelectorAll('[data-repair-item-field]').forEach(input => input.classList.remove('input-error'));
+  if (!items.length) {
+    repairItemsList?.querySelector('[data-repair-item-field="itemName"]')?.classList.add('input-error');
+    return 'Add at least one repair item.';
+  }
+  const rows = Array.from(repairItemsList?.querySelectorAll('[data-repair-item-row]') || []);
+  for (const row of rows) {
+    const itemNameField = row.querySelector('[data-repair-item-field="itemName"]');
+    const quantityField = row.querySelector('[data-repair-item-field="quantity"]');
+    const unitCostField = row.querySelector('[data-repair-item-field="unitCost"]');
+    const hasAnyValue = [itemNameField, quantityField, unitCostField].some(input => String(input?.value || '').trim());
+    if (!hasAnyValue) continue;
+    const quantity = parseRepairNumber(quantityField?.value);
+    const unitCost = parseRepairNumber(unitCostField?.value);
+    const invalid = [];
+    if (!String(itemNameField?.value || '').trim()) invalid.push(itemNameField);
+    if (quantity <= 0) invalid.push(quantityField);
+    if (unitCost < 0 || !String(unitCostField?.value || '').trim()) invalid.push(unitCostField);
+    if (invalid.length) {
+      invalid.forEach(input => input?.classList.add('input-error'));
+      return 'Repair items need item name, quantity, and unit cost.';
+    }
+  }
+  return '';
+}
+
 function setManualFormVisibility() {
   let requestType = getActiveManualType();
   if (requestType === 'Completed Repair') {
@@ -3413,6 +3589,12 @@ function collectManualEntryRow() {
     });
   }
 
+  const repairItems = collectRepairItems();
+  const repairItemsText = formatRepairItemsForText(repairItems);
+  const itemNames = repairItems.map(item => item.item_name).filter(Boolean);
+  const totalItemQuantity = repairItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+  const totalItemCost = repairItems.reduce((sum, item) => sum + (Number(item.line_total) || 0), 0);
+
   return applyRequestTypeRules({
     requestType: 'Parts Request',
     date: getSimpleManualValue('parts', 'date'),
@@ -3422,16 +3604,20 @@ function collectManualEntryRow() {
     odometer: getSimpleManualValue('parts', 'odometer'),
     priority: getSimpleManualValue('parts', 'priority'),
     category: 'Repair Parts',
-    item: getSimpleManualValue('parts', 'item'),
+    item: repairItems.length > 1 ? repairItemsText : (repairItems[0]?.item_name || ''),
+    repairItems,
     workDone: getSimpleManualValue('parts', 'workDone'),
-    quantity: getSimpleManualValue('parts', 'quantity'),
-    unitCost: getSimpleManualValue('parts', 'unitCost'),
+    quantity: repairItems.length > 1 ? String(totalItemQuantity || '') : String(repairItems[0]?.quantity || ''),
+    unitCost: repairItems.length === 1 ? String(repairItems[0]?.unit_cost || '') : '',
     mechanic: getSimpleManualValue('parts', 'mechanic'),
     shopName: getSimpleManualValue('parts', 'shopName'),
     repairStatus: 'Pending',
-    totalCost: getSimpleManualValue('parts', 'totalCost'),
-    partsCost: getSimpleManualValue('parts', 'totalCost'),
-    remarks: getSimpleManualValue('parts', 'remarks')
+    totalCost: getSimpleManualValue('parts', 'totalCost') || (totalItemCost ? totalItemCost.toFixed(2) : ''),
+    partsCost: totalItemCost ? totalItemCost.toFixed(2) : getSimpleManualValue('parts', 'totalCost'),
+    payee: getSimpleManualValue('parts', 'payee'),
+    accountNumber: getSimpleManualValue('parts', 'accountNumber'),
+    remarks: getSimpleManualValue('parts', 'remarks'),
+    itemSummary: itemNames.join(', ')
   });
 }
 
@@ -3800,6 +3986,8 @@ function validateManualEntry() {
     requireField('parts', 'plateGroup', 'Group');
     requireField('parts', 'plateNumber', 'Plate Number');
     requireField('parts', 'workDone', 'Work Done / Repair Issue');
+    const itemsError = getRepairItemsValidationError();
+    if (itemsError) missing.push(itemsError);
     requireField('parts', 'totalCost', 'Total Amount');
   } else if (requestType === 'Equipment Request') {
     requireField('equipment', 'date', 'Date');
@@ -3823,6 +4011,19 @@ function validateManualEntry() {
 
 if (manualEntryForm) {
   initRepairPlateDropdowns();
+  if (repairItemsList && !repairItemsList.querySelector('[data-repair-item-row]')) addRepairItemRow();
+  addRepairItemButton?.addEventListener('click', addRepairItemRow);
+  repairItemsList?.addEventListener('input', event => {
+    if (event.target.closest('[data-repair-item-field]')) {
+      event.target.classList.remove('input-error');
+      calculateRepairItemsTotal();
+    }
+  });
+  repairItemsList?.addEventListener('click', event => {
+    const removeButton = event.target.closest('[data-remove-repair-item]');
+    if (!removeButton) return;
+    removeRepairItemRow(removeButton.dataset.removeRepairItem);
+  });
   manualRequestTypeSelect?.addEventListener('change', setManualFormVisibility);
   setManualFormVisibility();
 
@@ -3869,6 +4070,10 @@ if (manualEntryForm) {
     if (saved) {
       manualEntryForm.reset();
       resetRepairMediaInputs();
+      if (repairItemsList) {
+        repairItemsList.innerHTML = '';
+        addRepairItemRow();
+      }
     }
     setManualFormVisibility();
   });
