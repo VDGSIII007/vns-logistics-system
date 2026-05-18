@@ -2781,8 +2781,8 @@ function buildRepairEvidenceSection(record) {
   const requestId = getRecordValue(record, 'Request_ID');
 
   const buttons = [
-    ...photos.map((path, index) => `<button class="details-button" type="button" data-repair-media-path="${escapeHtml(path)}" data-repair-media-kind="photo">View Photo${photos.length > 1 ? ` ${index + 1}` : ''}</button>`),
-    ...videos.map((path, index) => `<button class="details-button" type="button" data-repair-media-path="${escapeHtml(path)}" data-repair-media-kind="video">View Video${videos.length > 1 ? ` ${index + 1}` : ''}</button>`)
+    ...photos.map((path, index) => `<button class="details-button repair-media-view-btn" type="button" data-media-path="${escapeHtml(path)}" data-media-type="photo">View Photo${photos.length > 1 ? ` ${index + 1}` : ''}</button>`),
+    ...videos.map((path, index) => `<button class="details-button repair-media-view-btn" type="button" data-media-path="${escapeHtml(path)}" data-media-type="video">View Video${videos.length > 1 ? ` ${index + 1}` : ''}</button>`)
   ];
   const existingMedia = buttons.length
     ? `<div class="repair-evidence-detail-actions">${buttons.join('')}</div>`
@@ -2806,15 +2806,12 @@ function buildRepairEvidenceSection(record) {
   `;
 }
 
-function showRepairMediaViewer(signedUrl, mediaType) {
-  if (!repairMediaViewerModal || !repairMediaViewerBody) {
-    window.open(signedUrl, '_blank', 'noopener');
-    return;
-  }
+function showRepairMediaModal(signedUrl, mediaType) {
+  if (!repairMediaViewerModal || !repairMediaViewerBody) return;
   const safeUrl = escapeHtml(signedUrl);
   repairMediaViewerBody.innerHTML = mediaType === 'video'
-    ? `<video controls playsinline src="${safeUrl}"></video>`
-    : `<img src="${safeUrl}" alt="Repair evidence">`;
+    ? `<video class="repair-media-viewer-video" controls playsinline src="${safeUrl}"></video>`
+    : `<img class="repair-media-viewer-image" src="${safeUrl}" alt="Repair evidence">`;
   if (repairMediaOpenNewTab) repairMediaOpenNewTab.href = signedUrl;
   repairMediaViewerModal.classList.remove('hidden');
 }
@@ -2835,14 +2832,14 @@ function hideRepairMediaViewer() {
   repairMediaViewerModal.classList.add('hidden');
 }
 
-async function openRepairMediaPath(path, mediaType = 'photo') {
-  console.log('Opening repair media path', path);
+async function openRepairMediaViewer(path, mediaType = 'photo') {
+  console.log('Opening repair media path', path, mediaType);
   const response = await fetch(`${VNS_WORKER_API_BASE}/api/repair/media/signed-url?path=${encodeURIComponent(path)}`);
   const result = await response.json().catch(() => null);
   if (!response.ok || !result?.ok || !result?.url) {
     throw new Error(result?.error || `Unable to open repair media (${response.status})`);
   }
-  showRepairMediaViewer(result.url, mediaType);
+  showRepairMediaModal(result.url, mediaType);
 }
 
 function showRecordDetails(record, recordIndex = -1) {
@@ -4216,14 +4213,16 @@ if (closeRecordDetails) {
 if (recordDetailsPanel) {
   recordDetailsPanel.addEventListener('click', event => {
     if (event.target === recordDetailsPanel) hideRecordDetails();
-    const mediaButton = event.target.closest('[data-repair-media-path]');
+    const mediaButton = event.target.closest('.repair-media-view-btn');
     if (mediaButton) {
-      openRepairMediaPath(mediaButton.dataset.repairMediaPath, mediaButton.dataset.repairMediaKind || 'photo')
+      event.preventDefault();
+      event.stopPropagation();
+      openRepairMediaViewer(mediaButton.dataset.mediaPath, mediaButton.dataset.mediaType || 'photo')
         .catch(error => {
           console.warn('Repair signed URL failed', error);
           alert('Unable to open repair evidence. Please try again.');
         });
-      return;
+      return false;
     }
     const editButton = event.target.closest('[data-detail-change-request]');
     if (editButton) {
