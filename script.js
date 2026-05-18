@@ -39,6 +39,7 @@ const manualEntryForm = document.getElementById('manual-entry-form');
 const manualRequestTypeSelect = document.getElementById('manual-request-type');
 const manualRequestCards = document.querySelectorAll('.manual-request-card');
 const manualSaveStatus = document.getElementById('manual-save-status');
+const repairEvidenceFormSection = document.getElementById('repair-evidence-form-section');
 const repairPhotoInput = document.getElementById('repair-photo-input');
 const repairVideoInput = document.getElementById('repair-video-input');
 const saveStatusChangesButton = document.getElementById('save-status-changes-button');
@@ -119,6 +120,7 @@ let localForRepairTrucks = [];
 let savedRecordsQuickFilter = '';
 let savedParsedRequestSignature = '';
 let savedParsedRowKeys = new Set();
+let currentRecordDetails = null;
 const REPAIR_CHANGE_REQUESTS_KEY = 'vnsRepairChangeRequests';
 const REPAIR_PAYMENT_UPDATES_KEY = 'vnsRepairPaymentUpdates';
 const REPAIR_DELETED_IDS_KEY = 'vnsRepairDeletedIds';
@@ -2772,17 +2774,30 @@ function getRepairEvidenceLinks(record, key) {
 function buildRepairEvidenceSection(record) {
   const photos = getRepairEvidenceLinks(record, 'Photo_Links');
   const videos = getRepairEvidenceLinks(record, 'Video_Links');
-  if (!photos.length && !videos.length) return '';
+  const requestId = getRecordValue(record, 'Request_ID');
 
   const buttons = [
     ...photos.map((path, index) => `<button class="details-button" type="button" data-repair-media-path="${escapeHtml(path)}">View Photo${photos.length > 1 ? ` ${index + 1}` : ''}</button>`),
     ...videos.map((path, index) => `<button class="details-button" type="button" data-repair-media-path="${escapeHtml(path)}">View Video${videos.length > 1 ? ` ${index + 1}` : ''}</button>`)
   ];
+  const existingMedia = buttons.length
+    ? `<div class="repair-evidence-detail-actions">${buttons.join('')}</div>`
+    : '<p class="muted-detail">No evidence uploaded yet.</p>';
+  const uploadControls = requestId
+    ? `
+      <div class="repair-evidence-upload-controls">
+        <label class="details-button">Add Photo<input type="file" accept="image/*" capture="environment" multiple data-repair-media-upload="photo"></label>
+        <label class="details-button">Add Video<input type="file" accept="video/*" capture="environment" multiple data-repair-media-upload="video"></label>
+      </div>
+      <div class="repair-evidence-status" data-repair-evidence-status></div>
+    `
+    : '<p class="repair-evidence-status warning">Cannot upload evidence because this record has no request ID.</p>';
 
   return `
     <div class="detail-block">
       <h3>Repair Evidence</h3>
-      <div class="record-details-actions">${buttons.join('')}</div>
+      ${existingMedia}
+      ${uploadControls}
     </div>
   `;
 }
@@ -2798,6 +2813,7 @@ async function openRepairMediaPath(path) {
 
 function showRecordDetails(record, recordIndex = -1) {
   if (!recordDetailsPanel || !recordDetailsContent) return;
+  currentRecordDetails = { record, recordIndex };
   const updatedAt = getRepairPaymentValue(record, 'updatedAt');
   const updatedBy = getRepairPaymentValue(record, 'updatedBy');
   const paidBy = getRepairPaidBy(record);
@@ -2821,8 +2837,60 @@ function showRecordDetails(record, recordIndex = -1) {
   const actions = savedRecordIndex >= 0
     ? `<div class="record-details-actions"><button class="details-button" type="button" data-detail-change-request="${savedRecordIndex}">Request to Edit</button></div>`
     : '';
-  recordDetailsContent.innerHTML = `${detailBlocks.join('')}${buildRepairEvidenceSection(record)}${actions}`;
+  recordDetailsContent.innerHTML = `${buildRepairEvidenceSection(record)}${detailBlocks.join('')}${actions}`;
   recordDetailsPanel.hidden = false;
+}
+
+function setRepairEvidenceStatus(message, warning = false) {
+  const status = recordDetailsContent?.querySelector('[data-repair-evidence-status]');
+  if (!status) return;
+  status.className = `repair-evidence-status${warning ? ' warning' : ''}`;
+  status.textContent = message || '';
+}
+
+function setRecordMediaLinks(record, mediaType, links) {
+  const field = mediaType === 'photo' ? 'photo_links' : 'video_links';
+  const pascalField = mediaType === 'photo' ? 'Photo_Links' : 'Video_Links';
+  record[field] = links;
+  record[pascalField] = links;
+}
+
+function appendRecordMediaPath(record, mediaType, path) {
+  const key = mediaType === 'photo' ? 'Photo_Links' : 'Video_Links';
+  const links = Array.from(new Set([...getRepairEvidenceLinks(record, key), path]));
+  setRecordMediaLinks(record, mediaType, links);
+}
+
+async function uploadRepairEvidenceFromDetails(mediaType, files) {
+  const record = currentRecordDetails?.record;
+  const requestId = getRecordValue(record || {}, 'Request_ID');
+  if (!record || !requestId) {
+    setRepairEvidenceStatus('Cannot upload evidence because this record has no request ID.', true);
+    return;
+  }
+  if (!files.length) return;
+
+  setRepairEvidenceStatus(`Uploading ${files.length} ${mediaType}${files.length === 1 ? '' : 's'}...`);
+  let uploaded = 0;
+  let failed = 0;
+
+  for (const file of files) {
+    try {
+      const result = await uploadRepairMediaFile(requestId, mediaType, file);
+      if (result?.path) appendRecordMediaPath(record, mediaType, result.path);
+      uploaded += 1;
+    } catch (error) {
+      failed += 1;
+      console.warn(`Repair ${mediaType} upload failed for ${file?.name || 'file'}`, error);
+    }
+  }
+
+  const recordIndex = currentRecordDetails?.recordIndex ?? -1;
+  showRecordDetails(record, recordIndex);
+  setRepairEvidenceStatus(
+    failed ? `${uploaded} uploaded. ${failed} failed; repair status was not changed.` : `${uploaded} uploaded.`,
+    Boolean(failed)
+  );
 }
 
 function hidePaymentUpdateModal() {
@@ -2896,6 +2964,7 @@ function savePaymentUpdate(event) {
 
 function hideRecordDetails() {
   if (recordDetailsPanel) recordDetailsPanel.hidden = true;
+  currentRecordDetails = null;
 }
 
 function setActiveTab(targetId) {
@@ -3194,16 +3263,17 @@ function setManualFormVisibility() {
     requestType = 'Parts Request';
     if (manualRequestTypeSelect) manualRequestTypeSelect.value = requestType;
   }
+  let activeCard = null;
   manualRequestCards.forEach(card => {
-    if (card.classList.contains('manual-media-card')) {
-      card.classList.add('active');
-      card.hidden = false;
-      return;
-    }
     const active = card.dataset.manualForm === requestType;
     card.classList.toggle('active', active);
     card.hidden = !active;
+    if (active) activeCard = card;
   });
+  const activeFields = activeCard?.querySelector('.manual-fields');
+  if (repairEvidenceFormSection && activeFields && repairEvidenceFormSection.parentElement !== activeFields) {
+    activeFields.appendChild(repairEvidenceFormSection);
+  }
 }
 
 function collectManualEntryRow() {
@@ -4125,6 +4195,16 @@ if (recordDetailsPanel) {
     if (editButton) {
       requestSavedRepairChange(Number(editButton.dataset.detailChangeRequest), 'edit', editButton);
     }
+  });
+
+  recordDetailsPanel.addEventListener('change', event => {
+    const input = event.target.closest('[data-repair-media-upload]');
+    if (!input) return;
+    const files = Array.from(input.files || []);
+    uploadRepairEvidenceFromDetails(input.dataset.repairMediaUpload, files)
+      .finally(() => {
+        input.value = '';
+      });
   });
 }
 
