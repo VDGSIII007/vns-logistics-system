@@ -19,7 +19,9 @@ import {
   subscriptionKey
 } from "./subscriptions.js";
 import {
+  createRepairMediaSignedUrl,
   listRepairRequestsFromSupabase,
+  uploadRepairMediaToSupabase,
   updateRepairRequestStatus,
   updateRepairBackupStatus,
   upsertRepairRequestToSupabase
@@ -33,6 +35,8 @@ const JSON_HEADERS = {
 const REPAIR_API_PATHS = new Set([
   "/api/repair/create",
   "/api/repair/list",
+  "/api/repair/media/upload",
+  "/api/repair/media/signed-url",
   "/api/repair/update-status",
   "/api/repair/backup-status"
 ]);
@@ -286,6 +290,33 @@ async function handleRepairList(url, env) {
   return jsonResponse(result);
 }
 
+async function handleRepairMediaUpload(request, env) {
+  const formData = await request.formData().catch(() => null);
+  if (!formData) return jsonResponse({ ok: false, error: "Invalid multipart form data" }, 400);
+
+  const result = await uploadRepairMediaToSupabase(env, formData);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Repair media upload failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse(result);
+}
+
+async function handleRepairMediaSignedUrl(url, env) {
+  const result = await createRepairMediaSignedUrl(env, url.searchParams.get("path"));
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Repair media signed URL failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse(result);
+}
+
 async function handleRepairBackupStatus(request, env) {
   const input = await readJson(request);
   if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
@@ -326,6 +357,8 @@ async function routeRequest(request, env) {
   if (isRepairApiRoute && request.method === "OPTIONS") return handleOptions(request);
   if (request.method === "POST" && url.pathname === "/api/repair/create") return withCors(await handleRepairCreate(request, env), request);
   if (request.method === "GET" && url.pathname === "/api/repair/list") return withCors(await handleRepairList(url, env), request);
+  if (request.method === "POST" && url.pathname === "/api/repair/media/upload") return withCors(await handleRepairMediaUpload(request, env), request);
+  if (request.method === "GET" && url.pathname === "/api/repair/media/signed-url") return withCors(await handleRepairMediaSignedUrl(url, env), request);
   if (request.method === "POST" && url.pathname === "/api/repair/update-status") return withCors(await handleRepairUpdateStatus(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/repair/backup-status") return withCors(await handleRepairBackupStatus(request, env), request);
   if (isRepairApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);

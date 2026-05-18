@@ -39,6 +39,8 @@ const manualEntryForm = document.getElementById('manual-entry-form');
 const manualRequestTypeSelect = document.getElementById('manual-request-type');
 const manualRequestCards = document.querySelectorAll('.manual-request-card');
 const manualSaveStatus = document.getElementById('manual-save-status');
+const repairPhotoInput = document.getElementById('repair-photo-input');
+const repairVideoInput = document.getElementById('repair-video-input');
 const saveStatusChangesButton = document.getElementById('save-status-changes-button');
 const refreshRecordsButton = document.getElementById('refresh-records-button');
 const refreshTodayRecordsButton = document.getElementById('refresh-today-records-button');
@@ -2750,6 +2752,50 @@ function buildDetailBlock(label, value) {
   `;
 }
 
+function parseRepairLinkList(value) {
+  if (Array.isArray(value)) return value.map(item => String(item || '').trim()).filter(Boolean);
+  const text = String(value || '').trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed.map(item => String(item || '').trim()).filter(Boolean);
+  } catch {
+    // Plain text links are handled below.
+  }
+  return text.split(/\r?\n|,/).map(item => item.trim()).filter(Boolean);
+}
+
+function getRepairEvidenceLinks(record, key) {
+  return parseRepairLinkList(getRecordValue(record, key));
+}
+
+function buildRepairEvidenceSection(record) {
+  const photos = getRepairEvidenceLinks(record, 'Photo_Links');
+  const videos = getRepairEvidenceLinks(record, 'Video_Links');
+  if (!photos.length && !videos.length) return '';
+
+  const buttons = [
+    ...photos.map((path, index) => `<button class="details-button" type="button" data-repair-media-path="${escapeHtml(path)}">View Photo${photos.length > 1 ? ` ${index + 1}` : ''}</button>`),
+    ...videos.map((path, index) => `<button class="details-button" type="button" data-repair-media-path="${escapeHtml(path)}">View Video${videos.length > 1 ? ` ${index + 1}` : ''}</button>`)
+  ];
+
+  return `
+    <div class="detail-block">
+      <h3>Repair Evidence</h3>
+      <div class="record-details-actions">${buttons.join('')}</div>
+    </div>
+  `;
+}
+
+async function openRepairMediaPath(path) {
+  const response = await fetch(`${VNS_WORKER_API_BASE}/api/repair/media/signed-url?path=${encodeURIComponent(path)}`);
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result?.ok || !result?.url) {
+    throw new Error(result?.error || `Unable to open repair media (${response.status})`);
+  }
+  window.open(result.url, '_blank', 'noopener');
+}
+
 function showRecordDetails(record, recordIndex = -1) {
   if (!recordDetailsPanel || !recordDetailsContent) return;
   const updatedAt = getRepairPaymentValue(record, 'updatedAt');
@@ -2775,7 +2821,7 @@ function showRecordDetails(record, recordIndex = -1) {
   const actions = savedRecordIndex >= 0
     ? `<div class="record-details-actions"><button class="details-button" type="button" data-detail-change-request="${savedRecordIndex}">Request to Edit</button></div>`
     : '';
-  recordDetailsContent.innerHTML = `${detailBlocks.join('')}${actions}`;
+  recordDetailsContent.innerHTML = `${detailBlocks.join('')}${buildRepairEvidenceSection(record)}${actions}`;
   recordDetailsPanel.hidden = false;
 }
 
@@ -3149,6 +3195,11 @@ function setManualFormVisibility() {
     if (manualRequestTypeSelect) manualRequestTypeSelect.value = requestType;
   }
   manualRequestCards.forEach(card => {
+    if (card.classList.contains('manual-media-card')) {
+      card.classList.add('active');
+      card.hidden = false;
+      return;
+    }
     const active = card.dataset.manualForm === requestType;
     card.classList.toggle('active', active);
     card.hidden = !active;
@@ -3356,7 +3407,7 @@ function renderPostSavePrompt() {
   `;
 }
 
-async function saveRepairRows(rows, sourceMessage, statusElement, emptyMessage, successMessage) {
+async function saveRepairRows(rows, sourceMessage, statusElement, emptyMessage, successMessage, options = {}) {
   if (!rows.length) {
     statusElement.textContent = emptyMessage;
     return false;
@@ -3379,12 +3430,20 @@ async function saveRepairRows(rows, sourceMessage, statusElement, emptyMessage, 
   }
 
   try {
-    await saveRepairRowsToSupabase(dataToSend);
+    const supabaseResult = await saveRepairRowsToSupabase(dataToSend);
     console.log('Repair saved to Supabase');
+    let mediaResult = null;
+    if (options.media?.photoFiles?.length || options.media?.videoFiles?.length) {
+      mediaResult = await uploadRepairMediaAfterSave(dataToSend, options.media, supabaseResult);
+    }
+    const finalSuccessMessage = mediaResult?.failed
+      ? `${successMessage || 'Saved successfully.'} Some media failed to upload; repair was kept saved.`
+      : successMessage || 'Saved successfully.';
     if (statusElement === saveStatus) {
-      setParsedSaveStatus(successMessage || 'Saved successfully.', 'save-status-success');
+      setParsedSaveStatus(finalSuccessMessage, mediaResult?.failed ? 'save-status-warning' : 'save-status-success');
     } else {
-      statusElement.textContent = successMessage || 'Saved successfully.';
+      statusElement.className = `save-status ${mediaResult?.failed ? 'save-status-warning' : 'save-status-success'}`;
+      statusElement.textContent = finalSuccessMessage;
     }
     loadSavedRepairRecords();
     backupRepairRowsToGoogleSheets(dataToSend);
@@ -3430,6 +3489,61 @@ async function saveRepairRowsToSupabase(records) {
     throw new Error(result?.error || `Supabase repair save failed (${response.status})`);
   }
   return result;
+}
+
+async function uploadRepairMediaAfterSave(records, media, saveResult) {
+  const requestId = saveResult?.request_id || records?.[0]?.Request_ID || records?.[0]?.request_id;
+  if (!requestId) {
+    console.warn('Repair media upload skipped: missing request_id after repair save');
+    return { uploaded: 0, failed: 1 };
+  }
+
+  const uploads = [
+    ...(media.photoFiles || []).map(file => ({ file, mediaType: 'photo' })),
+    ...(media.videoFiles || []).map(file => ({ file, mediaType: 'video' }))
+  ];
+
+  let uploaded = 0;
+  let failed = 0;
+  for (const upload of uploads) {
+    try {
+      await uploadRepairMediaFile(requestId, upload.mediaType, upload.file);
+      uploaded += 1;
+    } catch (error) {
+      failed += 1;
+      console.warn(`Repair ${upload.mediaType} upload failed for ${upload.file?.name || 'file'}`, error);
+    }
+  }
+  return { uploaded, failed };
+}
+
+async function uploadRepairMediaFile(requestId, mediaType, file) {
+  const formData = new FormData();
+  formData.append('request_id', requestId);
+  formData.append('media_type', mediaType);
+  formData.append('file', file);
+
+  const response = await fetch(`${VNS_WORKER_API_BASE}/api/repair/media/upload`, {
+    method: 'POST',
+    body: formData
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result?.ok) {
+    throw new Error(result?.error || `Repair media upload failed (${response.status})`);
+  }
+  return result;
+}
+
+function getRepairMediaFiles() {
+  return {
+    photoFiles: Array.from(repairPhotoInput?.files || []),
+    videoFiles: Array.from(repairVideoInput?.files || [])
+  };
+}
+
+function resetRepairMediaInputs() {
+  if (repairPhotoInput) repairPhotoInput.value = '';
+  if (repairVideoInput) repairVideoInput.value = '';
 }
 
 async function saveRepairRowsToGoogleSheets(records) {
@@ -3631,14 +3745,19 @@ if (manualEntryForm) {
       return;
     }
     const row = collectManualEntryRow();
+    const media = getRepairMediaFiles();
     const saved = await saveRepairRows(
       [row],
       'Manual User Input',
       manualSaveStatus,
       'No manual repair record to save. Fill at least one repair field first.',
-      'Saved locally and synced to cloud.'
+      'Saved locally and synced to cloud.',
+      { media }
     );
-    if (saved) manualEntryForm.reset();
+    if (saved) {
+      manualEntryForm.reset();
+      resetRepairMediaInputs();
+    }
     setManualFormVisibility();
   });
 }
@@ -3993,6 +4112,15 @@ if (closeRecordDetails) {
 if (recordDetailsPanel) {
   recordDetailsPanel.addEventListener('click', event => {
     if (event.target === recordDetailsPanel) hideRecordDetails();
+    const mediaButton = event.target.closest('[data-repair-media-path]');
+    if (mediaButton) {
+      openRepairMediaPath(mediaButton.dataset.repairMediaPath)
+        .catch(error => {
+          console.warn('Repair signed URL failed', error);
+          alert('Unable to open repair evidence. Please try again.');
+        });
+      return;
+    }
     const editButton = event.target.closest('[data-detail-change-request]');
     if (editButton) {
       requestSavedRepairChange(Number(editButton.dataset.detailChangeRequest), 'edit', editButton);

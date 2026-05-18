@@ -1,5 +1,6 @@
 const REPAIR_ARRAY_KEYS = ["records", "entries", "data", "items", "rows", "result"];
 const SAFE_ERROR = "Repair data service is unavailable";
+const REPAIR_MEDIA_BUCKET = "repair-media";
 
 function supabaseConfig(env) {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -46,6 +47,19 @@ function boolFromValue(value) {
 
 function linksJson(...values) {
   return values.map(value => String(value ?? "").trim()).filter(Boolean);
+}
+
+function linkArrayFromValue(value) {
+  if (Array.isArray(value)) return value.map(item => String(item ?? "").trim()).filter(Boolean);
+  const text = String(value ?? "").trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return parsed.map(item => String(item ?? "").trim()).filter(Boolean);
+  } catch {
+    // Treat non-JSON values as a single legacy link.
+  }
+  return [text];
 }
 
 function firstValue(record, keys) {
@@ -97,8 +111,11 @@ function mapRepairRecord(record) {
     approval_status: textOrNull(firstValue(record, ["Approval_Status", "approval_status", "approvalStatus"])) || "Pending",
     payment_status: textOrNull(firstValue(record, ["Payment_Status", "payment_status", "paymentStatus"])) || "Unpaid",
     approved_by: textOrNull(firstValue(record, ["Approved_By", "approved_by", "approvedBy"])),
-    photo_links: linksJson(record.Photo_Link, record.Receipt_Link, record.Proof_Of_Payment),
-    video_links: [],
+    photo_links: [
+      ...linkArrayFromValue(firstValue(record, ["photo_links", "Photo_Links", "photoLinks"])),
+      ...linksJson(record.Photo_Link, record.Receipt_Link, record.Proof_Of_Payment)
+    ],
+    video_links: linkArrayFromValue(firstValue(record, ["video_links", "Video_Links", "videoLinks"])),
     source_message: textOrNull(firstValue(record, ["Source_Message", "source_message", "sourceMessage"])),
     remarks: textOrNull(firstValue(record, ["Remarks", "remarks", "Cost_Remarks", "costRemarks"])),
     saved_by: textOrNull(firstValue(record, ["Saved_By", "saved_by", "savedBy"])),
@@ -150,6 +167,137 @@ async function supabaseFetch(env, path, options = {}) {
   }
 
   return { body, status: response.status };
+}
+
+function storageHeaders(config, contentType = "") {
+  const headers = {
+    apikey: config.key,
+    Authorization: `Bearer ${config.key}`
+  };
+  if (contentType) headers["content-type"] = contentType;
+  return headers;
+}
+
+function safeFileName(name = "repair-media") {
+  const cleaned = String(name || "repair-media")
+    .normalize("NFKD")
+    .replace(/[^\w.\-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 120);
+  return cleaned || "repair-media";
+}
+
+function safeStoragePath(requestId, fileName) {
+  const safeRequestId = String(requestId || "").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 120);
+  if (!safeRequestId) return "";
+  return `repair_requests/${safeRequestId}/${Date.now()}_${safeFileName(fileName)}`;
+}
+
+async function fetchRepairMediaArrays(env, requestId) {
+  const filters = new URLSearchParams({
+    select: "photo_links,video_links",
+    request_id: `eq.${requestId}`,
+    limit: "1"
+  });
+  const result = await supabaseFetch(env, `repair_requests?${filters.toString()}`, {
+    method: "GET"
+  });
+  if (result.error) return result;
+  const record = Array.isArray(result.body) ? result.body[0] : null;
+  if (!record) return { error: `No repair request found for request_id ${requestId}`, status: 404 };
+  return {
+    photo_links: linkArrayFromValue(record.photo_links),
+    video_links: linkArrayFromValue(record.video_links)
+  };
+}
+
+async function appendRepairMediaPath(env, requestId, mediaType, path) {
+  const current = await fetchRepairMediaArrays(env, requestId);
+  if (current.error) return { ok: false, error: current.error, status: current.status || 500 };
+
+  const field = mediaType === "photo" ? "photo_links" : "video_links";
+  const nextLinks = Array.from(new Set([...(current[field] || []), path]));
+  const filters = new URLSearchParams({ request_id: `eq.${requestId}` });
+  const result = await supabaseFetch(env, `repair_requests?${filters.toString()}`, {
+    method: "PATCH",
+    prefer: "return=representation",
+    body: JSON.stringify({
+      [field]: nextLinks,
+      updated_at: new Date().toISOString()
+    })
+  });
+
+  if (result.error) return { ok: false, error: SAFE_ERROR, details: result.error, status: result.status || 500 };
+  return { ok: true, links: nextLinks };
+}
+
+export async function uploadRepairMediaToSupabase(env, formData) {
+  const config = supabaseConfig(env);
+  if (config.error) return { ok: false, error: config.error, status: 500 };
+
+  const requestId = textOrNull(formData.get("request_id"));
+  const mediaType = textOrNull(formData.get("media_type"));
+  const file = formData.get("file");
+  if (!requestId || !["photo", "video"].includes(mediaType || "") || !file || typeof file.arrayBuffer !== "function") {
+    return { ok: false, error: "request_id, valid media_type, and file are required", status: 400 };
+  }
+
+  const path = safeStoragePath(requestId, file.name || `${mediaType}-evidence`);
+  if (!path) return { ok: false, error: "Invalid request_id", status: 400 };
+
+  const uploadResponse = await fetch(`${config.url}/storage/v1/object/${REPAIR_MEDIA_BUCKET}/${path}`, {
+    method: "POST",
+    headers: {
+      ...storageHeaders(config, file.type || "application/octet-stream"),
+      "x-upsert": "false"
+    },
+    body: await file.arrayBuffer()
+  });
+
+  if (!uploadResponse.ok) {
+    const details = await uploadResponse.text().catch(() => "");
+    return { ok: false, error: SAFE_ERROR, details, status: uploadResponse.status || 500 };
+  }
+
+  const appended = await appendRepairMediaPath(env, requestId, mediaType, path);
+  if (!appended.ok) return appended;
+
+  return {
+    ok: true,
+    request_id: requestId,
+    media_type: mediaType,
+    path
+  };
+}
+
+export async function createRepairMediaSignedUrl(env, path) {
+  const config = supabaseConfig(env);
+  if (config.error) return { ok: false, error: config.error, status: 500 };
+
+  const safePath = textOrNull(path);
+  if (!safePath || safePath.includes("..") || !safePath.startsWith("repair_requests/")) {
+    return { ok: false, error: "Valid media path is required", status: 400 };
+  }
+
+  const response = await fetch(`${config.url}/storage/v1/object/sign/${REPAIR_MEDIA_BUCKET}/${safePath}`, {
+    method: "POST",
+    headers: {
+      ...storageHeaders(config, "application/json")
+    },
+    body: JSON.stringify({ expiresIn: 3600 })
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    return { ok: false, error: SAFE_ERROR, details: body, status: response.status || 500 };
+  }
+
+  const signedUrl = body?.signedURL || body?.signedUrl || "";
+  return {
+    ok: true,
+    path: safePath,
+    expires_in: 3600,
+    url: signedUrl.startsWith("http") ? signedUrl : `${config.url}${signedUrl}`
+  };
 }
 
 export async function upsertRepairRequestToSupabase(env, input) {
