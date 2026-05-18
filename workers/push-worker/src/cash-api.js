@@ -93,6 +93,17 @@ function boolFromValue(value) {
   return ["true", "yes", "1", "deleted"].includes(String(value ?? "").trim().toLowerCase());
 }
 
+function normalizeCashCreateStatuses(record = {}) {
+  const rawStatus = textOrNull(firstValue(record, ["status", "Status", "Review_Status", "reviewStatus"]));
+  const rawApprovalStatus = textOrNull(firstValue(record, ["approval_status", "approvalStatus", "Approval_Status"]));
+  const rawPaymentStatus = textOrNull(firstValue(record, ["payment_status", "paymentStatus", "Payment_Status", "Posted_Status"]));
+  const status = !rawStatus || rawStatus.toLowerCase() === "draft" ? "For Approval" : rawStatus;
+  const approval_status = !rawApprovalStatus || rawApprovalStatus.toLowerCase() === "draft" ? "Pending" : rawApprovalStatus;
+  const payment_status = rawPaymentStatus || "Unpaid";
+  console.log("Cash normalized save status", { status, approval_status, payment_status });
+  return { status, approval_status, payment_status };
+}
+
 function isDeletedCashRecord(record = {}) {
   const raw = record.raw_data && typeof record.raw_data === "object" ? record.raw_data : {};
   return boolFromValue(record.is_deleted) ||
@@ -148,7 +159,7 @@ function mapCashRecord(record) {
   const now = new Date().toISOString();
   const requestId = createCashRequestId(record);
   const type = textOrNull(firstValue(record, ["request_type", "requestType", "Request_Type", "Transaction_Type", "transactionType", "type", "Type"])) || "Cash Request";
-  const status = textOrNull(firstValue(record, ["approval_status", "approvalStatus", "Approval_Status", "Review_Status", "reviewStatus", "status", "Status"])) || "Draft";
+  const normalizedStatuses = normalizeCashCreateStatuses(record);
 
   return {
     request_id: requestId,
@@ -169,9 +180,9 @@ function mapCashRecord(record) {
     receiver_name: textOrNull(firstValue(record, ["receiver_name", "receiverName", "Receiver_Name", "Person_Name", "personName"])),
     deposit_to: textOrNull(firstValue(record, ["deposit_to", "depositTo", "Deposit_To"])),
     account_number: textOrNull(firstValue(record, ["account_number", "accountNumber", "Account_Number", "GCash_Number", "depositNumber"])),
-    status: textOrNull(firstValue(record, ["status", "Status"])) || "Draft",
-    approval_status: status,
-    payment_status: textOrNull(firstValue(record, ["payment_status", "paymentStatus", "Payment_Status", "Posted_Status"])) || "Unpaid",
+    status: normalizedStatuses.status,
+    approval_status: normalizedStatuses.approval_status,
+    payment_status: normalizedStatuses.payment_status,
     approved_by: textOrNull(firstValue(record, ["approved_by", "approvedBy", "Approved_By"])),
     approved_at: timestampOrNull(firstValue(record, ["approved_at", "approvedAt", "Approved_At"])),
     paid_by: textOrNull(firstValue(record, ["paid_by", "paidBy", "Paid_By"])),

@@ -287,11 +287,11 @@ function normalizeCashRequestType(record = {}) {
 }
 
 function cashStatusValue(record = {}) {
-  return acStatusValue(record, ["Review_Status", "reviewStatus", "Status", "status", "Approval_Status", "approvalStatus"]);
+  return acStatusValue(record, ["Review_Status", "reviewStatus", "Status", "status", "approval_status", "Approval_Status", "approvalStatus"]);
 }
 
 function cashPaymentStatusValue(record = {}) {
-  return acStatusValue(record, ["Payment_Status", "paymentStatus", "Posted_Status", "postedStatus"]);
+  return acStatusValue(record, ["payment_status", "Payment_Status", "paymentStatus", "Posted_Status", "postedStatus"]);
 }
 
 function cashTypeClass(type) {

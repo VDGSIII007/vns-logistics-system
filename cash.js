@@ -36,6 +36,8 @@ function toCashSheetRecord(record) {
     Encoded_By: loggedBy,
     Logged_By: loggedBy,
     Remarks: clean.remarks || clean.reason || '',
+    Approval_Status: clean.approval_status || clean.approvalStatus || '',
+    Payment_Status: clean.payment_status || clean.paymentStatus || '',
     Created_At: clean.createdAt || '',
     Updated_At: clean.updatedAt || '',
     Deleted_At: clean.deletedAt || '',
@@ -99,6 +101,36 @@ function backupCashRecordToGoogleSheets(record, statusId, action = 'saveEntry') 
       await updateCashBackupStatus(record, 'failed', error?.message || 'Google Sheets backup failed');
       setStatus(statusId, 'Saved to Supabase. Google Sheets backup failed.', 'warning');
     });
+}
+
+function normalizeCashSubmitStatus(record = {}) {
+  const status = "For Approval";
+  const approval_status = "Pending";
+  const payment_status = record.payment_status || record.paymentStatus || "Unpaid";
+  console.log("Cash normalized save status", { status, approval_status, payment_status });
+  return {
+    ...record,
+    status,
+    Status: status,
+    Review_Status: status,
+    approval_status,
+    approvalStatus: approval_status,
+    Approval_Status: approval_status,
+    payment_status,
+    paymentStatus: payment_status,
+    Payment_Status: payment_status
+  };
+}
+
+function removeDraftCashStatusOptions() {
+  ["diesel-status-field", "budget-status-field", "bali-status-field"].forEach(id => {
+    const select = $(id);
+    if (!select) return;
+    Array.from(select.options).forEach(option => {
+      if (String(option.value || option.textContent || "").trim().toLowerCase() === "draft") option.remove();
+    });
+    select.value = "For Approval";
+  });
 }
 
 const DIESEL_KEY = "vnsDieselPOEntries";
@@ -450,7 +482,7 @@ async function saveCashSupabaseFirst(record, storageKey, statusId, action = 'sav
 async function saveDieselPO() {
   const isEditing = Boolean($("diesel-form").dataset.recordId);
   applyTruckToForm("diesel");
-  const data = getDieselPOFormData();
+  const data = normalizeCashSubmitStatus(getDieselPOFormData());
   const error = validateDieselPO(data);
   if (error) {
     clearCashErrors("diesel-date","diesel-group-category","diesel-plate-number","diesel-logged-by","diesel-amount","diesel-liters","diesel-fuel-station","diesel-po-number","diesel-receiver-name","diesel-deposit-to","diesel-deposit-number","diesel-status-field");
@@ -505,7 +537,7 @@ function loadDieselPOToForm(record) {
   $("diesel-deposit-to").value = record.depositTo || "";
   $("diesel-receiver-name").value = record.receiverName || "";
   $("diesel-deposit-number").value = record.depositNumber || "";
-  $("diesel-status-field").value = record.status || "Draft";
+  $("diesel-status-field").value = record.status === "Draft" ? "For Approval" : (record.status || "For Approval");
   $("diesel-reference").value = record.reference || "";
   $("diesel-remarks").value = record.remarks || "";
   if (!record.groupCategory) applyTruckToForm("diesel");
@@ -624,7 +656,7 @@ async function saveBudget() {
     if (data.depositNeeded === "Yes" && !data.depositNumber) markCashError("budget-deposit-number");
     return setStatus("budget-status", error, "warning");
   }
-  const dataToSave = { ...data };
+  const dataToSave = normalizeCashSubmitStatus({ ...data });
   delete dataToSave.depositNeeded;
   $("budget-form").dataset.recordId = data.id;
   $("budget-form").dataset.createdAt = data.createdAt;
@@ -655,6 +687,7 @@ function loadBudgetToForm(record) {
   $("budget-deposit-needed").value = record.depositNeeded || "No";
   setGroupSelectValue("budget-group-category", record.groupCategory || "");
   $("budget-status-field").value = record.status || "Draft";
+  if ($("budget-status-field").value === "Draft" || !$("budget-status-field").value) $("budget-status-field").value = "For Approval";
   if (!record.groupCategory) applyTruckToForm("budget");
   renderTruckPlateDatalistForPrefix("budget");
   applyDepositState("budget");
@@ -745,7 +778,7 @@ async function saveBali() {
     if (data.depositNeeded === "Yes" && !data.depositNumber) markCashError("bali-deposit-number");
     return setStatus("bali-status", error, "warning");
   }
-  const dataToSave = { ...data };
+  const dataToSave = normalizeCashSubmitStatus({ ...data });
   delete dataToSave.depositNeeded;
   $("bali-form").dataset.recordId = data.id;
   $("bali-form").dataset.createdAt = data.createdAt;
@@ -776,7 +809,7 @@ function loadBaliToForm(record) {
   $("bali-deposit-needed").value = record.depositNeeded || "No";
   $("bali-deposit-to").value = record.depositTo || "GCash";
   setGroupSelectValue("bali-group-category", record.groupCategory || "");
-  $("bali-status-field").value = record.status || "Draft";
+  $("bali-status-field").value = record.status === "Draft" ? "For Approval" : (record.status || "For Approval");
   if (!record.groupCategory) applyTruckToForm("bali");
   if (!record.plateNumber) {
     $("bali-plate-number").value = "No Plate / Not Available";
@@ -1391,6 +1424,7 @@ function wireEvents() {
 
 populateCashRoleSelects();
 wireEvents();
+removeDraftCashStatusOptions();
 applyDieselDepositState();
 applyDepositState("budget");
 applyDepositState("bali");
