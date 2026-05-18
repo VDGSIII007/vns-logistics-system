@@ -22,10 +22,56 @@ const CASH_HEADERS = [
   "Deleted_At","Deleted_By","Is_Deleted","Logged_By"
 ];
 
-// ============================================================
-// doGet
-// ============================================================
 function doGet(e) {
+  var type = String((e && e.parameter && e.parameter.type) || "").toLowerCase();
+
+  try {
+    if (type === "trucks") {
+      return ContentService
+        .createTextOutput(exportTruckMasterSql())
+        .setMimeType(ContentService.MimeType.TEXT);
+    }
+
+    if (type === "json") {
+      var data = exportCashAndMasterDataJson();
+      var text = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+      return ContentService
+        .createTextOutput(text)
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (type === "sql" || type === "cash") {
+      var cashSql = exportCashMasterSqlIfPresent_();
+      return ContentService
+        .createTextOutput(cashSql)
+        .setMimeType(ContentService.MimeType.TEXT);
+    }
+
+    if (e && e.parameter && e.parameter.action) {
+      return cashPoBaliApiDoGet_(e);
+    }
+
+    return ContentService
+      .createTextOutput("VNS exporter ready. Use ?type=trucks or ?type=json")
+      .setMimeType(ContentService.MimeType.TEXT);
+  } catch (err) {
+    return ContentService
+      .createTextOutput("Exporter error: " + err.message)
+      .setMimeType(ContentService.MimeType.TEXT);
+  }
+}
+
+function exportCashMasterSqlIfPresent_() {
+  if (typeof exportCashAndMasterDataSql === "function") return exportCashAndMasterDataSql();
+  if (typeof exportCashMasterSql === "function") return exportCashMasterSql();
+  if (typeof exportCashSql === "function") return exportCashSql();
+  return "No cash/master SQL exporter is present. Available routes: ?type=trucks or ?type=json";
+}
+
+// ============================================================
+// Cash / PO / Bali API GET
+// ============================================================
+function cashPoBaliApiDoGet_(e) {
   try {
     var action = (e && e.parameter && e.parameter.action) || "health";
     if (action === "health") {

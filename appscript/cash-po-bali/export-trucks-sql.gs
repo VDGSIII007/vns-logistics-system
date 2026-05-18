@@ -1,5 +1,5 @@
 // Read-only Truck_Master SQL exporter for Supabase trucks seed.
-// Run exportTruckMasterSql() or deploy as a web app and call doGet().
+// Run exportTruckMasterSql() or deploy as a web app and call ?type=trucks.
 
 var TRUCK_MASTER_SPREADSHEET_ID = "14JVeGkI3EIaZEHix56ICnFjOE56mrB9LK5sulgPTc7Q";
 var TRUCK_MASTER_TAB_NAME = "Truck_Master";
@@ -79,7 +79,7 @@ function exportTruckMasterSql() {
   return sql;
 }
 
-function doGet(e) {
+function doGetTruckMasterSql_(e) {
   var sql = exportTruckMasterSql();
   return ContentService
     .createTextOutput(sql)
