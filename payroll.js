@@ -38,13 +38,15 @@ const amountFields = [
 const lineColumns = [
   ["tripDate", "date"], ["source", "text"], ["destination", "text"], ["referenceNo", "text"],
   ["poNumber", "text"], ["diesel", "number"], ["driverSalary", "number"], ["helperSalary", "number"],
-  ["tollFee", "number"], ["passway", "number"], ["parking", "number"], ["otherExpenses", "number"],
-  ["rowTotal", "number"], ["rateMatchStatus", "text"]
+  ["tollFee", "number"], ["passway", "number"], ["parking", "number"], ["lagayLoaded", "number"],
+  ["lagayEmpty", "number"], ["mano", "number"], ["vulcanize", "number"], ["driverAllowance", "number"],
+  ["helperAllowance", "number"], ["hugasTruck", "number"], ["checkpoint", "number"], ["otherExpenses", "number"],
+  ["rowTotal", "number"], ["rateMatchStatus", "text"], ["remarks", "text"]
 ];
 
 const rateAutoFillFields = new Set([
   "driverSalary", "helperSalary", "tollFee", "passway", "parking", "lagayLoaded",
-  "lagayEmpty", "mano", "driverAllowance", "helperAllowance", "otherExpenses"
+  "lagayEmpty", "mano", "vulcanize", "driverAllowance", "helperAllowance", "hugasTruck", "checkpoint", "otherExpenses"
 ]);
 
 const deductionFields = ["ca", "sss", "pagibig", "philhealth", "atm", "short", "other1", "other2", "other3"];
@@ -1933,8 +1935,10 @@ function renderTripTable() {
 
 function getLineCellClass(field) {
   if (field === "tripDate") return "sticky-col sticky-col-2";
-  if (field === "poNumber") return "sticky-col sticky-col-3";
+  if (field === "source") return "sticky-col sticky-col-3";
+  if (field === "destination") return "sticky-col sticky-col-4";
   if (field === "rateMatchStatus") return "rate-status-cell";
+  if (field === "remarks") return "remarks-cell";
   return "";
 }
 
