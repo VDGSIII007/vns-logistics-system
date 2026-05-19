@@ -2934,6 +2934,59 @@ body.payroll-page{
   color:#9ca3af;
   font-weight:900;
 }
+.payroll-trip-breakdown-card{
+  overflow:hidden;
+}
+.payroll-trip-breakdown-table-wrap{
+  width:100%;
+  overflow:auto;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:#fff;
+}
+.payroll-trip-breakdown-table{
+  width:100%;
+  min-width:1120px;
+  border-collapse:collapse;
+  font-size:.82rem;
+}
+.payroll-trip-breakdown-table th,
+.payroll-trip-breakdown-table td{
+  padding:11px 12px;
+  border-bottom:1px solid #e5e7eb;
+  text-align:left;
+  white-space:nowrap;
+}
+.payroll-trip-breakdown-table th{
+  background:#f8fafc;
+  color:#111827;
+  font-size:.72rem;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+.payroll-trip-breakdown-table td:nth-child(n+4),
+.payroll-trip-breakdown-table tfoot td:nth-child(n+4){
+  text-align:right;
+}
+.payroll-trip-breakdown-table tbody tr:hover td{
+  background:#fff7f7;
+}
+.payroll-trip-breakdown-table tfoot td{
+  background:#111827;
+  color:#fff;
+  border-bottom:0;
+  font-weight:900;
+}
+.payroll-trip-empty{
+  margin:0;
+  padding:18px;
+  border:1px dashed var(--line);
+  border-radius:16px;
+  background:#fafafa;
+  color:var(--muted);
+  font-weight:800;
+}
 .single-payroll-workspace .payroll-encoding-table .payroll-line-actions{
   min-width:170px;
   padding:7px 8px;
@@ -2990,6 +3043,48 @@ body.payroll-page{
   z-index:8;
   background:#eef2f7;
   box-shadow:-2px 0 0 #d9dde5;
+}
+@media(max-width:700px){
+  .payroll-trip-breakdown-table-wrap{
+    border:0;
+    background:transparent;
+    overflow:visible;
+  }
+  .payroll-trip-breakdown-table{
+    min-width:0;
+    display:block;
+  }
+  .payroll-trip-breakdown-table thead,
+  .payroll-trip-breakdown-table tfoot{
+    display:none;
+  }
+  .payroll-trip-breakdown-table tbody,
+  .payroll-trip-breakdown-table tr,
+  .payroll-trip-breakdown-table td{
+    display:block;
+    width:100%;
+  }
+  .payroll-trip-breakdown-table tr{
+    margin:0 0 12px;
+    border:1px solid var(--line);
+    border-radius:16px;
+    background:#fff;
+    overflow:hidden;
+  }
+  .payroll-trip-breakdown-table td{
+    display:flex;
+    justify-content:space-between;
+    gap:14px;
+    padding:10px 12px;
+    text-align:right;
+    white-space:normal;
+  }
+  .payroll-trip-breakdown-table td::before{
+    content:attr(data-label);
+    color:var(--muted);
+    font-weight:900;
+    text-align:left;
+  }
 }
 .approval-notes-field{
   display:grid;

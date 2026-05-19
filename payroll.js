@@ -779,6 +779,112 @@ function renderDriverHelperSummary() {
   setText("helper-suggested-deduction", formatCurrency(totals.suggestedHelperDeduction || 0));
   setText("helper-total-deductions", formatCurrency(totals.helperDeduction));
   setText("helper-net-pay", formatCurrency(totals.helperNetPay));
+  renderPayrollTripEarningsBreakdown();
+}
+
+function renderPayrollTripEarningsBreakdown() {
+  const target = $("payroll-trip-earnings-breakdown");
+  if (!target) return;
+  const rows = payrollState.lines
+    .filter(line => !isLineBlank(line))
+    .map(line => {
+      const driverSalary = parseNumber(line.driverSalary);
+      const driverAllowance = parseNumber(line.driverAllowance);
+      const helperSalary = parseNumber(line.helperSalary);
+      const helperAllowance = parseNumber(line.helperAllowance);
+      return {
+        tripDate: line.tripDate || "",
+        route: formatPayrollRoute(line),
+        referenceNo: line.referenceNo || line.ref || "",
+        driverSalary,
+        driverAllowance,
+        driverTotal: driverSalary + driverAllowance,
+        helperSalary,
+        helperAllowance,
+        helperTotal: helperSalary + helperAllowance
+      };
+    });
+
+  if (!rows.length) {
+    target.innerHTML = '<p class="payroll-trip-empty">No trip earnings yet. Add trip lines in Encode Payroll / Pasahod 2.</p>';
+    return;
+  }
+
+  const totals = rows.reduce((sum, row) => {
+    sum.driverSalary += row.driverSalary;
+    sum.driverAllowance += row.driverAllowance;
+    sum.driverTotal += row.driverTotal;
+    sum.helperSalary += row.helperSalary;
+    sum.helperAllowance += row.helperAllowance;
+    sum.helperTotal += row.helperTotal;
+    return sum;
+  }, {
+    driverSalary: 0,
+    driverAllowance: 0,
+    driverTotal: 0,
+    helperSalary: 0,
+    helperAllowance: 0,
+    helperTotal: 0
+  });
+
+  target.innerHTML = `
+    <div class="payroll-trip-breakdown-table-wrap">
+      <table class="payroll-trip-breakdown-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Route</th>
+            <th>Reference No.</th>
+            <th>Driver Salary</th>
+            <th>Driver Allowance</th>
+            <th>Driver Total</th>
+            <th>Helper Salary</th>
+            <th>Helper Allowance</th>
+            <th>Helper Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(row => `
+            <tr>
+              <td data-label="Date">${escapeHtml(formatPayrollTripDate(row.tripDate))}</td>
+              <td data-label="Route">${escapeHtml(row.route)}</td>
+              <td data-label="Reference No.">${escapeHtml(row.referenceNo || "-")}</td>
+              <td data-label="Driver Salary">${formatCurrency(row.driverSalary)}</td>
+              <td data-label="Driver Allowance">${formatCurrency(row.driverAllowance)}</td>
+              <td data-label="Driver Total"><strong>${formatCurrency(row.driverTotal)}</strong></td>
+              <td data-label="Helper Salary">${formatCurrency(row.helperSalary)}</td>
+              <td data-label="Helper Allowance">${formatCurrency(row.helperAllowance)}</td>
+              <td data-label="Helper Total"><strong>${formatCurrency(row.helperTotal)}</strong></td>
+            </tr>
+          `).join("")}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3">Total</td>
+            <td>${formatCurrency(totals.driverSalary)}</td>
+            <td>${formatCurrency(totals.driverAllowance)}</td>
+            <td>${formatCurrency(totals.driverTotal)}</td>
+            <td>${formatCurrency(totals.helperSalary)}</td>
+            <td>${formatCurrency(totals.helperAllowance)}</td>
+            <td>${formatCurrency(totals.helperTotal)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  `;
+}
+
+function formatPayrollRoute(line = {}) {
+  const source = String(line.source || "").trim();
+  const destination = String(line.destination || "").trim();
+  if (source && destination) return `${source} -> ${destination}`;
+  return source || destination || "-";
+}
+
+function formatPayrollTripDate(value) {
+  if (!value) return "-";
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-PH");
 }
 
 function renderApprovalSection() {
