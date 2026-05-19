@@ -1936,6 +1936,25 @@ body.payroll-page{
   gap:18px;
   padding:42px 0 28px;
 }
+.admin-page-shell{
+  width:min(1500px,96vw);
+}
+.admin-page-header{
+  display:block;
+  padding:34px 0 28px;
+}
+.admin-back-row{
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  margin:0 0 16px;
+}
+.admin-back-button{
+  align-self:auto;
+}
+.admin-title-block{
+  max-width:980px;
+}
 .ops-header h1{
   margin:0;
   font-size:clamp(2.2rem,4.5vw,4.25rem);
@@ -2736,8 +2755,18 @@ body.payroll-page{
   .ops-header{
     flex-direction:column;
   }
+  .admin-page-header{
+    display:block;
+    padding:24px 0 22px;
+  }
+  .admin-back-row{
+    margin-bottom:14px;
+  }
   .ops-back{
     align-self:flex-start;
+  }
+  .admin-back-button{
+    max-width:100%;
   }
   .ops-summary-grid,
   .ops-toolbar,
