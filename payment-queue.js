@@ -186,17 +186,50 @@ function isPaymentUnpaid(record, allowed = ["", "unpaid", "for payment"]) {
   return !paymentStatus || allowed.includes(paymentStatus) || paymentStatus !== "paid";
 }
 
-function isCashPaymentReady(record = {}) {
-  if (record?.isDeleted || record?.is_deleted || String(record?.Is_Deleted || "").trim().toLowerCase() === "true") return false;
-  if (isPaid(record)) return false;
+function normalizeCashStatus(record = {}) {
+  return normalizedValue(record, ["status", "Status", "Review_Status", "reviewStatus"]);
+}
 
-  const status = normalizedValue(record, ["status", "Status", "Review_Status", "reviewStatus"]);
-  const approvalStatus = normalizedValue(record, ["approval_status", "approvalStatus", "Approval_Status"]);
-  const paymentStatus = normalizedValue(record, ["payment_status", "paymentStatus", "Payment_Status", "Posted_Status", "postedStatus"]);
+function normalizeCashApprovalStatus(record = {}) {
+  return normalizedValue(record, ["approval_status", "approvalStatus", "Approval_Status"]);
+}
+
+function normalizeCashPaymentStatus(record = {}) {
+  return normalizedValue(record, ["payment_status", "paymentStatus", "Payment_Status", "Posted_Status", "postedStatus"]);
+}
+
+function isCashDeleted(record = {}) {
+  if (record?.isDeleted || record?.is_deleted || String(record?.Is_Deleted || "").trim().toLowerCase() === "true") return true;
+  return [normalizeCashStatus(record), normalizeCashApprovalStatus(record), normalizeCashPaymentStatus(record)]
+    .some(value => ["deleted", "cancelled", "canceled"].includes(value));
+}
+
+function isCashPendingApproval(record = {}) {
+  if (isCashDeleted(record)) return false;
+  const pending = new Set(["for approval", "pending", "pending approval", "submitted", "for review"]);
+  return pending.has(normalizeCashStatus(record)) || pending.has(normalizeCashApprovalStatus(record));
+}
+
+function isCashApprovalHistory(record = {}) {
+  if (isCashDeleted(record) || isCashPendingApproval(record)) return false;
+  const history = new Set(["approved", "rejected", "returned", "paid", "deposited", "used"]);
+  return [normalizeCashStatus(record), normalizeCashApprovalStatus(record), normalizeCashPaymentStatus(record)]
+    .some(value => history.has(value));
+}
+
+function isCashApprovedUnpaid(record = {}) {
+  if (isCashDeleted(record) || isPaid(record)) return false;
+  const status = normalizeCashStatus(record);
+  const approvalStatus = normalizeCashApprovalStatus(record);
+  const paymentStatus = normalizeCashPaymentStatus(record);
   const approved = status === "approved" || approvalStatus === "approved";
-  const unpaid = !paymentStatus || ["unpaid", "pending", "pending payment", "for payment"].includes(paymentStatus);
+  const unpaid = !paymentStatus || ["unpaid", "pending"].includes(paymentStatus);
 
   return approved && unpaid;
+}
+
+function isCashPaymentReady(record = {}) {
+  return isCashApprovedUnpaid(record);
 }
 
 function isRepairPaymentReady(record) {
@@ -613,6 +646,7 @@ async function loadCloudCashRecords() {
     const data = await response.json();
     if (data && data.ok === false) throw new Error(data.error || data.message || "Cash Supabase list returned an error.");
     const records = normalizeCashListResponse(data).filter(record => record && typeof record === "object");
+    console.log("Payment queue cash loaded", records.length);
     console.log("Payment Queue Supabase cash records loaded", records.length);
     return records;
   } catch (error) {
@@ -628,6 +662,7 @@ async function loadCloudCashRecords() {
   const data = await response.json();
   if (data && data.ok === false) throw new Error(data.error || "Cash list returned an error.");
   const records = normalizeCashListResponse(data).filter(record => record && typeof record === "object");
+  console.log("Payment queue cash loaded", records.length);
   console.log("Payment Queue cloud cash records loaded", records.length);
   return records;
 }
@@ -679,6 +714,7 @@ async function loadCashPaymentItems() {
   }
 
   const approved = records.filter(record => record && isCashPaymentReady(record));
+  console.log("Payment queue approved unpaid filtered", approved.length);
   console.log("Payment Queue approved cash records", approved.length);
   return approved.map((record, index) => makeItem("cash", "Cash / PO / Bali", record, `CASH-${index + 1}`));
 }

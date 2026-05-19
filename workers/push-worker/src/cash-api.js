@@ -236,9 +236,15 @@ function formatCashRecord(record = {}) {
     source: raw.source || raw.Source || record.source || "",
     destination: raw.destination || raw.Destination || "",
     remarks: raw.remarks || raw.Remarks || record.remarks || "",
-    status: raw.status || raw.Review_Status || record.approval_status || record.status || "",
-    Review_Status: raw.Review_Status || raw.status || record.approval_status || record.status || "",
-    paymentStatus: raw.paymentStatus || raw.Payment_Status || record.payment_status || "",
+    status: record.status || record.approval_status || raw.status || raw.Review_Status || "",
+    Status: record.status || raw.Status || raw.status || "",
+    approval_status: record.approval_status || raw.approval_status || raw.approvalStatus || raw.Approval_Status || "",
+    approvalStatus: record.approval_status || raw.approvalStatus || raw.Approval_Status || "",
+    Approval_Status: record.approval_status || raw.Approval_Status || raw.approvalStatus || "",
+    Review_Status: record.status || raw.Review_Status || raw.status || record.approval_status || "",
+    payment_status: record.payment_status || raw.payment_status || raw.paymentStatus || raw.Payment_Status || "",
+    paymentStatus: record.payment_status || raw.paymentStatus || raw.Payment_Status || "",
+    Payment_Status: record.payment_status || raw.Payment_Status || raw.paymentStatus || "",
     backup_status: record.backup_status || raw.backup_status || "",
     backup_error: record.backup_error || raw.backup_error || "",
     createdAt: raw.createdAt || raw.Created_At || record.created_at || "",
@@ -350,11 +356,12 @@ export async function updateCashRequestStatus(env, input = {}) {
   const status = textOrNull(input.status || input.Status);
   const approvalStatus = textOrNull(input.approval_status || input.approvalStatus || input.Approval_Status);
   const paymentStatus = textOrNull(input.payment_status || input.paymentStatus || input.Payment_Status || input.Posted_Status);
+  const isApprovedUpdate = status === "Approved" || approvalStatus === "Approved";
   const isPaidUpdate = status === "Paid" || paymentStatus === "Paid";
   const payload = {
     status: status || "Approved",
     approval_status: approvalStatus || (isPaidUpdate ? null : "Approved"),
-    payment_status: paymentStatus,
+    payment_status: paymentStatus || (isApprovedUpdate ? "Unpaid" : null),
     approved_by: textOrNull(input.approved_by || input.approvedBy || input.Approved_By),
     approved_at: timestampOrNull(input.approved_at || input.approvedAt || input.Approved_At) || (isPaidUpdate ? null : now),
     paid_by: textOrNull(input.paid_by || input.paidBy || input.Paid_By || input.Released_By),

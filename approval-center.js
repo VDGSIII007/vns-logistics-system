@@ -287,11 +287,55 @@ function normalizeCashRequestType(record = {}) {
 }
 
 function cashStatusValue(record = {}) {
-  return acStatusValue(record, ["Review_Status", "reviewStatus", "Status", "status", "approval_status", "Approval_Status", "approvalStatus"]);
+  return acStatusValue(record, ["status", "Status", "Review_Status", "reviewStatus"]);
 }
 
 function cashPaymentStatusValue(record = {}) {
   return acStatusValue(record, ["payment_status", "Payment_Status", "paymentStatus", "Posted_Status", "postedStatus"]);
+}
+
+function normalizeCashStatus(record = {}) {
+  return acStatusValue(record, ["status", "Status", "Review_Status", "reviewStatus"]).trim().toLowerCase();
+}
+
+function normalizeCashApprovalStatus(record = {}) {
+  return acStatusValue(record, ["approval_status", "approvalStatus", "Approval_Status"]).trim().toLowerCase();
+}
+
+function normalizeCashPaymentStatus(record = {}) {
+  return cashPaymentStatusValue(record).trim().toLowerCase();
+}
+
+function isCashDeleted(record = {}) {
+  if (record?.isDeleted || record?.is_deleted || String(record?.Is_Deleted || "").trim().toUpperCase() === "TRUE") return true;
+  return [normalizeCashStatus(record), normalizeCashApprovalStatus(record), normalizeCashPaymentStatus(record)]
+    .some(value => ["deleted", "cancelled", "canceled"].includes(value));
+}
+
+function isCashPendingApproval(record = {}) {
+  if (isCashDeleted(record)) return false;
+  const status = normalizeCashStatus(record);
+  const approvalStatus = normalizeCashApprovalStatus(record);
+  const terminal = new Set(["draft", "approved", "paid", "deposited", "used", "rejected", "returned", "deleted", "cancelled", "canceled"]);
+  if (terminal.has(status) || terminal.has(approvalStatus)) return false;
+  const pending = new Set(["for approval", "pending", "pending approval", "submitted", "for review"]);
+  return pending.has(status) || pending.has(approvalStatus);
+}
+
+function isCashApprovalHistory(record = {}) {
+  if (isCashDeleted(record) || isCashPendingApproval(record)) return false;
+  const history = new Set(["approved", "rejected", "returned", "paid", "deposited", "used"]);
+  return [normalizeCashStatus(record), normalizeCashApprovalStatus(record), normalizeCashPaymentStatus(record)]
+    .some(value => history.has(value));
+}
+
+function isCashApprovedUnpaid(record = {}) {
+  if (isCashDeleted(record)) return false;
+  const status = normalizeCashStatus(record);
+  const approvalStatus = normalizeCashApprovalStatus(record);
+  const paymentStatus = normalizeCashPaymentStatus(record);
+  return (status === "approved" || approvalStatus === "approved") &&
+    (!paymentStatus || ["unpaid", "pending", "pending payment"].includes(paymentStatus));
 }
 
 function cashTypeClass(type) {
@@ -598,6 +642,13 @@ function normalizeCashBackendRecord(record = {}, index = 0, source = "cash-cloud
     currentBalance: acFirst(record, ["Balance_After_Payroll", "currentBalance"]),
     reason: acFirst(record, ["Source_Message", "sourceMessage", "Reason", "reason", "Remarks", "remarks"]),
     remarks: acFirst(record, ["Source_Message", "sourceMessage", "Remarks", "remarks"]),
+    status: acFirst(record, ["status", "Status", "Review_Status", "reviewStatus"]),
+    Status: acFirst(record, ["Status", "status", "Review_Status", "reviewStatus"]),
+    approval_status: acFirst(record, ["approval_status", "approvalStatus", "Approval_Status"]),
+    approvalStatus: acFirst(record, ["approvalStatus", "Approval_Status", "approval_status"]),
+    Approval_Status: acFirst(record, ["Approval_Status", "approvalStatus", "approval_status"]),
+    payment_status: acFirst(record, ["payment_status", "paymentStatus", "Payment_Status", "Posted_Status"]),
+    Payment_Status: acFirst(record, ["Payment_Status", "paymentStatus", "payment_status", "Posted_Status"]),
     reviewStatus: cashStatusValue(record),
     paymentStatus: cashPaymentStatusValue(record),
     __approvalCenterSource: source
@@ -686,7 +737,7 @@ function recordStatusValues(record, keys) {
 }
 
 function isDeletedOrCancelled(record) {
-  if (record?.isDeleted || String(record?.Is_Deleted || "").toUpperCase() === "TRUE") return true;
+  if (record?.isDeleted || record?.is_deleted || String(record?.Is_Deleted || "").toUpperCase() === "TRUE") return true;
   return recordStatusValues(record, ["status", "Status", "Review_Status", "reviewStatus", "Approval_Status", "approvalStatus", "Repair_Status", "repairStatus", "Payment_Status", "paymentStatus"])
     .some(value => ["deleted", "cancelled", "canceled"].some(status => value === status || value.includes(status)));
 }
@@ -709,24 +760,14 @@ function isHistoryStatus(type, value) {
 }
 
 function isApprovalHistory(type, record) {
+  if (type === "cash") return isCashApprovalHistory(record);
   if (!record || isDeletedOrCancelled(record) || needsApproval(type, record)) return false;
   return historyStatusValues(type, record).some(value => isHistoryStatus(type, value));
 }
 
 function needsApproval(type, record) {
   if (type === "repair") return repairNeedsApproval(record);
-  if (type === "cash") {
-    if (record?.isDeleted || String(record?.Is_Deleted || "").toUpperCase() === "TRUE") return false;
-    const approvalStatus = acStatusValue(record, ["approval_status", "approvalStatus", "Approval_Status"]).toLowerCase();
-    const status = acStatusValue(record, ["status", "Status"]).toLowerCase();
-    const reviewStatus = acStatusValue(record, ["Review_Status", "reviewStatus"]).toLowerCase();
-    const allStatuses = [approvalStatus, status, reviewStatus].filter(Boolean);
-    if (allStatuses.some(value => ["approved", "paid", "deposited", "used", "rejected", "returned", "deleted", "cancelled", "canceled"].includes(value))) return false;
-    return approvalStatus === "pending" ||
-      status === "for approval" ||
-      reviewStatus === "for approval" ||
-      allStatuses.some(value => ["pending approval", "submitted", "for review"].some(item => value === item || value.includes(item)));
-  }
+  if (type === "cash") return isCashPendingApproval(record);
   const status = acStatusValue(record, ["status", "Status", "Workflow_Status", "workflowStatus"]).toLowerCase();
   if (record.isDeleted) return false;
   if (["approved", "paid", "posted", "completed", "deposited", "used", "rejected", "returned", "deleted"].includes(status)) return false;
@@ -1647,6 +1688,17 @@ function backupCashApprovalToSheets(payload = {}) {
     });
 }
 
+function removeApprovedCashFromApprovalList(requestId) {
+  console.log("Cash approved, removing from approval list", requestId);
+  acState.cashRecords = acState.cashRecords.filter(record => getCashApprovalId(record) !== requestId);
+  acState.items = acState.items.filter(item => item.type !== "cash" || getCashApprovalId(item.raw) !== requestId);
+  acState.selectedCashIds.delete(requestId);
+  if (acState.activeItem?.type === "cash" && getCashApprovalId(acState.activeItem.raw) === requestId) {
+    acState.activeItem = null;
+  }
+  applyApprovalFilters();
+}
+
 async function approveCashRecord(record) {
   const cashId = getCashApprovalId(record);
   if (!cashId) throw new Error("Cash record ID is missing.");
@@ -1654,12 +1706,14 @@ async function approveCashRecord(record) {
     throw new Error("Cash backend is not available for this record. Refresh and try again.");
   }
 
+  console.log("Cash approval status before", record);
   const sheetsPayload = buildCashApprovalRecord(record);
   const reviewNotes = ac$("ac-review-notes")?.value?.trim() || "";
   const supabasePayload = {
     request_id: cashId,
     status: "Approved",
     approval_status: "Approved",
+    payment_status: "Unpaid",
     approved_by: sheetsPayload.Approved_By || "Admin",
     approved_at: sheetsPayload.Approved_At,
     notes: reviewNotes
@@ -1668,6 +1722,7 @@ async function approveCashRecord(record) {
   try {
     const result = await cashSupabaseStatusPost(supabasePayload);
     backupCashApprovalToSheets({ ...sheetsPayload, Remarks: reviewNotes || sheetsPayload.Remarks || sheetsPayload.remarks || "" });
+    removeApprovedCashFromApprovalList(cashId);
     return result;
   } catch (error) {
     console.warn("Cash approval Supabase update failed; using Sheets fallback.", error);
@@ -1702,7 +1757,7 @@ async function approveCashFromModal() {
     await approveCashRecord(item.raw);
     closeApprovalDetail();
     acState.selectedCashIds.delete(item.id);
-    await refreshCashApprovalList("Cash / PO / Bali request approved.");
+    setApprovalMessage("Cash / PO / Bali request approved.", "success");
     triggerPaymentQueuePushCheck();
   } catch (error) {
     console.warn("Cash approval failed", error);
@@ -1740,13 +1795,14 @@ async function approveSelectedCashRecords() {
   if (failed.length) {
     console.warn("Some Cash approvals failed", failed);
     setApprovalMessage(`${approvedIds.length} approved, ${failed.length} failed. Failed rows remain pending.`, approvedIds.length ? "warning" : "error");
-    if (approvedIds.length) await refreshCashApprovalList();
+    if (approvedIds.length) applyApprovalFilters();
     else updateRepairBatchUi();
     return;
   }
 
   acState.selectedCashIds.clear();
-  await refreshCashApprovalList(`${approvedIds.length} Cash / PO / Bali request${approvedIds.length === 1 ? "" : "s"} approved.`);
+  applyApprovalFilters();
+  setApprovalMessage(`${approvedIds.length} Cash / PO / Bali request${approvedIds.length === 1 ? "" : "s"} approved.`, "success");
   triggerPaymentQueuePushCheck();
 }
 
