@@ -255,7 +255,26 @@ function repairStatusChip(status) {
 }
 
 function normalizeCashRequestType(record = {}) {
-  const explicit = acFirst(record, ["Transaction_Type", "Type", "transactionType", "type"]);
+  const requestId = acFirst(record, ["request_id", "requestId", "Request_ID", "Cash_ID", "id"]);
+  const explicit = acFirst(record, [
+    "request_type",
+    "requestType",
+    "Request_Type",
+    "Transaction_Type",
+    "Type",
+    "transactionType",
+    "type"
+  ]);
+  if (explicit) {
+    console.log("Cash type source check", {
+      request_id: requestId,
+      canonical: record.request_type,
+      rawTransactionType: record.Transaction_Type,
+      rawType: record.Type || record.type,
+      displayType: explicit
+    });
+    return explicit;
+  }
   const blob = [
     explicit,
     record.budgetType,
@@ -283,7 +302,15 @@ function normalizeCashRequestType(record = {}) {
   if (["driver", "helper", "mechanic"].includes(role) && !record.poNumber && !record.PO_Number) {
     return acFirst(record, ["Reason", "reason", "Source_Message", "sourceMessage", "Remarks", "remarks"]) ? "Bali / Cash Advance" : "Other Cash Request";
   }
-  return "Other Cash Request";
+  const displayType = "Other Cash Request";
+  console.log("Cash type source check", {
+    request_id: requestId,
+    canonical: record.request_type,
+    rawTransactionType: record.Transaction_Type,
+    rawType: record.Type || record.type,
+    displayType
+  });
+  return displayType;
 }
 
 function cashStatusValue(record = {}) {

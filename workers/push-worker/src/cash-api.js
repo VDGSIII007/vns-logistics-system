@@ -206,6 +206,15 @@ function timestampOrNull(value) {
 
 function formatCashRecord(record = {}) {
   const raw = record.raw_data && typeof record.raw_data === "object" ? record.raw_data : {};
+  const displayType = record.request_type ||
+    raw.request_type ||
+    raw.requestType ||
+    raw.Request_Type ||
+    raw.Transaction_Type ||
+    raw.Type ||
+    raw.transactionType ||
+    raw.type ||
+    "";
   const formatted = {
     ...raw,
     id: record.request_id,
@@ -215,10 +224,10 @@ function formatCashRecord(record = {}) {
     Cash_ID: record.request_id,
     date: record.request_date || raw.date || raw.Date || "",
     Date: record.request_date || raw.Date || raw.date || "",
-    type: record.request_type || raw.type || raw.Transaction_Type || "",
-    request_type: record.request_type || raw.request_type || raw.requestType || raw.Request_Type || "",
-    requestType: record.request_type || raw.requestType || raw.Request_Type || "",
-    Transaction_Type: record.request_type || raw.Transaction_Type || raw.type || "",
+    type: displayType,
+    request_type: displayType,
+    requestType: displayType,
+    Transaction_Type: displayType,
     groupCategory: record.group_name || raw.groupCategory || raw.Group_Category || "",
     Group_Category: record.group_name || raw.Group_Category || raw.groupCategory || "",
     plateNumber: record.plate_number || raw.plateNumber || raw.Plate_Number || raw.Sender || "",
@@ -260,6 +269,13 @@ function formatCashRecord(record = {}) {
     paidAt: record.paid_at || raw.paidAt || raw.Paid_At || "",
     isDeleted: raw.isDeleted ?? raw.Is_Deleted ?? record.is_deleted ?? false
   };
+  console.log("Cash type source check", {
+    request_id: record.request_id,
+    canonical: record.request_type,
+    rawTransactionType: raw.Transaction_Type,
+    rawType: raw.Type || raw.type,
+    displayType
+  });
   console.log("Cash canonical formatted record", formatted);
   return formatted;
 }

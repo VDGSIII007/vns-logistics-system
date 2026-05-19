@@ -304,7 +304,26 @@ function repairDetails(record) {
 }
 
 function cashRequestType(record) {
-  return text(record.request_type || record.requestType || record.Request_Type || record.Transaction_Type || record.transactionType || record.Type || record.type || record.cashType, "Cash / PO / Bali");
+  const requestId = text(record.request_id || record.requestId || record.Cash_ID || record.id, "");
+  const displayType = text(
+    record.request_type ||
+    record.requestType ||
+    record.Request_Type ||
+    record.Transaction_Type ||
+    record.Type ||
+    record.transactionType ||
+    record.type ||
+    record.cashType,
+    "Cash Request"
+  );
+  console.log("Cash type source check", {
+    request_id: requestId,
+    canonical: record.request_type,
+    rawTransactionType: record.Transaction_Type,
+    rawType: record.Type || record.type,
+    displayType
+  });
+  return displayType;
 }
 
 function cashDetails(record) {

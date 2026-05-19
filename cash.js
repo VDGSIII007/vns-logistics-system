@@ -891,6 +891,13 @@ function normalizeCashRecordForTable(record = {}, index = 0) {
   const requestId = firstCashValue(record, ["request_id", "requestId", "Request_ID", "Cash_ID", "Record_ID", "id", "recordId", "cashId"], `cash_${index + 1}`);
   const rawType = firstCashValue(record, ["Transaction_Type", "Type", "transactionType", "type"]);
   console.log("Cash display type", { request_id: requestId, request_type: firstCashValue(record, ["request_type", "requestType", "Request_Type"]), raw_type: rawType, display_type: type });
+  console.log("Cash type source check", {
+    request_id: requestId,
+    canonical: record.request_type,
+    rawTransactionType: record.Transaction_Type,
+    rawType: record.Type || record.type,
+    displayType: type
+  });
   const amountValue = firstCashValue(record, ["amount", "Amount", "Diesel_Amount", "dieselAmount", "Budget_Amount", "budgetAmount"]);
   const plate = firstCashValue(record, ["plate_number", "plateNumber", "Plate_Number", "Sender"], "No Plate") || "No Plate";
   const group = firstCashValue(record, ["group_name", "groupCategory", "Group_Category", "Truck_Group"], "General / No Plate") || "General / No Plate";
