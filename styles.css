@@ -2227,53 +2227,55 @@ body.payroll-page{
 }
 .ops-tabs{
   display:flex;
-  gap:8px;
+  gap:6px;
   flex-wrap:wrap;
-  padding:12px;
-  border-bottom:1px solid var(--line);
-  background:#fff;
+  padding:14px 14px 8px;
+  background:#f9fafb;
+  border-bottom:none;
 }
 .ops-view-tabs{
   display:flex;
-  gap:8px;
+  gap:6px;
   flex-wrap:wrap;
-  padding:0 12px 12px;
+  padding:8px 14px 12px;
   border-bottom:1px solid var(--line);
-  background:#fff;
+  background:#f9fafb;
 }
 .ops-tab{
-  min-height:42px;
+  min-height:38px;
   border:1px solid #d1d5db;
   border-radius:999px;
   background:#fff;
   color:#374151;
   padding:0 16px;
   font:inherit;
-  font-size:.85rem;
+  font-size:.84rem;
   font-weight:900;
   cursor:pointer;
+  transition:border-color .15s,background .15s,color .15s,box-shadow .15s;
 }
 .ops-tab.active{
   border-color:var(--red);
   background:var(--red);
   color:#fff;
-  box-shadow:0 10px 24px rgba(215,25,32,.18);
+  box-shadow:0 6px 16px rgba(215,25,32,.18);
 }
 .ops-view-btn{
-  min-height:34px;
-  border:1px solid #d1d5db;
+  min-height:28px;
+  border:1px solid #e5e7eb;
   border-radius:999px;
-  background:#fff;
-  color:#4b5563;
-  padding:0 12px;
+  background:transparent;
+  color:#6b7280;
+  padding:0 11px;
   font:inherit;
-  font-size:.8rem;
+  font-size:.77rem;
   font-weight:900;
   cursor:pointer;
+  transition:border-color .15s,background .15s,color .15s;
 }
 .ops-view-btn.active{
-  border-color:#111827;
-  background:#111827;
+  border-color:#374151;
+  background:#374151;
   color:#fff;
 }
 .ops-view-note{
@@ -2286,12 +2288,38 @@ body.payroll-page{
   font-weight:800;
 }
 .ops-toolbar{
-  display:grid;
-  grid-template-columns:minmax(260px,1fr) repeat(2,minmax(160px,220px)) auto;
-  gap:10px;
-  padding:14px;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+  padding:12px 14px;
   border-bottom:1px solid var(--line);
-  background:#fafafa;
+  background:#fff;
+}
+.ops-toolbar .ops-input{
+  flex:1 1 200px;
+  min-width:160px;
+  width:auto;
+}
+.ops-toolbar .ops-select{
+  flex:0 1 165px;
+  min-width:120px;
+  width:auto;
+}
+.ops-toolbar .ops-secondary-btn{
+  flex:none;
+  min-height:42px;
+  padding:0 16px;
+}
+#ac-approve-selected:not([hidden]):not(:disabled){
+  border-color:var(--red);
+  background:var(--red);
+  color:#fff;
+  box-shadow:0 6px 16px rgba(215,25,32,.14);
+}
+#ac-approve-selected:not([hidden]):not(:disabled):hover{
+  background:var(--red-dark,#b91c1c);
+  border-color:var(--red-dark,#b91c1c);
 }
 .ops-input,
 .ops-select{
@@ -2849,11 +2877,8 @@ body.payroll-page{
   .ops-summary-grid{
     grid-template-columns:repeat(2,minmax(0,1fr));
   }
-  .ops-toolbar{
-    grid-template-columns:repeat(2,minmax(0,1fr));
-  }
   .ops-toolbar .ops-input{
-    grid-column:1/-1;
+    flex-basis:100%;
   }
 }
 @media(max-width:760px){
@@ -2878,9 +2903,14 @@ body.payroll-page{
     max-width:100%;
   }
   .ops-summary-grid,
-  .ops-toolbar,
   .ops-detail-grid{
     grid-template-columns:1fr;
+  }
+  .ops-toolbar .ops-input,
+  .ops-toolbar .ops-select,
+  .ops-toolbar .ops-secondary-btn{
+    flex:1 1 100%;
+    min-width:0;
   }
   .ops-tabs{
     align-items:stretch;
