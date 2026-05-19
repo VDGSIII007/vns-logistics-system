@@ -159,6 +159,10 @@ function bindPayrollEvents() {
   if ($("refresh-payroll-records-button")) {
     $("refresh-payroll-records-button").addEventListener("click", loadSavedPayrollRecordsFromSupabase);
   }
+  if ($("records-body") && !$("records-body").dataset.payrollActionsBound) {
+    $("records-body").dataset.payrollActionsBound = "true";
+    $("records-body").addEventListener("click", handleSavedPayrollRecordAction);
+  }
 
   ["filter-status", "filter-group", "filter-plate", "filter-driver", "filter-payroll-date"].forEach(id => {
     $(id).addEventListener("input", renderPayrollRecordsTable);
@@ -1025,29 +1029,51 @@ function renderPayrollRecordsTable() {
       <td>${formatCurrency(record.totals?.driverNetPay)}</td>
       <td>${formatCurrency(record.totals?.helperNetPay)}</td>
       <td class="payroll-row-actions">
-        <button type="button" data-action="edit" data-id="${record.id}">View/Edit</button>
-        <button type="button" data-action="submit" data-id="${record.id}">Submit</button>
-        <button type="button" data-action="duplicate" data-id="${record.id}">Duplicate</button>
-        <button type="button" data-action="delete" data-id="${record.id}">Delete</button>
-        <button type="button" data-action="viber" data-id="${record.id}">Generate Message</button>
+        <button type="button" data-action="view" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}">View/Edit</button>
+        <button type="button" data-action="submit" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}">Submit</button>
+        <button type="button" data-action="duplicate" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}">Duplicate</button>
+        <button type="button" data-action="delete" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}">Delete</button>
+        <button type="button" data-action="message" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}">Generate Message</button>
       </td>
     </tr>
   `).join("") : `<tr><td colspan="11" class="empty-table">No payroll records yet.</td></tr>`;
-
-  recordsBody.querySelectorAll("button").forEach(button => {
-    button.addEventListener("click", () => {
-      const { action, id } = button.dataset;
-      if (action === "edit") editPayrollRecord(id);
-      if (action === "submit") submitPayrollFromRecords(id);
-      if (action === "duplicate") duplicatePayrollRecord(id);
-      if (action === "delete") deletePayrollRecord(id);
-      if (action === "viber") {
-        editPayrollRecord(id);
-        generateViberMessage();
-      }
-    });
-  });
   renderForApprovalQueue();
+}
+
+function getPayrollRecordLookupId(record = {}) {
+  return record.payrollNumber || record.payroll_id || record.payrollId || record.id || "";
+}
+
+function findPayrollRecordByLookupId(payrollId) {
+  const normalizedId = String(payrollId || "").trim();
+  return payrollState.records.find(record => [
+    record.id,
+    record.payrollNumber,
+    record.payroll_id,
+    record.payrollId,
+    record.Liquidation_ID,
+    record.Payroll_Number
+  ].some(value => String(value || "").trim() === normalizedId)) || null;
+}
+
+function handleSavedPayrollRecordAction(event) {
+  const button = event.target.closest("[data-action][data-payroll-id]");
+  if (!button) return;
+  const action = button.dataset.action;
+  const payrollId = button.dataset.payrollId;
+  console.log("Payroll button clicked", { action, payrollId });
+
+  if (action === "view") {
+    editPayrollRecord(payrollId);
+  } else if (action === "submit") {
+    submitPayrollFromRecords(payrollId);
+  } else if (action === "duplicate") {
+    duplicatePayrollRecord(payrollId);
+  } else if (action === "delete") {
+    deletePayrollRecord(payrollId);
+  } else if (action === "message") {
+    editPayrollRecord(payrollId).then(() => generateViberMessage());
+  }
 }
 
 function getSavedPayrollDisplayStatus(record) {
@@ -1314,9 +1340,11 @@ function updateLocalApprovalRecord(id, status, approvalPatch = {}) {
   renderForApprovalQueue();
 }
 
-function editPayrollRecord(id) {
-  const record = payrollState.records.find(item => item.id === id);
+async function editPayrollRecord(id) {
+  const record = findPayrollRecordByLookupId(id);
   if (!record) return;
+  const payrollId = getPayrollRecordLookupId(record);
+  console.log("Opening payroll record", payrollId);
   payrollState.currentId = record.id;
   payrollState.lines = (record.lines || []).map(line => ({ ...line, warnings: line.warnings || [] }));
   if (!payrollState.lines.length) payrollState.lines.push(createBlankPayrollLine());
@@ -1341,15 +1369,18 @@ function editPayrollRecord(id) {
   $("payment-date").value = record.approval?.paymentDate || "";
   setDeductionInputs("driver", record.deductions?.driver || {});
   setDeductionInputs("helper", record.deductions?.helper || {});
+  await loadPayrollTripLinesForRecord(record);
   renderLinesTable();
   calculatePayroll();
   generateViberMessage();
   updateLockState();
+  switchPayrollTab("encode-payroll-tab");
   window.scrollTo({ top: 0, behavior: "smooth" });
+  return record;
 }
 
 function duplicatePayrollRecord(id) {
-  const record = payrollState.records.find(item => item.id === id);
+  const record = findPayrollRecordByLookupId(id);
   if (!record) return;
   payrollState.currentId = createId("payroll");
   payrollState.lines = (record.lines || []).map(line => ({ ...line, id: createId("line"), warnings: [] }));
@@ -1382,10 +1413,10 @@ function duplicatePayrollRecord(id) {
 }
 
 function deletePayrollRecord(id) {
-  const record = payrollState.records.find(item => item.id === id);
+  const record = findPayrollRecordByLookupId(id);
   if (!record) return;
   if (!confirm(`Delete ${record.payrollNumber || record.id}? This only removes the local record.`)) return;
-  payrollState.records = payrollState.records.filter(item => item.id !== id);
+  payrollState.records = payrollState.records.filter(item => item !== record);
   writeJson(PAYROLL_RECORDS_KEY, payrollState.records);
   renderPayrollRecordsTable();
   setStatus("Payroll record deleted.", "warning");
@@ -2668,6 +2699,61 @@ function normalizeSupabasePayrollRecord(r) {
   };
 }
 
+function normalizeSupabasePayrollTripLine(line = {}) {
+  const raw = line.raw_data || {};
+  return createBlankPayrollLine({
+    id: line.lineId || line.line_id || raw.id || createId("line"),
+    tripDate: line.tripDate || line.trip_date || raw.tripDate || "",
+    source: line.source || raw.source || "",
+    destination: line.destination || raw.destination || "",
+    referenceNo: line.referenceNo || line.reference_no || raw.referenceNo || raw.shipmentNumber || "",
+    poNumber: line.poNumber || line.po_number || raw.poNumber || "",
+    diesel: line.diesel ?? raw.diesel,
+    costPerLiter: line.costPerLiter ?? line.cost_per_liter ?? raw.costPerLiter,
+    driverSalary: line.driverSalary ?? line.driver_salary ?? raw.driverSalary,
+    helperSalary: line.helperSalary ?? line.helper_salary ?? raw.helperSalary,
+    tollFee: line.tollFee ?? line.toll ?? raw.tollFee,
+    passway: line.passway ?? raw.passway,
+    parking: line.parking ?? raw.parking,
+    lagayLoaded: line.lagayLoaded ?? line.lagay_loaded ?? raw.lagayLoaded,
+    lagayEmpty: line.lagayEmpty ?? line.lagay_empty ?? raw.lagayEmpty,
+    mano: line.mano ?? raw.mano,
+    vulcanize: line.vulcanize ?? raw.vulcanize,
+    driverAllowance: line.driverAllowance ?? line.allowance_driver ?? raw.driverAllowance,
+    helperAllowance: line.helperAllowance ?? line.allowance_helper ?? raw.helperAllowance,
+    hugasTruck: line.hugasTruck ?? line.truck_wash ?? raw.hugasTruck,
+    checkpoint: line.checkpoint ?? raw.checkpoint,
+    otherExpenses: line.otherExpenses ?? line.other_expenses ?? raw.otherExpenses,
+    rowTotal: line.rowTotal ?? line.row_total ?? raw.rowTotal,
+    rateId: line.rateId || line.rate_id || raw.rateId || "",
+    rateMatchStatus: line.rateMatchStatus || line.rate_match_status || raw.rateMatchStatus || "No Match",
+    remarks: line.remarks || raw.remarks || "",
+    warnings: []
+  });
+}
+
+async function loadPayrollTripLinesForRecord(record) {
+  const payrollId = record.payrollNumber || record.payroll_id || record.payrollId || record.id;
+  if (!payrollId) return [];
+  console.log("Loading payroll trip lines", payrollId);
+  try {
+    const response = await fetch(`${VNS_PAYROLL_WORKER_API_BASE}/api/payroll/trip-lines?payroll_id=${encodeURIComponent(payrollId)}&limit=500`);
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.ok) throw new Error(data?.error || `Payroll trip lines load failed (${response.status})`);
+    const lines = Array.isArray(data.lines) ? data.lines.map(normalizeSupabasePayrollTripLine) : [];
+    console.log("Payroll trip lines loaded", lines);
+    if (lines.length) {
+      payrollState.lines = lines;
+      record.lines = lines;
+    }
+    return lines;
+  } catch (error) {
+    console.warn("Payroll trip lines load failed; using record raw lines", error);
+    console.log("Payroll trip lines loaded", payrollState.lines);
+    return payrollState.lines;
+  }
+}
+
 function loadSavedPayrollRecordsFromSupabase() {
   const statusEl = $("payroll-records-load-status");
   if (statusEl) statusEl.textContent = "Loading payroll records from Supabase...";
@@ -2829,16 +2915,50 @@ function mapPayrollToApprovalStatus(status, existing) {
 }
 
 function submitPayrollFromRecords(id) {
-  const record = payrollState.records.find(item => item.id === id);
+  const record = findPayrollRecordByLookupId(id);
   if (!record) return;
   if (!["Draft", "Returned"].includes(record.status)) {
     setStatus("Only Draft or Returned payrolls can be submitted.", "warning");
     return;
   }
-  editPayrollRecord(id);
-  $("payroll-status").value = "For Approval";
-  savePayrollRecord();
-  setStatus(`${record.payrollNumber || record.id} submitted for approval.`, "success");
+  const payrollId = record.payrollNumber || record.payroll_id || record.payrollId || record.id;
+  console.log("Payroll submit clicked", payrollId);
+  record.status = "For Approval";
+  record.approvalStatus = "Pending";
+  record.paymentStatus = "Unpaid";
+  record.updatedAt = new Date().toISOString();
+  writeJson(PAYROLL_RECORDS_KEY, payrollState.records);
+  renderPayrollRecordsTable();
+  renderForApprovalQueue();
+  setStatus(`${record.payrollNumber || record.id} submitted for approval. Syncing...`, "info");
+  updatePayrollStatusInWorker(payrollId, {
+    status: "For Approval",
+    approval_status: "Pending",
+    payment_status: "Unpaid"
+  })
+    .then(result => {
+      if (result.record) {
+        const normalized = normalizeSupabasePayrollRecord(result.record);
+        payrollState.records = mergePayrollRecords(payrollState.records, [normalized]);
+        writeJson(PAYROLL_RECORDS_KEY, payrollState.records);
+      }
+      renderPayrollRecordsTable();
+      renderForApprovalQueue();
+      setStatus(`${record.payrollNumber || record.id} submitted for approval.`, "success");
+      loadSavedPayrollRecordsFromSupabase();
+    })
+    .catch(error => {
+      console.warn("Payroll submit status sync failed", error);
+      savePayrollToSupabase(record)
+        .then(() => {
+          renderPayrollRecordsTable();
+          setStatus(`${record.payrollNumber || record.id} submitted locally and synced.`, "success");
+        })
+        .catch(syncError => {
+          console.warn("Payroll submit fallback save failed", syncError);
+          setStatus("Submitted locally. Supabase sync failed.", "warning");
+        });
+    });
 }
 
 document.addEventListener("DOMContentLoaded", initPayrollPage);
