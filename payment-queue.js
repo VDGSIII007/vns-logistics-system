@@ -177,7 +177,7 @@ function statusMatches(value, statuses) {
 }
 
 function isPaid(record) {
-  const statuses = valuesFrom(record, ["paymentStatus", "Payment_Status", "Posted_Status", "postedStatus", "status", "Status", "Review_Status", "reviewStatus"]);
+  const statuses = valuesFrom(record, ["payment_status", "paymentStatus", "Payment_Status", "Posted_Status", "postedStatus", "status", "Status", "Review_Status", "reviewStatus"]);
   return statuses.some(status => statusMatches(status, PAYMENT_PAID_STATUSES));
 }
 
@@ -215,6 +215,11 @@ function isCashApprovalHistory(record = {}) {
   const history = new Set(["approved", "rejected", "returned", "paid", "deposited", "used"]);
   return [normalizeCashStatus(record), normalizeCashApprovalStatus(record), normalizeCashPaymentStatus(record)]
     .some(value => history.has(value));
+}
+
+function isCashPaidHistory(record = {}) {
+  if (isCashDeleted(record)) return false;
+  return normalizeCashPaymentStatus(record) === "paid" || normalizeCashStatus(record) === "paid";
 }
 
 function isCashApprovedUnpaid(record = {}) {
@@ -299,7 +304,7 @@ function repairDetails(record) {
 }
 
 function cashRequestType(record) {
-  return text(record.Transaction_Type || record.transactionType || record.Request_Type || record.requestType || record.Type || record.type || record.cashType, "Cash / PO / Bali");
+  return text(record.request_type || record.requestType || record.Request_Type || record.Transaction_Type || record.transactionType || record.Type || record.type || record.cashType, "Cash / PO / Bali");
 }
 
 function cashDetails(record) {
@@ -431,6 +436,29 @@ async function cashMarkPaidPost(raw) {
   const result = await response.json();
   if (!isCloudSuccess(result)) throw new Error(result?.error || result?.message || "Cash update returned an error.");
   return result;
+}
+
+function cashRecordFromPaymentResult(result, fallback = {}) {
+  if (result?.record && typeof result.record === "object") return result.record;
+  if (Array.isArray(result?.records) && result.records[0]) return result.records[0];
+  return fallback;
+}
+
+function updateCashPaidState(requestId, record = {}) {
+  const paidRecord = {
+    ...record,
+    request_id: record.request_id || record.requestId || requestId,
+    requestId,
+    Cash_ID: record.Cash_ID || requestId,
+    status: record.status || "Paid",
+    payment_status: record.payment_status || record.paymentStatus || "Paid",
+    paymentStatus: record.paymentStatus || record.payment_status || "Paid"
+  };
+  state.items = state.items.filter(item => item.type !== "cash" || item.id !== requestId);
+  state.items.unshift(makeItem("cash", "Cash / PO / Bali", paidRecord, requestId));
+  console.log("Paid history refreshed", state.items.filter(item => item.type === "cash" && item.paid).length);
+  console.log("Paid history source", "cash-supabase-list");
+  applyFilters();
 }
 
 function backupCashPaymentToSheets(record) {
@@ -607,7 +635,17 @@ async function handleMarkPaid(index, button) {
 
   try {
     if (item.type === "cash") {
-      await cashMarkPaidPost(item.raw);
+      const result = await cashMarkPaidPost(item.raw);
+      updateCashPaidState(item.id, cashRecordFromPaymentResult(result, {
+        ...item.raw,
+        request_id: item.id,
+        status: "Paid",
+        payment_status: "Paid",
+        paid_at: new Date().toISOString()
+      }));
+      notifyPaid(item.source);
+      closeDetail();
+      return;
     } else {
       await repairMarkPaidSupabaseFirst(item.raw);
     }
@@ -714,9 +752,12 @@ async function loadCashPaymentItems() {
   }
 
   const approved = records.filter(record => record && isCashPaymentReady(record));
+  const paid = records.filter(record => record && isCashPaidHistory(record));
   console.log("Payment queue approved unpaid filtered", approved.length);
   console.log("Payment Queue approved cash records", approved.length);
-  return approved.map((record, index) => makeItem("cash", "Cash / PO / Bali", record, `CASH-${index + 1}`));
+  console.log("Paid history refreshed", paid.length);
+  console.log("Paid history source", "cash-supabase-first");
+  return [...approved, ...paid].map((record, index) => makeItem("cash", "Cash / PO / Bali", record, `CASH-${index + 1}`));
 }
 
 async function loadRepairPaymentItems() {
@@ -771,6 +812,10 @@ function applyFilters() {
   });
 
   state.filtered = list;
+  if (state.tab === "paid") {
+    console.log("Paid history refreshed", list.length);
+    console.log("Paid history source", "state-items");
+  }
   render();
 }
 

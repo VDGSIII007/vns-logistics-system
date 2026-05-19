@@ -606,7 +606,7 @@ function normalizeCashListResponse(data) {
 
 function normalizeCashBackendRecord(record = {}, index = 0, source = "cash-cloud-list") {
   const cashId = acFirst(record, ["request_id", "requestId", "Request_ID", "Record_ID", "Cash_ID", "id", "recordId", "cashId"], `CASH-${index + 1}`);
-  const transactionType = acFirst(record, ["Transaction_Type", "Type", "transactionType", "type"]);
+  const transactionType = acFirst(record, ["request_type", "requestType", "Request_Type", "Transaction_Type", "Type", "transactionType", "type"]);
   const date = acFirst(record, ["Date", "Message_Date", "Created_At", "createdAt"]);
   const amount = acFirst(record, ["Amount", "amount", "Diesel_Amount", "dieselAmount", "Budget_Amount", "budgetAmount"]);
   const loggedBy = acFirst(record, ["Logged_By", "loggedBy", "Encoded_By", "encodedBy"]);
@@ -621,6 +621,8 @@ function normalizeCashBackendRecord(record = {}, index = 0, source = "cash-cloud
     requestId: acFirst(record, ["request_id", "requestId", "Request_ID"], cashId),
     recordId: cashId,
     type: transactionType,
+    request_type: transactionType,
+    requestType: transactionType,
     transactionType,
     date,
     plateNumber: acFirst(record, ["Plate_Number", "plateNumber"]),
@@ -895,6 +897,7 @@ function applyApprovalFilters() {
   });
 
   acState.filtered = list;
+  if (acState.view === "history") console.log("Approval history refreshed", list.length);
   renderApproval();
 }
 
@@ -1688,15 +1691,26 @@ function backupCashApprovalToSheets(payload = {}) {
     });
 }
 
-function removeApprovedCashFromApprovalList(requestId) {
+function cashRecordFromSupabaseResult(result, fallback = {}) {
+  if (result?.record && typeof result.record === "object") return result.record;
+  if (Array.isArray(result?.records) && result.records[0]) return result.records[0];
+  return fallback;
+}
+
+function updateApprovedCashInApprovalState(requestId, record = {}) {
   console.log("Cash approved, removing from approval list", requestId);
-  acState.cashRecords = acState.cashRecords.filter(record => getCashApprovalId(record) !== requestId);
-  acState.items = acState.items.filter(item => item.type !== "cash" || getCashApprovalId(item.raw) !== requestId);
+  const canonical = normalizeCashBackendRecord(record, 0, record.__approvalCenterSource || "cash-supabase-list");
+  const exists = acState.cashRecords.some(item => getCashApprovalId(item) === requestId);
+  acState.cashRecords = exists
+    ? acState.cashRecords.map(item => getCashApprovalId(item) === requestId ? canonical : item)
+    : [canonical, ...acState.cashRecords];
   acState.selectedCashIds.delete(requestId);
   if (acState.activeItem?.type === "cash" && getCashApprovalId(acState.activeItem.raw) === requestId) {
     acState.activeItem = null;
   }
+  loadApprovalItems(acState.repairRecords, acState.cashRecords);
   applyApprovalFilters();
+  console.log("Approval history refreshed", acState.items.filter(item => item.type === "cash" && item.isHistory).length);
 }
 
 async function approveCashRecord(record) {
@@ -1722,7 +1736,7 @@ async function approveCashRecord(record) {
   try {
     const result = await cashSupabaseStatusPost(supabasePayload);
     backupCashApprovalToSheets({ ...sheetsPayload, Remarks: reviewNotes || sheetsPayload.Remarks || sheetsPayload.remarks || "" });
-    removeApprovedCashFromApprovalList(cashId);
+    updateApprovedCashInApprovalState(cashId, cashRecordFromSupabaseResult(result, { ...sheetsPayload, __approvalCenterSource: "cash-supabase-list" }));
     return result;
   } catch (error) {
     console.warn("Cash approval Supabase update failed; using Sheets fallback.", error);

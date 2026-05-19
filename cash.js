@@ -860,6 +860,8 @@ function firstCashValue(record, keys, fallback = "") {
 }
 
 function detectCashRecordType(record = {}) {
+  const canonical = firstCashValue(record, ["request_type", "requestType", "Request_Type"]);
+  if (canonical) return canonical;
   const explicit = firstCashValue(record, ["Transaction_Type", "Type", "transactionType", "type"]);
   const blob = [
     explicit,
@@ -886,9 +888,12 @@ function detectCashRecordType(record = {}) {
 
 function normalizeCashRecordForTable(record = {}, index = 0) {
   const type = detectCashRecordType(record);
-  const amountValue = firstCashValue(record, ["Amount", "amount", "Diesel_Amount", "dieselAmount", "Budget_Amount", "budgetAmount"]);
-  const plate = firstCashValue(record, ["Plate_Number", "plateNumber"], "No Plate") || "No Plate";
-  const group = firstCashValue(record, ["Group_Category", "Truck_Group", "groupCategory"], "General / No Plate") || "General / No Plate";
+  const requestId = firstCashValue(record, ["request_id", "requestId", "Request_ID", "Cash_ID", "Record_ID", "id", "recordId", "cashId"], `cash_${index + 1}`);
+  const rawType = firstCashValue(record, ["Transaction_Type", "Type", "transactionType", "type"]);
+  console.log("Cash display type", { request_id: requestId, request_type: firstCashValue(record, ["request_type", "requestType", "Request_Type"]), raw_type: rawType, display_type: type });
+  const amountValue = firstCashValue(record, ["amount", "Amount", "Diesel_Amount", "dieselAmount", "Budget_Amount", "budgetAmount"]);
+  const plate = firstCashValue(record, ["plate_number", "plateNumber", "Plate_Number", "Sender"], "No Plate") || "No Plate";
+  const group = firstCashValue(record, ["group_name", "groupCategory", "Group_Category", "Truck_Group"], "General / No Plate") || "General / No Plate";
   const logger = firstCashValue(record, ["Logged_By", "loggedBy", "Encoded_By", "encodedBy"]);
   const person = firstCashValue(record, ["Person_Name", "personName"]);
   const driver = firstCashValue(record, ["Driver_Name", "driverName"]);
@@ -898,14 +903,15 @@ function normalizeCashRecordForTable(record = {}, index = 0) {
     : firstCashValue(record, ["Logged_By", "loggedBy", "Encoded_By", "encodedBy", "Person_Name", "personName", "Driver_Name", "driverName", "Helper_Name", "helperName"], "-");
 
   return {
-    id: firstCashValue(record, ["Cash_ID", "Record_ID", "id", "recordId", "cashId"], `cash_${index + 1}`),
-    date: firstCashValue(record, ["Date", "Message_Date", "Encoded_At", "Created_At", "createdAt"]),
+    id: requestId,
+    date: firstCashValue(record, ["request_date", "Date", "date", "Message_Date", "Encoded_At", "created_at", "Created_At", "createdAt"]),
     type,
+    rawType,
     plate,
     group,
     amount: Number(String(amountValue || "").replace(/[^\d.-]/g, "")) || 0,
     receiver,
-    status: firstCashValue(record, ["Review_Status", "Status", "status", "reviewStatus"], "Draft") || "Draft",
+    status: firstCashValue(record, ["status", "Status", "Review_Status", "reviewStatus"], "Draft") || "Draft",
     raw: record,
     logger,
     person,
@@ -915,7 +921,7 @@ function normalizeCashRecordForTable(record = {}, index = 0) {
 }
 
 function cashRecordStatus(record = {}) {
-  return firstCashValue(record, ["Review_Status", "Status", "status", "reviewStatus"], record.status || "");
+  return firstCashValue(record, ["status", "Status", "Review_Status", "reviewStatus"], record.status || "");
 }
 
 function cashStatusClass(status = "") {
@@ -943,7 +949,12 @@ function normalizeSavedCashRecord(record = {}, index = 0, source = "local") {
   return {
     ...record,
     id: display.id,
+    request_id: firstCashValue(record, ["request_id", "requestId", "Request_ID"], display.id),
+    requestId: firstCashValue(record, ["request_id", "requestId", "Request_ID"], display.id),
     type: display.type,
+    request_type: display.type,
+    requestType: display.type,
+    rawType: display.rawType,
     date: display.date,
     plateNumber: display.plate === "No Plate" ? "" : display.plate,
     groupCategory: display.group,
@@ -966,7 +977,12 @@ function normalizeSavedCashRecord(record = {}, index = 0, source = "local") {
     remarks: firstCashValue(record, ["Remarks", "remarks", "Source_Message", "sourceMessage"]),
     receiverName: display.receiver,
     status: display.status,
-    paymentStatus: firstCashValue(record, ["Payment_Status", "paymentStatus", "Posted_Status", "postedStatus"], ""),
+    approvalStatus: firstCashValue(record, ["approval_status", "approvalStatus", "Approval_Status"], ""),
+    paymentStatus: firstCashValue(record, ["payment_status", "Payment_Status", "paymentStatus", "Posted_Status", "postedStatus"], ""),
+    backupStatus: firstCashValue(record, ["backup_status", "backupStatus"], ""),
+    backupError: firstCashValue(record, ["backup_error", "backupError"], ""),
+    createdAt: firstCashValue(record, ["created_at", "createdAt", "Created_At"], ""),
+    updatedAt: firstCashValue(record, ["updated_at", "updatedAt", "Updated_At"], ""),
     tableDisplay: display,
     __cashRecordSource: source
   };
@@ -1048,8 +1064,76 @@ function applySavedRecordFilters(records) {
   });
 }
 
+function setSavedCashRecordsHeader() {
+  const head = $("saved-records-body")?.closest("table")?.querySelector("thead tr");
+  if (!head) return;
+  const headers = ["Date", "Reference ID", "Type", "Plate", "Group", "Amount", "Receiver / Payee", "Status", "Actions"];
+  head.innerHTML = headers.map(label => `<th>${escapeHtml(label)}</th>`).join("");
+}
+
+function cashDetailField(label, value) {
+  return `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value || "-"))}</strong></div>`;
+}
+
+function openCashDetailsModal(id) {
+  const record = findSavedCashRecord(id);
+  if (!record) return;
+  const display = record.tableDisplay || normalizeCashRecordForTable(record);
+  const rawType = display.rawType || firstCashValue(record, ["Transaction_Type", "Type", "transactionType", "type"]);
+  const rawTypeField = rawType && rawType !== display.type
+    ? cashDetailField("Raw Sheet Type", rawType)
+    : "";
+  let modal = $("cash-details-modal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "cash-details-modal";
+    modal.className = "cash-edit-modal";
+    modal.innerHTML = `
+      <div class="cash-edit-dialog">
+        <button id="cash-details-close" class="cash-edit-close" type="button" aria-label="Close">x</button>
+        <h2>Cash Request Details</h2>
+        <div id="cash-details-body" class="cash-edit-grid"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    $("cash-details-close")?.addEventListener("click", closeCashDetailsModal);
+    modal.addEventListener("click", event => {
+      if (event.target.id === "cash-details-modal") closeCashDetailsModal();
+    });
+  }
+  const body = $("cash-details-body");
+  if (!body) return;
+  body.innerHTML = [
+    cashDetailField("Reference ID", record.request_id || record.requestId || display.id),
+    cashDetailField("Request Type", record.request_type || record.requestType || display.type),
+    rawTypeField,
+    cashDetailField("Status", record.status || record.Status || display.status),
+    cashDetailField("Approval Status", record.approval_status || record.approvalStatus || record.Approval_Status),
+    cashDetailField("Payment Status", record.payment_status || record.paymentStatus || record.Payment_Status),
+    cashDetailField("Backup Status", record.backup_status || record.backupStatus || record.backupStatus),
+    cashDetailField("Backup Error", record.backup_error || record.backupError),
+    cashDetailField("Amount", formatCurrency(display.amount)),
+    cashDetailField("Plate", record.plate_number || record.plateNumber || display.plate),
+    cashDetailField("Receiver / Payee", record.receiver_name || record.receiverName || record.receiverName || display.receiver),
+    cashDetailField("Remarks", record.remarks || record.Remarks || record.reason),
+    cashDetailField("Source", record.source || record.Source),
+    cashDetailField("Destination", record.destination || record.Destination),
+    cashDetailField("Fuel Station", record.fuelStation || record.Fuel_Station),
+    cashDetailField("PO / Budget Type", record.poNumber || record.PO_Number || record.budgetType || record.Budget_Type),
+    cashDetailField("Created At", record.created_at || record.createdAt || record.Created_At),
+    cashDetailField("Updated At", record.updated_at || record.updatedAt || record.Updated_At)
+  ].filter(Boolean).join("");
+  modal.hidden = false;
+}
+
+function closeCashDetailsModal() {
+  const modal = $("cash-details-modal");
+  if (modal) modal.hidden = true;
+}
+
 function renderSavedCashRecords() {
   const body = $("saved-records-body");
+  setSavedCashRecordsHeader();
   if (!savedCashRecordsCache.length) {
     savedCashRecordsCache = getLocalSavedCashRecords();
     if (!savedCashRecordsStatus) setSavedRecordsStatus("Loaded local records.", "info");
@@ -1068,8 +1152,8 @@ function renderSavedCashRecords() {
     const lockedTitle = "Only Draft records can be edited/deleted here. Ask Mother/Admin to return this request if changes are needed.";
     const editAttrs = isDraft ? "" : ` disabled title="${lockedTitle}"`;
     const deleteAttrs = isDraft ? "" : ` disabled title="${lockedTitle}"`;
-    return `<tr><td>${escapeHtml(display.date || "")}</td><td>${escapeHtml(display.type)}</td><td>${escapeHtml(display.plate)}</td><td>${escapeHtml(display.group)}</td><td>${formatCurrency(display.amount)}</td><td>${escapeHtml(display.receiver)}</td><td>${renderCashStatusChip(display.status)}</td><td class="cash-row-actions"><button data-action="edit" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}"${editAttrs}>Edit</button><button data-action="message" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}">Message</button><button data-action="delete" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}"${deleteAttrs}>Delete</button></td></tr>`;
-  }).join("") : '<tr><td colspan="8" class="empty">No saved records found.</td></tr>';
+    return `<tr class="cash-clickable-row" tabindex="0" data-cash-row-id="${escapeHtml(display.id)}"><td>${escapeHtml(display.date || "")}</td><td>${escapeHtml(display.id)}</td><td>${escapeHtml(display.type)}</td><td>${escapeHtml(display.plate)}</td><td>${escapeHtml(display.group)}</td><td>${formatCurrency(display.amount)}</td><td>${escapeHtml(display.receiver)}</td><td>${renderCashStatusChip(display.status)}</td><td class="cash-row-actions"><button data-action="edit" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}"${editAttrs}>Edit</button><button data-action="message" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}">Message</button><button data-action="delete" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}"${deleteAttrs}>Delete</button></td></tr>`;
+  }).join("") : '<tr><td colspan="9" class="empty">No saved records found.</td></tr>';
 }
 
 function getRecordStore(type) {
@@ -1405,14 +1489,25 @@ function wireEvents() {
   ["filter-date-from", "filter-date-to", "filter-type", "filter-group", "filter-plate"].forEach(id => $(id).addEventListener("input", renderSavedCashRecords));
   $("saved-records-body").addEventListener("click", event => {
     const button = event.target.closest("button[data-action]");
-    if (!button) return;
-    if (button.disabled) {
-      setSavedRecordsStatus(button.title || "This action is not available for this record.", "warning");
+    if (button) {
+      if (button.disabled) {
+        setSavedRecordsStatus(button.title || "This action is not available for this record.", "warning");
+        return;
+      }
+      if (button.dataset.action === "edit") openCashEditModal(button.dataset.type, button.dataset.id);
+      if (button.dataset.action === "delete") deleteSavedCashRecord(button.dataset.type, button.dataset.id);
+      if (button.dataset.action === "message") generateSavedCashRecordMessage(button.dataset.type, button.dataset.id);
       return;
     }
-    if (button.dataset.action === "edit") openCashEditModal(button.dataset.type, button.dataset.id);
-    if (button.dataset.action === "delete") deleteSavedCashRecord(button.dataset.type, button.dataset.id);
-    if (button.dataset.action === "message") generateSavedCashRecordMessage(button.dataset.type, button.dataset.id);
+    const row = event.target.closest("[data-cash-row-id]");
+    if (row) openCashDetailsModal(row.dataset.cashRowId);
+  });
+  $("saved-records-body").addEventListener("keydown", event => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const row = event.target.closest("[data-cash-row-id]");
+    if (!row) return;
+    event.preventDefault();
+    openCashDetailsModal(row.dataset.cashRowId);
   });
   $("cash-edit-form")?.addEventListener("submit", saveCashEditModal);
   $("cash-edit-close")?.addEventListener("click", closeCashEditModal);

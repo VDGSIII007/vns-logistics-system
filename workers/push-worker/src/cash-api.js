@@ -206,30 +206,33 @@ function timestampOrNull(value) {
 
 function formatCashRecord(record = {}) {
   const raw = record.raw_data && typeof record.raw_data === "object" ? record.raw_data : {};
-  return {
+  const formatted = {
     ...raw,
     id: record.request_id,
     cashId: record.request_id,
     request_id: record.request_id,
-    Cash_ID: raw.Cash_ID || record.request_id,
-    date: raw.date || raw.Date || record.request_date || "",
-    Date: raw.Date || raw.date || record.request_date || "",
-    type: raw.type || raw.Transaction_Type || record.request_type || "",
-    Transaction_Type: raw.Transaction_Type || raw.type || record.request_type || "",
-    groupCategory: raw.groupCategory || raw.Group_Category || record.group_name || "",
-    Group_Category: raw.Group_Category || raw.groupCategory || record.group_name || "",
-    plateNumber: raw.plateNumber || raw.Plate_Number || record.plate_number || "",
-    Plate_Number: raw.Plate_Number || raw.plateNumber || record.plate_number || "",
-    driverName: raw.driverName || raw.Driver_Name || record.driver_name || "",
-    helperName: raw.helperName || raw.Helper_Name || record.helper_name || "",
-    loggedBy: raw.loggedBy || raw.Logged_By || raw.Encoded_By || record.logged_by || "",
-    Logged_By: raw.Logged_By || raw.loggedBy || record.logged_by || "",
-    personName: raw.personName || raw.Person_Name || record.receiver_name || "",
-    Person_Name: raw.Person_Name || raw.personName || record.receiver_name || "",
+    requestId: record.request_id,
+    Cash_ID: record.request_id,
+    date: record.request_date || raw.date || raw.Date || "",
+    Date: record.request_date || raw.Date || raw.date || "",
+    type: record.request_type || raw.type || raw.Transaction_Type || "",
+    request_type: record.request_type || raw.request_type || raw.requestType || raw.Request_Type || "",
+    requestType: record.request_type || raw.requestType || raw.Request_Type || "",
+    Transaction_Type: record.request_type || raw.Transaction_Type || raw.type || "",
+    groupCategory: record.group_name || raw.groupCategory || raw.Group_Category || "",
+    Group_Category: record.group_name || raw.Group_Category || raw.groupCategory || "",
+    plateNumber: record.plate_number || raw.plateNumber || raw.Plate_Number || raw.Sender || "",
+    Plate_Number: record.plate_number || raw.Plate_Number || raw.plateNumber || raw.Sender || "",
+    driverName: record.driver_name || raw.driverName || raw.Driver_Name || "",
+    helperName: record.helper_name || raw.helperName || raw.Helper_Name || "",
+    loggedBy: record.logged_by || raw.loggedBy || raw.Logged_By || raw.Encoded_By || "",
+    Logged_By: record.logged_by || raw.Logged_By || raw.loggedBy || "",
+    personName: record.receiver_name || raw.personName || raw.Person_Name || "",
+    Person_Name: record.receiver_name || raw.Person_Name || raw.personName || "",
     role: raw.role || raw.Role || "",
     Role: raw.Role || raw.role || "",
-    amount: raw.amount ?? raw.budgetAmount ?? raw.Amount ?? record.amount ?? "",
-    Amount: raw.Amount ?? raw.amount ?? raw.budgetAmount ?? record.amount ?? "",
+    amount: record.amount ?? raw.amount ?? raw.budgetAmount ?? raw.Amount ?? "",
+    Amount: record.amount ?? raw.Amount ?? raw.amount ?? raw.budgetAmount ?? "",
     budgetType: raw.budgetType || raw.Budget_Type || record.budget_type || "",
     poNumber: raw.poNumber || raw.PO_Number || record.budget_type || "",
     route: raw.route || raw.Route || record.destination || "",
@@ -247,10 +250,18 @@ function formatCashRecord(record = {}) {
     Payment_Status: record.payment_status || raw.Payment_Status || raw.paymentStatus || "",
     backup_status: record.backup_status || raw.backup_status || "",
     backup_error: record.backup_error || raw.backup_error || "",
-    createdAt: raw.createdAt || raw.Created_At || record.created_at || "",
-    updatedAt: raw.updatedAt || raw.Updated_At || record.updated_at || "",
+    created_at: record.created_at || raw.created_at || raw.Created_At || raw.createdAt || "",
+    createdAt: record.created_at || raw.createdAt || raw.Created_At || "",
+    updated_at: record.updated_at || raw.updated_at || raw.Updated_At || raw.updatedAt || "",
+    updatedAt: record.updated_at || raw.updatedAt || raw.Updated_At || "",
+    approved_at: record.approved_at || raw.approved_at || raw.Approved_At || raw.approvedAt || "",
+    approvedAt: record.approved_at || raw.approvedAt || raw.Approved_At || "",
+    paid_at: record.paid_at || raw.paid_at || raw.Paid_At || raw.paidAt || "",
+    paidAt: record.paid_at || raw.paidAt || raw.Paid_At || "",
     isDeleted: raw.isDeleted ?? raw.Is_Deleted ?? record.is_deleted ?? false
   };
+  console.log("Cash canonical formatted record", formatted);
+  return formatted;
 }
 
 export async function upsertCashRequestToSupabase(env, input) {
