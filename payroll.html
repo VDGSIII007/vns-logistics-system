@@ -63,7 +63,7 @@
       <section class="payroll-section-card payroll-compact-card payroll-header-card">
         <div class="payroll-card-head">
           <div>
-            <p class="payroll-eyebrow">Pasahod 2</p>
+            <p class="payroll-eyebrow">Payroll Trip Encoder</p>
             <h2>Payroll Header</h2>
             <p>Basic cutoff and truck details.</p>
           </div>
@@ -106,11 +106,11 @@
       <section class="payroll-section-card payroll-table-card payroll-table-shell">
         <div class="payroll-card-head payroll-sheet-head">
           <div>
-            <h2>Trip & Expense Encoding</h2>
-            <p>Encode trips, PO, shipment, van/container, route, salary, allowance, expenses, and released budget.</p>
+            <h2>Payroll Trip Encoder</h2>
+            <p>Encode truck trips and let the rate matrix auto-fill salary and expected expenses. Weng can adjust actual expenses before submission.</p>
           </div>
           <div class="payroll-table-actions payroll-toolbar">
-            <button id="add-line-button" class="btn btn-primary" type="button">Add Row</button>
+            <button id="add-line-button" class="btn btn-primary" type="button">Add Trip Line</button>
             <button id="add-10-lines-button" class="btn btn-outline" type="button">Add 10 Rows</button>
             <button id="duplicate-line-button" class="btn btn-outline" type="button">Duplicate Selected Row</button>
             <button id="delete-line-button" class="btn btn-outline danger-outline" type="button">Delete Selected Row</button>
@@ -124,29 +124,21 @@
             <thead>
               <tr>
                 <th class="sticky-col sticky-col-1">Select</th>
-                <th class="sticky-col sticky-col-2">Trip Date</th>
-                <th>Diesel / PO</th>
-                <th class="sticky-col sticky-col-3">PO No.</th>
-                <th>Shipment / DR No.</th>
-                <th class="sticky-col sticky-col-4">Van No.</th>
-                <th>Container Type</th>
+                <th class="sticky-col sticky-col-2">Date</th>
                 <th>Source</th>
                 <th>Destination</th>
-                <th>Commodity</th>
+                <th>Reference No.</th>
+                <th class="sticky-col sticky-col-3">PO Number</th>
+                <th>Diesel</th>
                 <th>Driver Salary</th>
                 <th>Helper Salary</th>
-                <th>Driver Allowance</th>
-                <th>Helper Allowance</th>
-                <th>Toll Fee</th>
+                <th>Toll</th>
                 <th>Passway</th>
                 <th>Parking</th>
-                <th>Vulcanize</th>
                 <th>Other Expenses</th>
-                <th>Lagay Tao</th>
-                <th>Lagay Planta</th>
-                <th>Budget Released</th>
-                <th>Remarks</th>
-                <th>Warnings</th>
+                <th>Row Total</th>
+                <th>Rate Match Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="payroll-lines-body"></tbody>

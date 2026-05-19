@@ -802,7 +802,7 @@ function needsApproval(type, record) {
   if (record.isDeleted) return false;
   if (["approved", "paid", "posted", "completed", "deposited", "used", "rejected", "returned", "deleted"].includes(status)) return false;
   if (type === "payroll") {
-    return acIsStatus(record, ["status", "Status", "Approval_Status", "Workflow_Status", "approvalStatus", "workflowStatus"], ["submitted", "for review"]);
+    return acIsStatus(record, ["status", "Status", "Approval_Status", "Workflow_Status", "approvalStatus", "workflowStatus"], ["submitted", "for review", "for approval", "pending"]);
   }
   return false;
 }

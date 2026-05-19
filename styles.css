@@ -2899,6 +2899,34 @@ body.payroll-page{
   letter-spacing:.06em;
   text-transform:uppercase;
 }
+.single-payroll-workspace .payroll-encoding-table .payroll-readonly-cell{
+  background:#f3f4f6;
+  color:#374151;
+  font-weight:900;
+}
+.single-payroll-workspace .payroll-encoding-table .rate-status-cell input{
+  min-width:120px;
+  text-align:center;
+}
+.single-payroll-workspace .payroll-encoding-table .payroll-line-actions{
+  min-width:170px;
+  padding:7px 8px;
+}
+.payroll-line-delete{
+  border:1px solid #fecaca;
+  border-radius:999px;
+  background:#fff;
+  color:#b91c1c;
+  padding:8px 12px;
+  font:inherit;
+  font-size:.78rem;
+  font-weight:900;
+  cursor:pointer;
+}
+.payroll-line-delete:hover{
+  background:#fff5f5;
+  border-color:#ef4444;
+}
 .approval-notes-field{
   display:grid;
   gap:8px;

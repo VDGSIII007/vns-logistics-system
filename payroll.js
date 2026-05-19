@@ -26,22 +26,26 @@ const payrollState = {
   selectedTruckType: "",
   personsMaster: [],
   baliSummary: {},
-  supabaseSource: false
+  supabaseSource: false,
+  rateMatrix: []
 };
 
 const amountFields = [
   "diesel", "driverSalary", "helperSalary", "driverAllowance", "helperAllowance", "tollFee",
-  "passway", "parking", "vulcanize", "otherExpenses", "lagayLoaded", "lagayEmpty", "budgetReleased"
+  "passway", "parking", "vulcanize", "otherExpenses", "lagayLoaded", "lagayEmpty", "mano", "hugasTruck", "checkpoint", "budgetReleased"
 ];
 
 const lineColumns = [
-  ["tripDate", "date"], ["diesel", "number"], ["poNumber", "text"], ["shipmentNumber", "text"],
-  ["vanNumber", "text"], ["containerType", "text"], ["source", "text"], ["destination", "text"],
-  ["commodity", "text"], ["driverSalary", "number"], ["helperSalary", "number"],
-  ["driverAllowance", "number"], ["helperAllowance", "number"], ["tollFee", "number"],
-  ["passway", "number"], ["parking", "number"], ["vulcanize", "number"], ["otherExpenses", "number"],
-  ["lagayLoaded", "number"], ["lagayEmpty", "number"], ["budgetReleased", "number"], ["remarks", "text"]
+  ["tripDate", "date"], ["source", "text"], ["destination", "text"], ["referenceNo", "text"],
+  ["poNumber", "text"], ["diesel", "number"], ["driverSalary", "number"], ["helperSalary", "number"],
+  ["tollFee", "number"], ["passway", "number"], ["parking", "number"], ["otherExpenses", "number"],
+  ["rowTotal", "number"], ["rateMatchStatus", "text"]
 ];
+
+const rateAutoFillFields = new Set([
+  "driverSalary", "helperSalary", "tollFee", "passway", "parking", "lagayLoaded",
+  "lagayEmpty", "mano", "driverAllowance", "helperAllowance", "otherExpenses"
+]);
 
 const deductionFields = ["ca", "sss", "pagibig", "philhealth", "atm", "short", "other1", "other2", "other3"];
 
@@ -95,6 +99,7 @@ function initPayrollPage() {
   loadPayrollRecords();
   loadPayrollTruckMaster();
   loadPayrollMasterData();
+  loadPayrollRateMatrix();
   renderBalanceLedger();
   newPayroll();
   loadPayrollRecordsFromCloud();
@@ -123,7 +128,7 @@ function bindPayrollEvents() {
     button.addEventListener("click", () => switchPayrollTab(button.dataset.payrollTab));
   });
   $("new-payroll-button").addEventListener("click", newPayroll);
-  $("save-draft-button").addEventListener("click", savePayrollRecord);
+  $("save-draft-button").addEventListener("click", savePayrollDraft);
   $("submit-payroll-button").addEventListener("click", submitPayrollForApproval);
   $("clear-form-button").addEventListener("click", newPayroll);
   $("add-line-button").addEventListener("click", () => addPayrollLine());
@@ -401,6 +406,7 @@ function applyPayrollTruckToHeader(fillEmptyPeopleOnly) {
   if (helper && (!fillEmptyPeopleOnly || !$("helper-name").value.trim())) $("helper-name").value = helper;
   payrollState.selectedTruckType = getPayrollTruckType(truck);
   renderPayrollTruckPlateOptions();
+  applyRateMatrixToAllLines();
 }
 
 function getPayrollTrucksForGroup(group) {
@@ -478,6 +484,7 @@ function savePayrollRecord() {
   renderWarnings(headerWarnings.concat(payrollState.warnings));
   setStatus("Saved locally. Syncing to Supabase...", "info");
   savePayrollToSupabase(record)
+    .then(() => savePayrollTripLinesToSupabase(record))
     .then(() => {
       setStatus("Saved and synced to Supabase.", "success");
     })
@@ -493,6 +500,13 @@ function savePayrollRecord() {
   return record;
 }
 
+function savePayrollDraft() {
+  $("payroll-status").value = "Draft";
+  const record = savePayrollRecord();
+  updateLockState();
+  return record;
+}
+
 function submitPayrollForApproval() {
   payrollState.hasSubmittedPayroll = true;
   const headerWarnings = validatePayrollHeader();
@@ -501,7 +515,7 @@ function submitPayrollForApproval() {
     setStatus("Complete required header fields before submitting.", "warning");
     return;
   }
-  $("payroll-status").value = "Submitted";
+  $("payroll-status").value = "For Approval";
   calculatePayroll({ showWarnings: true });
   const record = savePayrollRecord();
   updateLockState();
@@ -565,6 +579,14 @@ function markPayrollPaid() {
   setStatus(`${record.payrollNumber} marked as paid.`, "success");
 }
 
+function getLineRowTotal(line = {}) {
+  return [
+    "driverSalary", "helperSalary", "driverAllowance", "helperAllowance", "diesel",
+    "tollFee", "passway", "parking", "lagayLoaded", "lagayEmpty", "mano",
+    "vulcanize", "hugasTruck", "checkpoint", "otherExpenses"
+  ].reduce((sum, field) => sum + parseNumber(line[field]), 0);
+}
+
 function addPayrollLine(line = {}) {
   const status = $("payroll-status") ? $("payroll-status").value : "Draft";
   if (isLockedStatus(status)) return;
@@ -583,6 +605,7 @@ function createBlankPayrollLine(line = {}) {
     containerType: line.containerType || "",
     source: line.source || "",
     destination: line.destination || "",
+    referenceNo: line.referenceNo || line.shipmentNumber || "",
     commodity: line.commodity || "",
     tripType: line.tripType || "",
     driverSalary: amountValue(line.driverSalary),
@@ -602,6 +625,9 @@ function createBlankPayrollLine(line = {}) {
     checkpoint: amountValue(line.checkpoint),
     otherExpenses: amountValue(line.otherExpenses),
     budgetReleased: amountValue(line.budgetReleased),
+    rowTotal: amountValue(line.rowTotal),
+    rateId: line.rateId || line.rate_id || "",
+    rateMatchStatus: line.rateMatchStatus || line.rate_match_status || "No Match",
     remarks: line.remarks || "",
     warnings: line.warnings || []
   };
@@ -656,6 +682,8 @@ function calculatePayroll(options = {}) {
     }
     line.warnings = validatePayrollLine(line);
     payrollState.warnings.push(...line.warnings.map(warning => `${line.tripDate || "No date"} ${line.source || ""}-${line.destination || ""}: ${warning}`));
+    line.rowTotal = getLineRowTotal(line);
+    totals.totalTrips += 1;
     totals.totalDriverSalary += parseNumber(line.driverSalary);
     totals.totalHelperSalary += parseNumber(line.helperSalary);
     totals.totalDriverAllowance += parseNumber(line.driverAllowance);
@@ -666,6 +694,7 @@ function calculatePayroll(options = {}) {
     totals.totalParking += parseNumber(line.parking);
     totals.totalOtherExpenses += getOtherExpenseTotal(line);
     totals.totalBudgetReleased += parseNumber(line.budgetReleased);
+    totals.totalRowAmount += parseNumber(line.rowTotal);
   });
 
   totals.totalExpenses = totals.totalDiesel + totals.totalToll + totals.totalPassway + totals.totalParking + totals.totalOtherExpenses;
@@ -697,12 +726,13 @@ function calculatePayroll(options = {}) {
 function renderCalculationSummary() {
   const totals = payrollState.totals || getEmptyTotals();
   const quickItems = [
+    ["Total Trips", totals.totalTrips, "count"],
     ["Total Driver Salary", totals.totalDriverSalary],
     ["Total Helper Salary", totals.totalHelperSalary],
+    ["Diesel Total", totals.totalDiesel],
     ["Total Allowances", totals.totalDriverAllowance + totals.totalHelperAllowance],
     ["Total Expenses", totals.totalExpenses],
-    ["Total Budget Released", totals.totalBudgetReleased],
-    ["Balance / Shortage", totals.budgetDifference]
+    ["Row Total", totals.totalRowAmount]
   ];
   const pasahodItems = [
     ["Total Budget Released", totals.totalBudgetReleased],
@@ -714,10 +744,10 @@ function renderCalculationSummary() {
     ["Driver Net Pay", totals.driverNetPay],
     ["Helper Net Pay", totals.helperNetPay]
   ];
-  const renderItems = items => items.map(([label, value]) => `
+  const renderItems = items => items.map(([label, value, kind]) => `
     <div class="payroll-stat">
       <span>${escapeHtml(label)}</span>
-      <strong>${formatCurrency(value)}</strong>
+      <strong>${kind === "count" ? escapeHtml(String(value || 0)) : formatCurrency(value)}</strong>
     </div>
   `).join("");
   $("calculation-summary").innerHTML = renderItems(quickItems);
@@ -789,6 +819,97 @@ function deleteRule() {
   saveRules();
 }
 
+function normalizeRateKey(value) {
+  return normalize(value).replace(/[^a-z0-9]+/g, "");
+}
+
+function findPayrollRateMatch(line = {}) {
+  const group = normalizeRateKey($("group-category")?.value || "");
+  const source = normalizeRateKey(line.source);
+  const destination = normalizeRateKey(line.destination);
+  const truckType = normalizeRateKey(payrollState.selectedTruckType || getPayrollTruckType(getPayrollTruckInfoByPlate($("plate-number")?.value || "")));
+  if (!source || !destination) return null;
+  return payrollState.rateMatrix.find(rate => {
+    if (rate.active === false) return false;
+    const rateGroup = normalizeRateKey(rate.groupCategory || rate.group_category);
+    const rateSource = normalizeRateKey(rate.source);
+    const rateDestination = normalizeRateKey(rate.destination);
+    const rateTruckType = normalizeRateKey(rate.truckType || rate.truck_type);
+    return (!rateGroup || !group || rateGroup === group) &&
+      rateSource === source &&
+      rateDestination === destination &&
+      (!rateTruckType || !truckType || rateTruckType === truckType);
+  }) || null;
+}
+
+function applyRateMatrixToLine(line = {}) {
+  if (line.rateMatchStatus === "Manual") return false;
+  const rate = findPayrollRateMatch(line);
+  if (!rate) {
+    line.rateId = "";
+    line.rateMatchStatus = line.source || line.destination ? "No Match" : "";
+    line.rowTotal = getLineRowTotal(line);
+    return false;
+  }
+  line.driverSalary = parseNumber(rate.driverSalary ?? rate.driver_salary);
+  line.helperSalary = parseNumber(rate.helperSalary ?? rate.helper_salary);
+  line.tollFee = parseNumber(rate.defaultToll ?? rate.default_toll);
+  line.passway = parseNumber(rate.defaultPassway ?? rate.default_passway);
+  line.parking = parseNumber(rate.defaultParking ?? rate.default_parking);
+  line.lagayLoaded = parseNumber(rate.defaultLagayLoaded ?? rate.default_lagay_loaded);
+  line.lagayEmpty = parseNumber(rate.defaultLagayEmpty ?? rate.default_lagay_empty);
+  line.mano = parseNumber(rate.defaultMano ?? rate.default_mano);
+  line.driverAllowance = parseNumber(rate.defaultAllowanceDriver ?? rate.default_allowance_driver);
+  line.helperAllowance = parseNumber(rate.defaultAllowanceHelper ?? rate.default_allowance_helper);
+  line.otherExpenses = parseNumber(rate.defaultOtherExpenses ?? rate.default_other_expenses);
+  line.rateId = rate.rateId || rate.rate_id || "";
+  line.rateMatchStatus = "Matched";
+  line.rowTotal = getLineRowTotal(line);
+  return true;
+}
+
+function applyRateMatrixToAllLines() {
+  payrollState.lines.forEach(line => applyRateMatrixToLine(line));
+  renderLinesTable(false);
+  calculatePayroll();
+}
+
+function normalizePayrollRateRecord(rate = {}) {
+  return {
+    ...rate,
+    rateId: rate.rateId || rate.rate_id || "",
+    groupCategory: rate.groupCategory || rate.group_category || "",
+    truckType: rate.truckType || rate.truck_type || "",
+    driverSalary: parseNumber(rate.driverSalary ?? rate.driver_salary),
+    helperSalary: parseNumber(rate.helperSalary ?? rate.helper_salary),
+    defaultToll: parseNumber(rate.defaultToll ?? rate.default_toll),
+    defaultPassway: parseNumber(rate.defaultPassway ?? rate.default_passway),
+    defaultParking: parseNumber(rate.defaultParking ?? rate.default_parking),
+    defaultLagayLoaded: parseNumber(rate.defaultLagayLoaded ?? rate.default_lagay_loaded),
+    defaultLagayEmpty: parseNumber(rate.defaultLagayEmpty ?? rate.default_lagay_empty),
+    defaultMano: parseNumber(rate.defaultMano ?? rate.default_mano),
+    defaultAllowanceDriver: parseNumber(rate.defaultAllowanceDriver ?? rate.default_allowance_driver),
+    defaultAllowanceHelper: parseNumber(rate.defaultAllowanceHelper ?? rate.default_allowance_helper),
+    defaultOtherExpenses: parseNumber(rate.defaultOtherExpenses ?? rate.default_other_expenses),
+    active: rate.active !== false
+  };
+}
+
+function loadPayrollRateMatrix() {
+  fetch(`${VNS_PAYROLL_WORKER_API_BASE}/api/payroll/rates?limit=1000`)
+    .then(response => response.json())
+    .then(data => {
+      if (!data?.ok || !Array.isArray(data.rates)) throw new Error(data?.error || "Rate matrix unavailable");
+      payrollState.rateMatrix = data.rates.map(normalizePayrollRateRecord);
+      applyRateMatrixToAllLines();
+      setStatus(`Loaded ${payrollState.rateMatrix.length} payroll rate${payrollState.rateMatrix.length === 1 ? "" : "s"}.`, "success");
+    })
+    .catch(error => {
+      console.warn("Payroll rate matrix load failed", error);
+      payrollState.rateMatrix = [];
+    });
+}
+
 function loadSampleRules() {
   payrollState.rules = getSampleRules();
   writeJson(PAYROLL_RULES_KEY, payrollState.rules);
@@ -849,7 +970,7 @@ function validatePayrollHeader() {
 }
 
 function isLineBlank(line) {
-  const textFields = ["tripDate", "poNumber", "shipmentNumber", "vanNumber", "containerType", "source", "destination", "commodity", "tripType", "remarks"];
+  const textFields = ["tripDate", "poNumber", "referenceNo", "shipmentNumber", "vanNumber", "containerType", "source", "destination", "commodity", "tripType", "remarks"];
   const hasText = textFields.some(field => String(line[field] || "").trim() !== "");
   const hasAmount = amountFields.some(field => parseNumber(line[field]) !== 0);
   return !hasText && !hasAmount;
@@ -1728,20 +1849,44 @@ function renderLinesTable(keepFocus = true) {
   const active = keepFocus ? document.activeElement : null;
   const activeId = active?.dataset?.id;
   const activeField = active?.dataset?.field;
+  payrollState.lines.forEach(line => {
+    line.rowTotal = getLineRowTotal(line);
+    if (!line.rateMatchStatus) line.rateMatchStatus = "No Match";
+  });
   $("payroll-lines-body").innerHTML = payrollState.lines.map(line => `
     <tr>
       <td class="sticky-col sticky-col-1"><input class="line-select" type="checkbox" data-id="${line.id}"></td>
       ${lineColumns.map(([field, type], columnIndex) => `<td class="${getLineCellClass(field)}">${lineInput(line, field, type, columnIndex)}</td>`).join("")}
-      <td class="warning-cell">${(line.warnings || []).map(warning => `<span class="warning-badge small">${escapeHtml(warning)}</span>`).join("")}</td>
+      <td class="payroll-line-actions">
+        <button type="button" class="payroll-line-delete" data-delete-line-id="${line.id}">Delete</button>
+        ${(line.warnings || []).map(warning => `<span class="warning-badge small">${escapeHtml(warning)}</span>`).join("")}
+      </td>
     </tr>
   `).join("");
   $("payroll-lines-body").querySelectorAll("[data-field]").forEach(input => {
     input.addEventListener("input", () => {
       const line = payrollState.lines.find(item => item.id === input.dataset.id);
       if (!line) return;
+      if (input.dataset.readonly === "true") return;
       line[input.dataset.field] = input.type === "number" ? parseNumber(input.value) : input.value;
+      if (rateAutoFillFields.has(input.dataset.field) && line.rateMatchStatus === "Matched") {
+        line.rateMatchStatus = "Manual";
+      }
     });
-    input.addEventListener("change", calculatePayroll);
+    input.addEventListener("change", () => {
+      const line = payrollState.lines.find(item => item.id === input.dataset.id);
+      if (line && ["source", "destination"].includes(input.dataset.field)) applyRateMatrixToLine(line);
+      calculatePayroll();
+    });
+  });
+  $("payroll-lines-body").querySelectorAll("[data-delete-line-id]").forEach(button => {
+    button.addEventListener("click", () => {
+      if (isLockedStatus($("payroll-status").value)) return;
+      payrollState.lines = payrollState.lines.filter(line => line.id !== button.dataset.deleteLineId);
+      if (!payrollState.lines.length) payrollState.lines.push(createBlankPayrollLine());
+      renderLinesTable();
+      calculatePayroll();
+    });
   });
   bindSpreadsheetCells();
   updateSpreadsheetSelectionStyles();
@@ -1758,21 +1903,23 @@ function renderTripTable() {
 function getLineCellClass(field) {
   if (field === "tripDate") return "sticky-col sticky-col-2";
   if (field === "poNumber") return "sticky-col sticky-col-3";
-  if (field === "vanNumber") return "sticky-col sticky-col-4";
+  if (field === "rateMatchStatus") return "rate-status-cell";
   return "";
 }
 
 function lineInput(line, field, type, columnIndex) {
   const value = isLineBlank(line) && type === "number" ? "" : line[field] ?? "";
-  const disabled = isLockedStatus($("payroll-status").value) ? "disabled" : "";
+  const readonly = field === "rowTotal" || field === "rateMatchStatus";
+  const disabled = isLockedStatus($("payroll-status").value) || readonly ? "disabled" : "";
   const rowIndex = payrollState.lines.findIndex(item => item.id === line.id);
-  return `<input class="payroll-cell-input" data-id="${line.id}" data-field="${field}" data-row-index="${rowIndex}" data-col-index="${columnIndex}" type="${type}" ${type === "number" ? 'step="0.01" min="0"' : ""} value="${escapeAttr(value)}" ${disabled}>`;
+  return `<input class="payroll-cell-input ${readonly ? "payroll-readonly-cell" : ""}" data-id="${line.id}" data-field="${field}" data-readonly="${readonly ? "true" : "false"}" data-row-index="${rowIndex}" data-col-index="${columnIndex}" type="${type}" ${type === "number" ? 'step="0.01" min="0"' : ""} value="${escapeAttr(value)}" ${disabled}>`;
 }
 
 function syncLinesFromTable() {
   document.querySelectorAll("#payroll-lines-body [data-field]").forEach(input => {
     const line = payrollState.lines.find(item => item.id === input.dataset.id);
     if (!line) return;
+    if (input.dataset.readonly === "true") return;
     line[input.dataset.field] = input.type === "number" ? parseNumber(input.value) : input.value;
   });
 }
@@ -2079,7 +2226,7 @@ function buildPayrollRecord(existing = {}) {
     encoderName: $("encoder-name").value.trim(),
     status,
     approvalStatus: mapPayrollToApprovalStatus(status, existing.approvalStatus),
-    paymentStatus: existing.paymentStatus || "Unpaid",
+    paymentStatus: ["Draft", "For Approval"].includes(status) ? "Unpaid" : (existing.paymentStatus || "Unpaid"),
     remarks: $("general-remarks").value.trim(),
     lines: payrollState.lines.filter(line => !isLineBlank(line)),
     totals,
@@ -2164,7 +2311,7 @@ function getSelectedLineIds() {
 }
 
 function getOtherExpenseTotal(line) {
-  return ["lagayLoaded", "lagayEmpty", "vulcanize", "otherExpenses"].reduce((sum, field) => sum + parseNumber(line[field]), 0);
+  return ["lagayLoaded", "lagayEmpty", "mano", "vulcanize", "hugasTruck", "checkpoint", "otherExpenses"].reduce((sum, field) => sum + parseNumber(line[field]), 0);
 }
 
 function compareRuleAmount(warnings, label, actual, expected) {
@@ -2182,11 +2329,12 @@ function isDuplicateTrip(line) {
 }
 
 function duplicateKey(line) {
-  return [normalize($("plate-number").value), line.tripDate, normalize(line.shipmentNumber), normalize(line.source), normalize(line.destination)].join("|");
+  return [normalize($("plate-number").value), line.tripDate, normalize(line.referenceNo || line.shipmentNumber), normalize(line.source), normalize(line.destination)].join("|");
 }
 
 function getEmptyTotals() {
   return {
+    totalTrips: 0,
     totalDriverSalary: 0,
     totalHelperSalary: 0,
     totalDriverAllowance: 0,
@@ -2197,6 +2345,7 @@ function getEmptyTotals() {
     totalParking: 0,
     totalOtherExpenses: 0,
     totalExpenses: 0,
+    totalRowAmount: 0,
     totalBudgetReleased: 0,
     budgetDifference: 0,
     suggestedDriverDeduction: 0,
@@ -2424,6 +2573,56 @@ async function savePayrollToSupabase(record) {
   return data;
 }
 
+async function savePayrollTripLinesToSupabase(record) {
+  const lines = (record.lines || []).map(line => payrollLineToSupabasePayload(record, line));
+  if (!lines.length) return { ok: true, count: 0 };
+  const response = await fetch(`${VNS_PAYROLL_WORKER_API_BASE}/api/payroll/trip-lines-bulk-upsert`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lines })
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.ok) throw new Error(data?.error || `Payroll trip line save failed (${response.status})`);
+  return data;
+}
+
+function payrollLineToSupabasePayload(record, line) {
+  return {
+    line_id: line.id,
+    payroll_id: record.payrollNumber || record.id,
+    trip_date: line.tripDate || null,
+    plate_number: record.plateNumber || null,
+    group_category: record.groupCategory || null,
+    driver_name: record.driverName || null,
+    helper_name: record.helperName || null,
+    source: line.source || null,
+    destination: line.destination || null,
+    reference_no: line.referenceNo || line.shipmentNumber || null,
+    po_number: line.poNumber || null,
+    diesel: parseNumber(line.diesel),
+    cost_per_liter: parseNumber(line.costPerLiter),
+    driver_salary: parseNumber(line.driverSalary),
+    helper_salary: parseNumber(line.helperSalary),
+    toll: parseNumber(line.tollFee),
+    passway: parseNumber(line.passway),
+    parking: parseNumber(line.parking),
+    lagay_loaded: parseNumber(line.lagayLoaded),
+    lagay_empty: parseNumber(line.lagayEmpty),
+    mano: parseNumber(line.mano),
+    vulcanize: parseNumber(line.vulcanize),
+    allowance_driver: parseNumber(line.driverAllowance),
+    allowance_helper: parseNumber(line.helperAllowance),
+    truck_wash: parseNumber(line.hugasTruck),
+    checkpoint: parseNumber(line.checkpoint),
+    other_expenses: parseNumber(line.otherExpenses),
+    row_total: getLineRowTotal(line),
+    rate_id: line.rateId || null,
+    rate_match_status: line.rateMatchStatus || "No Match",
+    remarks: line.remarks || null,
+    raw_data: line
+  };
+}
+
 // ── Supabase: load saved payroll records ─────────────────────────────────────
 async function loadPayrollRecordsFromSupabase() {
   const response = await fetch(`${VNS_PAYROLL_WORKER_API_BASE}/api/payroll/list?limit=200`);
@@ -2619,7 +2818,7 @@ function loadTruckMonitoringTripsForCutoff() {
 
 // ── Status helpers ─────────────────────────────────────────────────────────────
 function mapPayrollToApprovalStatus(status, existing) {
-  if (status === "For Approval" || status === "Submitted") return "For Approval";
+  if (status === "For Approval" || status === "Submitted") return "Pending";
   if (status === "Approved") return "Approved";
   if (status === "For Deposit") return "Approved";
   if (status === "Deposited") return "Approved";

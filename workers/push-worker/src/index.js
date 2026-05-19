@@ -35,9 +35,13 @@ import {
 import {
   createPayrollBalanceEventInSupabase,
   listPayrollRecordsFromSupabase,
+  listPayrollRatesFromSupabase,
+  listPayrollTripLinesFromSupabase,
   listPersonBalancesFromSupabase,
   updatePayrollStatusInSupabase,
-  upsertPayrollRecordToSupabase
+  upsertPayrollRateToSupabase,
+  upsertPayrollRecordToSupabase,
+  upsertPayrollTripLinesToSupabase
 } from "./payroll-api.js";
 import { sendWebPush } from "./webpush.js";
 
@@ -64,7 +68,12 @@ const PAYROLL_API_PATHS = new Set([
   "/api/payroll/create",
   "/api/payroll/update-status",
   "/api/payroll/balances",
-  "/api/payroll/balance-event"
+  "/api/payroll/balance-event",
+  "/api/payroll/rates",
+  "/api/payroll/rate-create",
+  "/api/payroll/trip-lines",
+  "/api/payroll/trip-line-upsert",
+  "/api/payroll/trip-lines-bulk-upsert"
 ]);
 const CORS_ALLOWED_ORIGINS = new Set([
   "https://portal.vns-logistics.com",
@@ -525,6 +534,42 @@ async function handlePayrollBalanceEvent(request, env) {
   });
 }
 
+async function handlePayrollRates(url, env) {
+  const result = await listPayrollRatesFromSupabase(env, url.searchParams);
+  if (!result.ok) {
+    return jsonResponse({ ok: false, error: result.error || "Payroll rates fetch failed" }, result.status || 500);
+  }
+  return jsonResponse(result);
+}
+
+async function handlePayrollRateCreate(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
+  const result = await upsertPayrollRateToSupabase(env, input);
+  if (!result.ok) {
+    return jsonResponse({ ok: false, error: result.error || "Payroll rate save failed" }, result.status || 500);
+  }
+  return jsonResponse(result);
+}
+
+async function handlePayrollTripLines(url, env) {
+  const result = await listPayrollTripLinesFromSupabase(env, url.searchParams);
+  if (!result.ok) {
+    return jsonResponse({ ok: false, error: result.error || "Payroll trip lines fetch failed" }, result.status || 500);
+  }
+  return jsonResponse(result);
+}
+
+async function handlePayrollTripLineUpsert(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
+  const result = await upsertPayrollTripLinesToSupabase(env, input.line ? { lines: [input.line] } : input);
+  if (!result.ok) {
+    return jsonResponse({ ok: false, error: result.error || "Payroll trip line save failed" }, result.status || 500);
+  }
+  return jsonResponse(result);
+}
+
 async function routeRequest(request, env) {
   const url = new URL(request.url);
   const isCashApiRoute = CASH_API_PATHS.has(url.pathname);
@@ -550,6 +595,11 @@ async function routeRequest(request, env) {
   if (request.method === "POST" && url.pathname === "/api/payroll/update-status") return withCors(await handlePayrollUpdateStatus(request, env), request);
   if (request.method === "GET" && url.pathname === "/api/payroll/balances") return withCors(await handlePayrollBalances(url, env), request);
   if (request.method === "POST" && url.pathname === "/api/payroll/balance-event") return withCors(await handlePayrollBalanceEvent(request, env), request);
+  if (request.method === "GET" && url.pathname === "/api/payroll/rates") return withCors(await handlePayrollRates(url, env), request);
+  if (request.method === "POST" && url.pathname === "/api/payroll/rate-create") return withCors(await handlePayrollRateCreate(request, env), request);
+  if (request.method === "GET" && url.pathname === "/api/payroll/trip-lines") return withCors(await handlePayrollTripLines(url, env), request);
+  if (request.method === "POST" && url.pathname === "/api/payroll/trip-line-upsert") return withCors(await handlePayrollTripLineUpsert(request, env), request);
+  if (request.method === "POST" && url.pathname === "/api/payroll/trip-lines-bulk-upsert") return withCors(await handlePayrollTripLineUpsert(request, env), request);
   if (isPayrollApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
   if (request.method === "GET" && url.pathname === "/api/push/check") return handleCheck(env);
   if (request.method === "GET" && url.pathname === "/api/push/debug-sources") return handleDebugSources(env);
