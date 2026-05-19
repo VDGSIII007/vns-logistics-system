@@ -85,8 +85,8 @@
             <option>Other / Needs Update</option>
           </select></label>
           <label><span>Plate Number</span><input id="plate-number" type="text" list="payroll-truck-plates" placeholder="ABC1234"></label>
-          <label><span>Driver Name</span><input id="driver-name" type="text"></label>
-          <label><span>Helper Name</span><input id="helper-name" type="text"></label>
+          <label><span>Driver Name</span><input id="driver-name" type="text" list="payroll-driver-names" autocomplete="off"><small id="driver-name-note" class="payroll-person-note" hidden>New name — not in master data. Will be saved as temporary until added to master data.</small></label>
+          <label><span>Helper Name</span><input id="helper-name" type="text" list="payroll-helper-names" autocomplete="off"><small id="helper-name-note" class="payroll-person-note" hidden>New name — not in master data. Will be saved as temporary until added to master data.</small></label>
           <label><span>Encoder Name</span><input id="encoder-name" type="text"></label>
           <label><span>Status</span><select id="payroll-status">
             <option>Draft</option>
@@ -377,6 +377,9 @@
 
       <section id="saved-records-tab" class="payroll-tab-panel">
       <section class="payroll-section-card payroll-records-card">
+        <p class="payroll-info-note" style="margin:0 0 14px">
+          <strong>Dev / Testing:</strong> Run <code>supabase/payroll-sample-data.sql</code> in the Supabase SQL Editor to load sample records for testing. Sample data will appear here after clicking Refresh Records.
+        </p>
         <div class="payroll-card-head">
           <div>
             <h2>Saved Payroll Records</h2>
@@ -451,6 +454,8 @@
   </div>
 
   <datalist id="payroll-truck-plates"></datalist>
+  <datalist id="payroll-driver-names"></datalist>
+  <datalist id="payroll-helper-names"></datalist>
   <footer class="footer">
     <div class="container footer-grid">
       <div>

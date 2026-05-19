@@ -3793,6 +3793,18 @@ body.payroll-page{
   color:#92400e;
   line-height:1.5;
 }
+.payroll-person-note{
+  display:block;
+  font-size:.72rem;
+  color:#6b7280;
+  margin-top:3px;
+  font-style:italic;
+  line-height:1.4;
+}
+.balance-no-record{
+  color:#9ca3af;
+  font-style:italic;
+}
 @media(max-width:760px){
   .payroll-balance-grid{
     grid-template-columns:1fr;

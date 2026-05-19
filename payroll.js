@@ -24,6 +24,7 @@ const payrollState = {
   isSelectingSheetRange: false,
   truckMaster: [],
   selectedTruckType: "",
+  personsMaster: [],
   baliSummary: {},
   supabaseSource: false
 };
@@ -93,6 +94,7 @@ function initPayrollPage() {
   loadRules();
   loadPayrollRecords();
   loadPayrollTruckMaster();
+  loadPayrollMasterData();
   renderBalanceLedger();
   newPayroll();
   loadPayrollRecordsFromCloud();
@@ -179,6 +181,10 @@ function bindPayrollEvents() {
   $("group-category").addEventListener("change", applyPayrollGroupToPlateOptions);
   $("plate-number").addEventListener("change", () => applyPayrollTruckToHeader(true));
   $("plate-number").addEventListener("blur", () => applyPayrollTruckToHeader(true));
+  $("driver-name").addEventListener("change", () => updatePersonNoteVisibility("driver-name", "driver-name-note", "Driver"));
+  $("driver-name").addEventListener("blur", () => updatePersonNoteVisibility("driver-name", "driver-name-note", "Driver"));
+  $("helper-name").addEventListener("change", () => updatePersonNoteVisibility("helper-name", "helper-name-note", "Helper"));
+  $("helper-name").addEventListener("blur", () => updatePersonNoteVisibility("helper-name", "helper-name-note", "Helper"));
 
   ["override-driver-deduction", "override-helper-deduction", "approval-notes"].forEach(id => {
     $(id).addEventListener("input", calculatePayroll);
@@ -269,6 +275,7 @@ function loadPayrollTruckMaster() {
       payrollState.truckMaster = trucks;
       writeJson(PAYROLL_TRUCK_MASTER_KEY, trucks);
       renderPayrollTruckPlateOptions();
+      updatePayrollPersonsFromSources();
       applyPayrollTruckToHeader(false);
     })
     .catch(error => {
@@ -284,6 +291,74 @@ function renderPayrollTruckPlateOptions() {
   const trucks = getPayrollTrucksForGroup(group);
   const plates = [...new Set(trucks.map(getPayrollTruckPlate).filter(Boolean))].sort();
   list.innerHTML = plates.map(plate => `<option value="${escapeAttr(plate)}"></option>`).join("");
+}
+
+// ── Master data: persons ──────────────────────────────────────────────────────
+
+function loadPayrollMasterData() {
+  console.info("Payroll master data endpoint not connected yet. Using truck master and Supabase balance records for person name suggestions.");
+  updatePayrollPersonsFromSources();
+}
+
+function updatePayrollPersonsFromSources() {
+  const seen = new Map();
+  payrollState.truckMaster.forEach(truck => {
+    const driver = getPayrollTruckDriver(truck);
+    const helper = getPayrollTruckHelper(truck);
+    if (driver) seen.set(`${normalize(driver)}|Driver`, { name: driver, role: "Driver" });
+    if (helper) seen.set(`${normalize(helper)}|Helper`, { name: helper, role: "Helper" });
+  });
+  Object.values(payrollState.balances).forEach(entry => {
+    if (entry.personName && entry.role) {
+      seen.set(`${normalize(entry.personName)}|${entry.role}`, { name: entry.personName, role: entry.role });
+    }
+  });
+  payrollState.personsMaster = [...seen.values()];
+  renderPayrollPersonOptions();
+}
+
+function renderPayrollPersonOptions() {
+  const driverList = $("payroll-driver-names");
+  const helperList = $("payroll-helper-names");
+  const namesForRole = role => [...new Set(
+    payrollState.personsMaster.filter(p => p.role === role).map(p => p.name)
+  )].sort();
+  if (driverList) driverList.innerHTML = namesForRole("Driver").map(n => `<option value="${escapeAttr(n)}"></option>`).join("");
+  if (helperList) helperList.innerHTML = namesForRole("Helper").map(n => `<option value="${escapeAttr(n)}"></option>`).join("");
+}
+
+function getPersonBalance(personName, role) {
+  if (!personName || !String(personName).trim()) return { balance: 0, exists: false };
+  const key = `${normalize(personName)}|${role}`;
+  const entry = payrollState.balances[key];
+  if (!entry) return { balance: 0, exists: false };
+  return { balance: parseNumber(entry.runningBalance), exists: true };
+}
+
+function setBalancePrevText(id, balance, exists) {
+  const el = $(id);
+  if (!el) return;
+  if (!exists) {
+    el.textContent = "₱0.00";
+    el.className = "balance-no-record";
+    el.title = "No existing balance record found for this person.";
+  } else {
+    el.textContent = formatCurrency(balance);
+    el.className = "";
+    el.title = "";
+  }
+}
+
+function updatePersonNoteVisibility(inputId, noteId, role) {
+  const input = $(inputId);
+  const note = $(noteId);
+  if (!input || !note) return;
+  const name = input.value.trim();
+  if (!name) { note.hidden = true; return; }
+  const isKnown = payrollState.personsMaster.some(
+    p => normalize(p.name) === normalize(name) && p.role === role
+  );
+  note.hidden = isKnown;
 }
 
 function applyPayrollGroupToPlateOptions() {
@@ -2444,6 +2519,7 @@ function loadPersonBalancesFromWorker() {
         };
       });
       writeJson(PEOPLE_BALANCES_KEY, payrollState.balances);
+      updatePayrollPersonsFromSources();
       renderPayrollBalanceSection();
     })
     .catch(error => {
@@ -2493,8 +2569,10 @@ function renderPayrollBalanceSection() {
   const bali = payrollState.baliSummary || {};
   const driverName = $("driver-name")?.value || "";
   const helperName = $("helper-name")?.value || "";
-  const driverPrev = getPersonRunningBalance(driverName, "Driver");
-  const helperPrev = getPersonRunningBalance(helperName, "Helper");
+  const driverBalance = getPersonBalance(driverName, "Driver");
+  const helperBalance = getPersonBalance(helperName, "Helper");
+  const driverPrev = driverBalance.balance;
+  const helperPrev = helperBalance.balance;
   const driverNewBali = parseNumber(bali.driverBali);
   const helperNewBali = parseNumber(bali.helperBali);
   const driverDeducted = totals.driverDeduction || 0;
@@ -2502,11 +2580,11 @@ function renderPayrollBalanceSection() {
   const driverBalanceAfter = driverPrev + driverNewBali - driverDeducted;
   const helperBalanceAfter = helperPrev + helperNewBali - helperDeducted;
 
-  setText("driver-prev-balance", formatCurrency(driverPrev));
+  setBalancePrevText("driver-prev-balance", driverPrev, driverBalance.exists);
   setText("driver-new-bali", formatCurrency(driverNewBali));
   setText("driver-balance-deduction", formatCurrency(driverDeducted));
   setBalanceAfterText("driver-balance-after", driverBalanceAfter);
-  setText("helper-prev-balance", formatCurrency(helperPrev));
+  setBalancePrevText("helper-prev-balance", helperPrev, helperBalance.exists);
   setText("helper-new-bali", formatCurrency(helperNewBali));
   setText("helper-balance-deduction", formatCurrency(helperDeducted));
   setBalanceAfterText("helper-balance-after", helperBalanceAfter);
