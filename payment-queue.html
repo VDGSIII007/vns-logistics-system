@@ -40,22 +40,19 @@
     <section class="ops-summary-grid" id="pq-summary" aria-label="Payment summary"></section>
 
     <section class="ops-card">
-      <div class="ops-tabs" role="tablist" aria-label="Payment queue sections">
-        <button class="ops-tab active" type="button" data-tab="all" aria-selected="true">All</button>
-        <button class="ops-tab" type="button" data-tab="payroll">Payroll Payments</button>
-        <button class="ops-tab" type="button" data-tab="cash">Cash / PO / Bali Payments</button>
-        <button class="ops-tab" type="button" data-tab="repair">Repair / Labor Payments</button>
-        <button class="ops-tab" type="button" data-tab="paid">Paid History</button>
+      <div class="ops-tabs" role="tablist" aria-label="Payment modules">
+        <button class="ops-tab active" type="button" data-module="payroll" aria-selected="true">Payroll Payments</button>
+        <button class="ops-tab" type="button" data-module="cash">Cash / PO / Bali Payments</button>
+        <button class="ops-tab" type="button" data-module="repair">Repair / Labor Payments</button>
       </div>
+      <div class="ops-view-tabs" role="tablist" aria-label="Payment queue views">
+        <button class="ops-view-btn active" type="button" data-subtab="for-payment" aria-selected="true">For Payment</button>
+        <button class="ops-view-btn" type="button" data-subtab="history">Payment History</button>
+      </div>
+      <p class="ops-view-note" id="pq-view-note">Approved records waiting for payment or release.</p>
 
       <div class="ops-toolbar" aria-label="Queue filters">
         <input id="pq-search" class="ops-input" type="search" placeholder="Search reference, plate, group, payee" autocomplete="off" />
-        <select id="pq-type" class="ops-select">
-          <option value="all">All Types</option>
-          <option value="payroll">Payroll</option>
-          <option value="cash">Cash / PO / Bali</option>
-          <option value="repair">Repair / Labor</option>
-        </select>
         <select id="pq-group" class="ops-select">
           <option value="all">All Groups</option>
           <option value="Bottle">Bottle</option>

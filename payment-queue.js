@@ -47,8 +47,8 @@ const PAYMENT_PAID_STATUSES = [
 const state = {
   items: [],
   filtered: [],
-  tab: "all",
-  type: "all",
+  activeModule: "payroll",
+  activeSubtab: "for-payment",
   group: "all",
   sort: "date-desc",
   search: ""
@@ -286,13 +286,78 @@ function isApprovedForPayment(type, record) {
   return (status === "approved" || approvalStatus === "approved") && isPaymentUnpaid(record, ["", "unpaid", "for deposit"]);
 }
 
+function getPaymentModule(record = {}) {
+  const explicit = String(record.type || record.moduleType || "").trim().toLowerCase();
+  if (["payroll", "cash", "repair"].includes(explicit)) return explicit;
+  if (record.request_type || record.requestType || record.Transaction_Type || record.Cash_ID || record.cashId) return "cash";
+  if (record.Request_Type || record.repair_status || record.Repair_Status || record.Repair_Record_ID) return "repair";
+  return "payroll";
+}
+
+function getPaymentSubtab(record = {}) {
+  return isPaymentHistoryRecord(record, getPaymentModule(record)) ? "history" : "for-payment";
+}
+
+function isForPaymentRecord(record = {}, module = getPaymentModule(record)) {
+  if (module === "cash") return isCashApprovedUnpaid(record);
+  if (module === "repair") return isRepairPaymentReady(record);
+  if (module === "payroll") return isApprovedForPayment("payroll", record);
+  return false;
+}
+
+function isPaymentHistoryRecord(record = {}, module = getPaymentModule(record)) {
+  if (module === "cash") return isCashPaidHistory(record);
+  if (module === "repair") return isPaid(record) && !record?.isDeleted && String(record?.Is_Deleted || "").trim().toLowerCase() !== "true";
+  if (module === "payroll") return isPaid(record) && !record?.isDeleted;
+  return false;
+}
+
+function slug(value = "") {
+  return String(value || "other").toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function getRequestTypeClass(type, module) {
+  const normalized = String(type || "").toLowerCase();
+  if (module === "cash") {
+    if (normalized.includes("diesel")) return "request-chip-diesel";
+    if (normalized.includes("trip budget")) return "request-chip-trip-budget";
+    if (normalized.includes("bali") || normalized.includes("cash advance")) return "request-chip-bali";
+    return "request-chip-other";
+  }
+  if (module === "repair") {
+    if (normalized.includes("labor")) return "request-chip-labor";
+    if (normalized.includes("part")) return "request-chip-parts";
+    if (normalized.includes("equipment") || normalized.includes("tool")) return "request-chip-equipment";
+    if (normalized.includes("tire") || normalized.includes("wheel")) return "request-chip-tire";
+    return "request-chip-other";
+  }
+  if (normalized.includes("liquidation")) return "request-chip-liquidation";
+  if (normalized.includes("bali") || normalized.includes("deduction") || normalized.includes("balance")) return "request-chip-bali";
+  return "request-chip-payroll";
+}
+
+function renderRequestTypeChip(type, module) {
+  return `<span class="request-chip ${getRequestTypeClass(type, module)}">${escapeHtml(type || "Other")}</span>`;
+}
+
+function renderPaymentStatusChip(status) {
+  const label = text(status, "Unknown");
+  const normalized = label.toLowerCase();
+  let cls = "payment-status-draft";
+  if (normalized === "approved") cls = "payment-status-approved";
+  else if (["unpaid", "pending", "pending payment", "for payment"].includes(normalized)) cls = "payment-status-unpaid";
+  else if (["paid", "deposited", "used", "released", "completed", "done"].includes(normalized)) cls = "payment-status-paid";
+  else if (["reported issue", "issue", "rejected", "returned"].includes(normalized)) cls = "payment-status-issue";
+  return `<span class="payment-status-chip ${cls}">${escapeHtml(label)}</span>`;
+}
+
 function paymentStatusLabel(record) {
   if (isPaid(record)) return "Paid";
-  return text(valueFrom(record, ["paymentStatus", "Payment_Status"]), "For Payment");
+  return text(valueFrom(record, ["payment_status", "paymentStatus", "Payment_Status"]), "For Payment");
 }
 
 function approvalStatusLabel(record) {
-  return text(valueFrom(record, ["Approval_Status", "approvalStatus", "Review_Status", "reviewStatus", "Status", "status"]), "Approved");
+  return text(valueFrom(record, ["approval_status", "Approval_Status", "approvalStatus", "Review_Status", "reviewStatus", "status", "Status"]), "Approved");
 }
 
 function repairRequestType(record) {
@@ -335,8 +400,8 @@ function makeItem(type, module, record, fallbackId) {
     source: module,
     type,
     raw: record,
-    id: text(record.Request_ID || record.requestId || record.Repair_Record_ID || record.repairRecordId || record.Record_ID || record.Cash_ID || record.id || record.referenceId || record.Reference_ID || record.poNumber || record.PO_Number || fallbackId),
-    plate: text(record.plateNumber || record.Plate_Number || record.plate || record.truckPlate, "No Plate"),
+    id: text(record.request_id || record.Request_ID || record.requestId || record.Repair_Record_ID || record.repairRecordId || record.Record_ID || record.Cash_ID || record.id || record.referenceId || record.Reference_ID || record.poNumber || record.PO_Number || fallbackId),
+    plate: text(record.plate_number || record.plateNumber || record.Plate_Number || record.plate || record.truckPlate, "No Plate"),
     group: normalizeGroup(record.groupCategory || record.Group_Category || record.plateGroup || record.group),
     requestType: module,
     details: text(record.description || record.Description || record.remarks || record.Remarks, "View details"),
@@ -379,7 +444,7 @@ function makeItem(type, module, record, fallbackId) {
     requestType: cashRequestType(record),
     details: cashDetails(record),
     date: record.date || record.Date || record.createdAt || record.Created_At || record.timestamp,
-    amount: Number(record.amount || record.Amount || record.budgetAmount || record.Budget_Amount || record.Diesel_Amount || record.totalAmount) || 0
+    amount: Number(record.amount ?? record.Amount ?? record.budgetAmount ?? record.Budget_Amount ?? record.Diesel_Amount ?? record.totalAmount) || 0
   };
 }
 
@@ -475,6 +540,7 @@ function updateCashPaidState(requestId, record = {}) {
   };
   state.items = state.items.filter(item => item.type !== "cash" || item.id !== requestId);
   state.items.unshift(makeItem("cash", "Cash / PO / Bali", paidRecord, requestId));
+  console.log("Cash paid item moved to history", requestId);
   console.log("Paid history refreshed", state.items.filter(item => item.type === "cash" && item.paid).length);
   console.log("Paid history source", "cash-supabase-list");
   applyFilters();
@@ -795,7 +861,7 @@ async function loadRepairPaymentItems() {
 
 async function loadItems() {
   const payroll = readJson(STORAGE_KEYS.payroll)
-    .filter(record => record && !record.isDeleted && (isApprovedForPayment("payroll", record) || isPaid(record)))
+    .filter(record => record && !record.isDeleted && (isForPaymentRecord(record, "payroll") || isPaymentHistoryRecord(record, "payroll")))
     .map((record, index) => makeItem("payroll", "Payroll", record, `PAY-${index + 1}`));
 
   const [cash, repair] = await Promise.all([
@@ -808,12 +874,10 @@ async function loadItems() {
 
 function applyFilters() {
   const query = state.search.trim().toLowerCase();
-  let list = [...state.items];
-
-  if (state.tab === "paid") list = list.filter(item => item.paid);
-  if (state.tab !== "all" && state.tab !== "paid") list = list.filter(item => item.type === state.tab && !item.paid);
-  if (state.tab === "all") list = list.filter(item => !item.paid);
-  if (state.type !== "all") list = list.filter(item => item.type === state.type);
+  let list = state.items.filter(item => item.type === state.activeModule);
+  list = state.activeSubtab === "history"
+    ? list.filter(item => item.paid)
+    : list.filter(item => !item.paid);
   if (state.group !== "all") list = list.filter(item => item.group === state.group);
   if (query) {
     list = list.filter(item => [item.source, item.id, item.plate, item.group, item.requestType, item.details, item.payee, item.approvalStatus, item.status]
@@ -831,10 +895,8 @@ function applyFilters() {
   });
 
   state.filtered = list;
-  if (state.tab === "paid") {
-    console.log("Paid history refreshed", list.length);
-    console.log("Paid history source", "state-items");
-  }
+  if (state.activeSubtab === "history") console.log("Payment history filtered", state.activeModule, list.length);
+  else console.log("For payment filtered", state.activeModule, list.length);
   render();
 }
 
@@ -863,36 +925,53 @@ function renderSummary() {
   `).join("");
 }
 
+function activeViewText() {
+  return state.activeSubtab === "history"
+    ? "Paid records are shown here for review."
+    : "Approved records waiting for payment or release.";
+}
+
+function renderViewNote() {
+  const note = $("pq-view-note");
+  if (note) note.textContent = activeViewText();
+}
+
 function rowHtml(item, index) {
-  const canMarkPaid = !item.paid && !!item.cloudId && (item.type === "cash" || item.type === "repair");
+  const canMarkPaid = state.activeSubtab === "for-payment" && !item.paid && !!item.cloudId && (item.type === "cash" || item.type === "repair");
   const markPaidBtn = canMarkPaid
     ? `<button type="button" class="ops-secondary-btn" data-mark-paid="${index}">Mark Paid / Released</button>`
-    : `<button type="button" class="ops-disabled-btn" disabled title="Not available for this record.">Mark Paid / Released</button>`;
+    : "";
+  const issueBtn = state.activeSubtab === "for-payment"
+    ? `<button type="button" class="ops-disabled-btn" disabled title="Backend payment action not connected yet.">Report Issue</button>`
+    : "";
   return `
     <tr>
       <td>${escapeHtml(formatDate(item.date))}</td>
       <td class="ops-mono">${escapeHtml(item.id)}</td>
       <td>${escapeHtml(item.plate)}</td>
-      <td><span class="ops-pill">${escapeHtml(item.requestType)}</span></td>
-      <td>${escapeHtml(item.details)}</td>
+      <td>${renderRequestTypeChip(item.requestType, item.type)}</td>
+      <td><span class="details-clamp" title="${escapeHtml(item.details)}">${escapeHtml(item.details)}</span></td>
       <td>${escapeHtml(item.payee)}</td>
       <td class="ops-amount">${escapeHtml(money(item.amount))}</td>
-      <td>${escapeHtml(item.approvalStatus)}</td>
-      <td>${escapeHtml(item.status)}</td>
+      <td>${renderPaymentStatusChip(item.approvalStatus)}</td>
+      <td>${renderPaymentStatusChip(item.status)}</td>
       <td class="ops-actions">
         <button type="button" class="ops-secondary-btn" data-detail="${index}">View Details</button>
         ${markPaidBtn}
-        <button type="button" class="ops-disabled-btn" disabled title="Backend payment action not connected yet.">Report Issue</button>
+        ${issueBtn}
       </td>
     </tr>
   `;
 }
 
 function cardHtml(item, index) {
-  const canMarkPaid = !item.paid && !!item.cloudId && (item.type === "cash" || item.type === "repair");
+  const canMarkPaid = state.activeSubtab === "for-payment" && !item.paid && !!item.cloudId && (item.type === "cash" || item.type === "repair");
   const markPaidBtn = canMarkPaid
     ? `<button type="button" class="ops-secondary-btn" data-mark-paid="${index}">Mark Paid / Released</button>`
-    : `<button type="button" class="ops-disabled-btn" disabled title="Not available for this record.">Mark Paid / Released</button>`;
+    : "";
+  const issueBtn = state.activeSubtab === "for-payment"
+    ? `<button type="button" class="ops-disabled-btn" disabled title="Backend payment action not connected yet.">Report Issue</button>`
+    : "";
   return `
     <article class="ops-mobile-card">
       <div class="ops-mobile-card-head">
@@ -902,17 +981,17 @@ function cardHtml(item, index) {
       <dl>
         <div><dt>Reference ID</dt><dd>${escapeHtml(item.id)}</dd></div>
         <div><dt>Plate / No Plate</dt><dd>${escapeHtml(item.plate)}</dd></div>
-        <div><dt>Request Type</dt><dd>${escapeHtml(item.requestType)}</dd></div>
-        <div><dt>Details</dt><dd>${escapeHtml(item.details)}</dd></div>
+        <div><dt>Request Type</dt><dd>${renderRequestTypeChip(item.requestType, item.type)}</dd></div>
+        <div><dt>Details</dt><dd><span class="details-clamp" title="${escapeHtml(item.details)}">${escapeHtml(item.details)}</span></dd></div>
         <div><dt>Payee / Person / Supplier</dt><dd>${escapeHtml(item.payee)}</dd></div>
         <div><dt>Date</dt><dd>${escapeHtml(formatDate(item.date))}</dd></div>
-        <div><dt>Status</dt><dd>${escapeHtml(item.approvalStatus)}</dd></div>
-        <div><dt>Payment Status</dt><dd>${escapeHtml(item.status)}</dd></div>
+        <div><dt>Status</dt><dd>${renderPaymentStatusChip(item.approvalStatus)}</dd></div>
+        <div><dt>Payment Status</dt><dd>${renderPaymentStatusChip(item.status)}</dd></div>
       </dl>
       <div class="ops-actions">
         <button type="button" class="ops-secondary-btn" data-detail="${index}">View Details</button>
         ${markPaidBtn}
-        <button type="button" class="ops-disabled-btn" disabled title="Backend payment action not connected yet.">Report Issue</button>
+        ${issueBtn}
       </div>
     </article>
   `;
@@ -924,10 +1003,14 @@ function renderList() {
   if (!body || !mobile) return;
 
   if (!state.filtered.length) {
+    const heading = state.activeSubtab === "history" ? "No paid records yet." : "No approved unpaid records yet.";
+    const copy = state.activeSubtab === "history"
+      ? "Paid records are shown here for review."
+      : "Approved records waiting for payment or release.";
     const message = `
       <div class="ops-empty-state">
-        <strong>No approved unpaid records yet.</strong>
-        <span>Once Mother approves payroll, cash/PO/Bali, repair, or labor requests, they will appear here for payment.</span>
+        <strong>${escapeHtml(heading)}</strong>
+        <span>${escapeHtml(copy)}</span>
       </div>
     `;
     body.innerHTML = `<tr><td colspan="10" class="ops-empty">${message}</td></tr>`;
@@ -941,6 +1024,7 @@ function renderList() {
 
 function render() {
   renderSummary();
+  renderViewNote();
   renderList();
 }
 
@@ -950,26 +1034,29 @@ function openDetail(index) {
   const modal = $("pq-modal");
   if (!item) return;
   if (!detail || !modal) return;
-  const canMarkPaid = !item.paid && !!item.cloudId && (item.type === "cash" || item.type === "repair");
+  const canMarkPaid = state.activeSubtab === "for-payment" && !item.paid && !!item.cloudId && (item.type === "cash" || item.type === "repair");
   const markPaidBtn = canMarkPaid
     ? `<button type="button" class="ops-secondary-btn" data-mark-paid="${index}">Mark Paid / Released</button>`
-    : `<button type="button" class="ops-disabled-btn" disabled title="Not available for this record.">Mark Paid / Released</button>`;
+    : "";
+  const issueBtn = state.activeSubtab === "for-payment"
+    ? `<button type="button" class="ops-disabled-btn" disabled title="Backend payment action not connected yet.">Report Issue</button>`
+    : "";
   detail.innerHTML = `
     <p class="ops-eyebrow">Payment Details</p>
     <h2 id="pq-modal-title">${escapeHtml(item.source)} - ${escapeHtml(item.id)}</h2>
     <div class="ops-detail-grid">
       <div><span>Plate / No Plate</span><strong>${escapeHtml(item.plate)}</strong></div>
-      <div><span>Request Type</span><strong>${escapeHtml(item.requestType)}</strong></div>
+      <div><span>Request Type</span><strong>${renderRequestTypeChip(item.requestType, item.type)}</strong></div>
       <div><span>Details</span><strong>${escapeHtml(item.details)}</strong></div>
       <div><span>Payee / Person / Supplier</span><strong>${escapeHtml(item.payee)}</strong></div>
       <div><span>Date</span><strong>${escapeHtml(formatDate(item.date))}</strong></div>
       <div><span>Amount</span><strong>${escapeHtml(money(item.amount))}</strong></div>
-      <div><span>Status</span><strong>${escapeHtml(item.approvalStatus)}</strong></div>
-      <div><span>Payment Status</span><strong>${escapeHtml(item.status)}</strong></div>
+      <div><span>Status</span><strong>${renderPaymentStatusChip(item.approvalStatus)}</strong></div>
+      <div><span>Payment Status</span><strong>${renderPaymentStatusChip(item.status)}</strong></div>
     </div>
     <div class="ops-actions modal-actions">
       ${markPaidBtn}
-      <button type="button" class="ops-disabled-btn" disabled title="Backend payment action not connected yet.">Report Issue</button>
+      ${issueBtn}
     </div>
   `;
   modal.hidden = false;
@@ -981,19 +1068,36 @@ function closeDetail() {
 }
 
 function bindEvents() {
-  document.querySelectorAll(".ops-tab").forEach(button => {
+  document.querySelectorAll("[data-module]").forEach(button => {
     button.addEventListener("click", () => {
-      document.querySelectorAll(".ops-tab").forEach(tab => {
+      document.querySelectorAll("[data-module]").forEach(tab => {
         tab.classList.toggle("active", tab === button);
         tab.setAttribute("aria-selected", tab === button ? "true" : "false");
       });
-      state.tab = button.dataset.tab;
+      state.activeModule = button.dataset.module;
+      state.activeSubtab = "for-payment";
+      document.querySelectorAll("[data-subtab]").forEach(tab => {
+        const active = tab.dataset.subtab === state.activeSubtab;
+        tab.classList.toggle("active", active);
+        tab.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      console.log("Payment module changed", state.activeModule);
+      applyFilters();
+    });
+  });
+  document.querySelectorAll("[data-subtab]").forEach(button => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll("[data-subtab]").forEach(tab => {
+        tab.classList.toggle("active", tab === button);
+        tab.setAttribute("aria-selected", tab === button ? "true" : "false");
+      });
+      state.activeSubtab = button.dataset.subtab;
+      console.log("Payment subtab changed", state.activeSubtab);
       applyFilters();
     });
   });
 
   const search = $("pq-search");
-  const type = $("pq-type");
   const group = $("pq-group");
   const sort = $("pq-sort");
   const refresh = $("pq-refresh");
@@ -1002,10 +1106,6 @@ function bindEvents() {
 
   if (search) search.addEventListener("input", event => {
     state.search = event.target.value;
-    applyFilters();
-  });
-  if (type) type.addEventListener("change", event => {
-    state.type = event.target.value;
     applyFilters();
   });
   if (group) group.addEventListener("change", event => {
@@ -1034,12 +1134,23 @@ function bindEvents() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   setPaymentAccess();
-  const urlTab = new URLSearchParams(window.location.search).get("tab");
-  if (urlTab && ["all", "payroll", "cash", "repair", "paid"].includes(urlTab)) {
-    state.tab = urlTab;
-    document.querySelectorAll(".ops-tab").forEach(tab => {
-      tab.classList.toggle("active", tab.dataset.tab === urlTab);
-      tab.setAttribute("aria-selected", tab.dataset.tab === urlTab ? "true" : "false");
+  const params = new URLSearchParams(window.location.search);
+  const urlModule = params.get("module") || params.get("tab");
+  const urlSubtab = params.get("view") || params.get("subtab");
+  if (urlModule && ["payroll", "cash", "repair"].includes(urlModule)) {
+    state.activeModule = urlModule;
+    document.querySelectorAll("[data-module]").forEach(tab => {
+      const active = tab.dataset.module === urlModule;
+      tab.classList.toggle("active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+    });
+  }
+  if (urlSubtab && ["for-payment", "history"].includes(urlSubtab)) {
+    state.activeSubtab = urlSubtab;
+    document.querySelectorAll("[data-subtab]").forEach(tab => {
+      const active = tab.dataset.subtab === urlSubtab;
+      tab.classList.toggle("active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
     });
   }
   bindEvents();
