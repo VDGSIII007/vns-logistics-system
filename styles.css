@@ -862,37 +862,42 @@ body.payroll-page{
 }
 .saved-repair-tabs-block{
   display:grid;
-  gap:8px;
+  gap:0;
   margin:0 0 12px;
 }
 .saved-repair-category-tabs{
   display:flex;
-  align-items:center;
-  gap:7px;
+  align-items:flex-end;
+  gap:3px;
   flex-wrap:wrap;
+  border-bottom:2px solid var(--line);
+  padding:0;
 }
 .saved-repair-history-tabs{
   display:flex;
   align-items:center;
   gap:6px;
   flex-wrap:wrap;
+  padding:8px 0 0;
 }
 .saved-repair-category-tab{
   display:inline-flex;
   align-items:center;
   justify-content:center;
   gap:7px;
-  min-height:38px;
+  min-height:36px;
   border:1px solid #e5e7eb;
-  border-radius:999px;
-  background:#fff;
-  color:#374151;
+  border-bottom:none;
+  border-radius:8px 8px 0 0;
+  background:#f9fafb;
+  color:#6b7280;
   padding:0 14px;
   font:inherit;
   font-size:.83rem;
   font-weight:900;
   cursor:pointer;
   white-space:nowrap;
+  margin-bottom:-2px;
   transition:border-color .15s,background .15s,color .15s;
 }
 .saved-repair-category-tab:not(.active):hover{
@@ -904,7 +909,8 @@ body.payroll-page{
   border-color:var(--red);
   background:var(--red);
   color:#fff;
-  box-shadow:0 4px 12px rgba(215,25,32,.15);
+  z-index:1;
+  position:relative;
 }
 .saved-repair-subtab{
   display:inline-flex;
@@ -940,7 +946,7 @@ body.payroll-page{
   height:20px;
   border-radius:999px;
   padding:0 6px;
-  background:#f3f4f6;
+  background:#e9eaec;
   color:#6b7280;
   font-size:.7rem;
   font-weight:900;
@@ -1804,7 +1810,10 @@ body.payroll-page{
   .repair-tab-button{
     flex:1 1 220px;
   }
-  .saved-repair-category-tabs,
+  .saved-repair-category-tabs{
+    align-items:stretch;
+    border-bottom:none;
+  }
   .saved-repair-history-tabs{
     align-items:stretch;
   }
@@ -1813,6 +1822,12 @@ body.payroll-page{
     max-width:100%;
     white-space:normal;
     text-align:center;
+    border-bottom:1px solid #e5e7eb;
+    border-radius:8px;
+    margin-bottom:0;
+  }
+  .saved-repair-category-tab.active{
+    border-color:var(--red);
   }
   .saved-repair-subtab{
     flex:1 1 140px;
