@@ -3619,3 +3619,109 @@ body.payroll-page{
     grid-column:1;
   }
 }
+@media(max-width:760px){
+  /* Repair tables: convert to mobile cards */
+  .repair-mobile-wrap{
+    overflow:visible!important;
+    max-height:none!important;
+    border:none!important;
+    border-radius:0!important;
+    box-shadow:none!important;
+    background:transparent!important;
+    padding:0!important;
+  }
+  .repair-responsive-table{
+    display:block;
+    min-width:0!important;
+    width:100%!important;
+    border-collapse:separate;
+  }
+  .repair-responsive-table thead{
+    display:none;
+  }
+  .repair-responsive-table tbody{
+    display:block;
+    padding:14px;
+  }
+  .repair-responsive-table tbody tr{
+    display:block;
+    width:100%;
+    box-sizing:border-box;
+    background:#fff;
+    border:1px solid #e5e7eb;
+    border-radius:16px;
+    padding:14px;
+    margin-bottom:12px;
+    box-shadow:0 2px 8px rgba(15,23,42,.05);
+  }
+  .repair-responsive-table tbody tr.repair-empty-row{
+    border:none;
+    border-radius:0;
+    box-shadow:none;
+    padding:0;
+    margin:0;
+    background:transparent;
+  }
+  .repair-responsive-table td{
+    display:block;
+    width:100%;
+    box-sizing:border-box;
+    border:none!important;
+    padding:5px 0;
+  }
+  .repair-responsive-table td::before{
+    content:attr(data-label);
+    display:block;
+    font-size:.68rem;
+    font-weight:800;
+    letter-spacing:.07em;
+    text-transform:uppercase;
+    color:#9ca3af;
+    margin-bottom:2px;
+  }
+  .repair-responsive-table td[data-label=""]::before,
+  .repair-responsive-table td:not([data-label])::before{
+    display:none;
+  }
+  .repair-responsive-table td.empty{
+    text-align:center;
+    padding:20px;
+    color:#6b7280;
+  }
+  .repair-responsive-table td.empty::before{
+    display:none;
+  }
+  .repair-responsive-table td.mobile-hide-cell{
+    display:none;
+  }
+  .repair-responsive-table td.selection-cell{
+    padding:0 0 6px;
+  }
+  .repair-responsive-table .change-request-actions{
+    display:flex;
+    flex-direction:row;
+    flex-wrap:wrap;
+    gap:8px;
+    width:100%;
+    grid-template-columns:none;
+  }
+  .repair-responsive-table .change-request-actions button,
+  .repair-responsive-table .change-request-actions .action-mini-button{
+    flex:1 1 auto;
+    text-align:center;
+    white-space:normal;
+    min-height:36px;
+    font-size:.78rem;
+  }
+  /* Action panel buttons: reduce bulkiness on mobile */
+  .repair-page .saved-records-action-buttons{
+    flex-direction:column;
+    gap:8px;
+  }
+  .repair-page .saved-records-action-buttons .btn{
+    width:100%;
+    padding:9px 16px;
+    min-height:40px;
+    font-size:.84rem;
+  }
+}

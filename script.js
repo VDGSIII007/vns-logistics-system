@@ -1626,7 +1626,7 @@ function renderLocalForRepairTrucks() {
     const emptyMsg = active.length
       ? 'No repair trucks match the current filters.'
       : 'No for repair trucks added yet.';
-    forRepairLocalBody.innerHTML = `<tr><td colspan="9" class="empty">${emptyMsg}</td></tr>`;
+    forRepairLocalBody.innerHTML = `<tr class="repair-empty-row"><td colspan="9" class="empty">${emptyMsg}</td></tr>`;
     return;
   }
 
@@ -1635,15 +1635,15 @@ function renderLocalForRepairTrucks() {
     const isCompleted = /completed/i.test(record.repairStatus || '');
     return `
       <tr>
-        <td>${escapeHtml(truncateRecordValue(record.plateNumber, 18))}</td>
-        <td>${escapeHtml(truncateRecordValue(record.garageLocation, 28))}</td>
-        <td>${escapeHtml(truncateRecordValue(record.repairIssue))}</td>
-        <td>${escapeHtml(truncateRecordValue(record.startDate, 18))}</td>
-        <td>${escapeHtml(truncateRecordValue(record.estimatedFinishDate, 18))}</td>
-        <td>${escapeHtml(truncateRecordValue(record.endDate, 18))}</td>
-        <td>${escapeHtml(truncateRecordValue(record.repairStatus, 24))}</td>
-        <td>${escapeHtml(truncateRecordValue(record.remarks))}</td>
-        <td>
+        <td data-label="Plate">${escapeHtml(truncateRecordValue(record.plateNumber, 18))}</td>
+        <td data-label="Garage">${escapeHtml(truncateRecordValue(record.garageLocation, 28))}</td>
+        <td data-label="Repair Issue">${escapeHtml(truncateRecordValue(record.repairIssue))}</td>
+        <td data-label="Start Date">${escapeHtml(truncateRecordValue(record.startDate, 18))}</td>
+        <td data-label="Est. Finish">${escapeHtml(truncateRecordValue(record.estimatedFinishDate, 18))}</td>
+        <td data-label="End Date">${escapeHtml(truncateRecordValue(record.endDate, 18))}</td>
+        <td data-label="Status">${escapeHtml(truncateRecordValue(record.repairStatus, 24))}</td>
+        <td data-label="Remarks">${escapeHtml(truncateRecordValue(record.remarks))}</td>
+        <td data-label="">
           <div class="change-request-actions">
             ${isCompleted
               ? '<span class="save-status">Completed</span>'
@@ -2634,7 +2634,7 @@ function renderTodayRepairRequests() {
   }
 
   if (!records.length) {
-    todayRepairRecordsBody.innerHTML = '<tr><td colspan="9" class="empty">No repair requests for today yet.</td></tr>';
+    todayRepairRecordsBody.innerHTML = '<tr class="repair-empty-row"><td colspan="9" class="empty">No repair requests for today yet.</td></tr>';
     return;
   }
 
@@ -2657,15 +2657,15 @@ function renderTodayRepairRequests() {
     const paymentStatus = getRepairPaymentValue(record, 'paymentStatus');
     return `
       <tr class="repair-clickable-row ${paidClass}" data-today-record-index="${recordIndex}" tabindex="0" role="button" aria-label="Open repair details for ${escapeHtml(getRecordValue(record, 'Request_ID') || getRecordValue(record, 'Plate_Number') || 'record')}">
-        <td>${escapeHtml(formatDateDisplay(date))}</td>
-        <td class="record-id-cell cell-muted" title="${escapeHtml(getRecordValue(record, 'Request_ID'))}">${escapeHtml(truncateRecordValue(getRecordValue(record, 'Request_ID'), 30))}</td>
-        <td class="cell-plate">${escapeHtml(truncateRecordValue(getRecordValue(record, 'Plate_Number'), 18))}</td>
-        <td>${renderTypeBadge(getRecordValue(record, 'Request_Type'))}</td>
-        <td>${renderClampedCell(details)}</td>
-        <td>${escapeHtml(truncateRecordValue(payee, 28))}</td>
-        <td class="cell-money">${escapeHtml(formatPeso(todayRepairAmount(record)))}</td>
-        <td>${renderStatusBadge('approval', status)}</td>
-        <td>${renderStatusBadge('payment', paymentStatus)}${renderRepairPaidHint(record)}</td>
+        <td data-label="Date">${escapeHtml(formatDateDisplay(date))}</td>
+        <td data-label="Request No." class="record-id-cell cell-muted" title="${escapeHtml(getRecordValue(record, 'Request_ID'))}">${escapeHtml(truncateRecordValue(getRecordValue(record, 'Request_ID'), 30))}</td>
+        <td data-label="Plate" class="cell-plate">${escapeHtml(truncateRecordValue(getRecordValue(record, 'Plate_Number'), 18))}</td>
+        <td data-label="Request Type">${renderTypeBadge(getRecordValue(record, 'Request_Type'))}</td>
+        <td data-label="Details">${renderClampedCell(details)}</td>
+        <td data-label="Payee / Supplier">${escapeHtml(truncateRecordValue(payee, 28))}</td>
+        <td data-label="Amount" class="cell-money">${escapeHtml(formatPeso(todayRepairAmount(record)))}</td>
+        <td data-label="Status">${renderStatusBadge('approval', status)}</td>
+        <td data-label="Payment Status">${renderStatusBadge('payment', paymentStatus)}${renderRepairPaidHint(record)}</td>
       </tr>
     `;
   }).join('');
@@ -2683,7 +2683,7 @@ function renderSavedRecords() {
   if (savedRecordsSelectAll) savedRecordsSelectAll.checked = false;
 
   if (!records.length) {
-    savedRecordsBody.innerHTML = '<tr><td colspan="21" class="empty">No saved repair records found.</td></tr>';
+    savedRecordsBody.innerHTML = '<tr class="repair-empty-row"><td colspan="21" class="empty">No saved repair records found.</td></tr>';
     return;
   }
 
@@ -2706,27 +2706,27 @@ function renderSavedRecords() {
     ].filter(Boolean).join(' ');
     return `
     <tr class="repair-clickable-row ${rowClasses}" data-record-row-index="${recordIndex}" tabindex="0" role="button" aria-label="Open repair details for ${escapeHtml(recordId || plateNumber || 'record')}">
-      <td class="selection-cell"><input class="savedRecordCheckbox" type="checkbox" data-record-index="${recordIndex}" aria-label="Select saved repair record"></td>
-      <td class="record-id-cell cell-muted" title="${escapeHtml(recordId)}">${escapeHtml(truncateRecordValue(recordId, 30))}</td>
-      <td>${escapeHtml(formatDateDisplay(getRecordValue(record, 'Date_Requested')))}</td>
-      <td class="cell-plate">${escapeHtml(plateNumber)}</td>
-      <td>${escapeHtml(truncateRecordValue(truckType, 24))}</td>
-      <td>${renderTypeBadge(getRecordValue(record, 'Request_Type'))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Driver'), 28))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Payee'), 28))}</td>
-      <td>${renderCategoryBadge(getRecordValue(record, 'Category'))}</td>
-      <td>${renderClampedCell(getRecordValue(record, 'Repair_Parts'))}</td>
-      <td>${renderClampedCell(getRecordValue(record, 'Work_Done'))}</td>
-      <td>${escapeHtml(truncateRecordValue(getRecordValue(record, 'Quantity'), 18))}</td>
-      <td class="cell-money">${escapeHtml(formatPeso(unitCost))}</td>
-      <td class="cell-money">${escapeHtml(formatPeso(originalCost))}</td>
-      <td class="cell-money">${escapeHtml(formatPeso(finalCost))}</td>
-      <td>${renderStatusBadge('payment', paymentStatus)}${renderRepairPaidHint(record)}</td>
-      <td>${escapeHtml(formatDateDisplay(paymentDate))}</td>
-      <td>${escapeHtml(truncateRecordValue(paymentReference, 32))}</td>
-      <td>${renderStatusBadge('repair', getRecordValue(record, 'Repair_Status'))}</td>
-      <td>${renderStatusBadge('approval', approvalStatus)}</td>
-      <td>${renderClampedCell(getRecordValue(record, 'Remarks'))}</td>
+      <td data-label="" class="selection-cell"><input class="savedRecordCheckbox" type="checkbox" data-record-index="${recordIndex}" aria-label="Select saved repair record"></td>
+      <td data-label="Record ID" class="record-id-cell cell-muted" title="${escapeHtml(recordId)}">${escapeHtml(truncateRecordValue(recordId, 30))}</td>
+      <td data-label="Date">${escapeHtml(formatDateDisplay(getRecordValue(record, 'Date_Requested')))}</td>
+      <td data-label="Plate" class="cell-plate">${escapeHtml(plateNumber)}</td>
+      <td data-label="Truck Type" class="mobile-hide-cell">${escapeHtml(truncateRecordValue(truckType, 24))}</td>
+      <td data-label="Request Type">${renderTypeBadge(getRecordValue(record, 'Request_Type'))}</td>
+      <td data-label="Driver">${escapeHtml(truncateRecordValue(getRecordValue(record, 'Driver'), 28))}</td>
+      <td data-label="Payee">${escapeHtml(truncateRecordValue(getRecordValue(record, 'Payee'), 28))}</td>
+      <td data-label="Category">${renderCategoryBadge(getRecordValue(record, 'Category'))}</td>
+      <td data-label="Parts / Item">${renderClampedCell(getRecordValue(record, 'Repair_Parts'))}</td>
+      <td data-label="Work Done" class="mobile-hide-cell">${renderClampedCell(getRecordValue(record, 'Work_Done'))}</td>
+      <td data-label="Qty" class="mobile-hide-cell">${escapeHtml(truncateRecordValue(getRecordValue(record, 'Quantity'), 18))}</td>
+      <td data-label="Unit Cost" class="cell-money mobile-hide-cell">${escapeHtml(formatPeso(unitCost))}</td>
+      <td data-label="Original Cost" class="cell-money mobile-hide-cell">${escapeHtml(formatPeso(originalCost))}</td>
+      <td data-label="Amount" class="cell-money">${escapeHtml(formatPeso(finalCost))}</td>
+      <td data-label="Payment Status">${renderStatusBadge('payment', paymentStatus)}${renderRepairPaidHint(record)}</td>
+      <td data-label="Payment Date" class="mobile-hide-cell">${escapeHtml(formatDateDisplay(paymentDate))}</td>
+      <td data-label="Payment Ref." class="mobile-hide-cell">${escapeHtml(truncateRecordValue(paymentReference, 32))}</td>
+      <td data-label="Repair Status" class="mobile-hide-cell">${renderStatusBadge('repair', getRecordValue(record, 'Repair_Status'))}</td>
+      <td data-label="Approval Status">${renderStatusBadge('approval', approvalStatus)}</td>
+      <td data-label="Remarks" class="mobile-hide-cell">${renderClampedCell(getRecordValue(record, 'Remarks'))}</td>
     </tr>
   `;
   }).join('');
@@ -2736,7 +2736,7 @@ async function loadSavedRepairRecords() {
   if (!savedRecordsBody || !recordsStatus) return;
   recordsStatus.textContent = 'Loading saved records...';
   updateRecordsSummary([]);
-  savedRecordsBody.innerHTML = '<tr><td colspan="21" class="empty">Loading saved repair records...</td></tr>';
+  savedRecordsBody.innerHTML = '<tr class="repair-empty-row"><td colspan="21" class="empty">Loading saved repair records...</td></tr>';
 
   try {
     const cloudRecords = await loadRepairRecordsFromSupabase();
@@ -2761,7 +2761,7 @@ async function loadSavedRepairRecords() {
       logTodayRepairDebug(todayRepairRecords);
       renderTodayRepairRequests();
       updateRecordsSummary([]);
-      savedRecordsBody.innerHTML = '<tr><td colspan="21" class="empty">Unable to load saved records. Please try again.</td></tr>';
+      savedRecordsBody.innerHTML = '<tr class="repair-empty-row"><td colspan="21" class="empty">Unable to load saved records. Please try again.</td></tr>';
       recordsStatus.textContent = 'Error loading saved records.';
     }
   }
