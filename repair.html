@@ -1174,7 +1174,7 @@
             </div>
           </div>
 
-          <div class="records-control-panel saved-records-filter-panel">
+          <div class="records-control-panel saved-records-filter-panel saved-repair-filter-card compact">
             <div class="saved-repair-tabs-block" aria-label="Saved repair request type tabs">
               <div class="saved-repair-category-tabs" role="tablist" aria-label="Saved repair request types">
                 <button class="saved-repair-category-tab active" type="button" data-saved-repair-category="equipment" aria-selected="true">Equipment Request <span data-saved-repair-category-count="equipment">0</span></button>
@@ -1183,18 +1183,18 @@
                 <button class="saved-repair-category-tab" type="button" data-saved-repair-category="other" aria-selected="false">Other Requests <span data-saved-repair-category-count="other">0</span></button>
               </div>
               <div class="saved-repair-history-tabs" role="tablist" aria-label="Saved repair history state">
-                <button class="saved-repair-subtab active" type="button" data-saved-repair-subtab="active" aria-selected="true">Active / For Review</button>
-                <button class="saved-repair-subtab" type="button" data-saved-repair-subtab="history" aria-selected="false">History</button>
+                <button class="saved-repair-subtab active" type="button" data-saved-repair-subtab="active" aria-selected="true">For Approval / Approved</button>
+                <button class="saved-repair-subtab" type="button" data-saved-repair-subtab="history" aria-selected="false">Paid History</button>
               </div>
             </div>
             <div class="records-filter-header">
               <div>
                 <h3>Filters</h3>
-                <p>Find saved repair records by truck, request, status, payment, or date.</p>
+                <p>Find saved repair records by truck or date.</p>
               </div>
               <button id="records-clear-filters-button" class="btn btn-outline" type="button">Clear Filters</button>
             </div>
-            <div class="records-filters">
+            <div class="records-filters saved-repair-main-filters">
               <label>
                 <span>Group</span>
                 <select id="records-plate-group-filter" data-plate-group-select="records"></select>
@@ -1203,6 +1203,18 @@
                 <span>Plate Number</span>
                 <select id="records-plate-filter" data-plate-select="records"></select>
               </label>
+              <label>
+                <span>Date From</span>
+                <input id="records-date-from-filter" type="date">
+              </label>
+              <label>
+                <span>Date To</span>
+                <input id="records-date-to-filter" type="date">
+              </label>
+            </div>
+            <button id="saved-repair-filter-toggle" class="saved-repair-filter-toggle" type="button" aria-expanded="false" aria-controls="saved-repair-advanced-filters">Advanced Filters</button>
+            <div id="saved-repair-advanced-filters" class="saved-repair-advanced-filters" hidden>
+              <div class="records-filters">
               <label>
                 <span>Request Type</span>
                 <select id="records-type-filter">
@@ -1214,7 +1226,7 @@
                 </select>
               </label>
               <label>
-                <span>Status</span>
+                <span>Repair Status</span>
                 <select id="records-repair-status-filter">
                   <option value="">All Repair Statuses</option>
                   <option value="Pending">Pending</option>
@@ -1246,23 +1258,16 @@
                   <option value="Paid">Paid</option>
                 </select>
               </label>
-              <label>
-                <span>Date From</span>
-                <input id="records-date-from-filter" type="date">
-              </label>
-              <label>
-                <span>Date To</span>
-                <input id="records-date-to-filter" type="date">
-              </label>
-            </div>
-            <div class="records-quick-views">
-              <span>Quick Views</span>
-              <div class="records-quick-filters" aria-label="Quick saved repair filters">
-                <button class="btn btn-outline" type="button" data-records-quick-filter="unpaid">Unpaid</button>
-                <button class="btn btn-outline" type="button" data-records-quick-filter="paid">Paid</button>
-                <button class="btn btn-outline" type="button" data-records-quick-filter="notFinished">Not Finished</button>
-                <button class="btn btn-outline" type="button" data-records-quick-filter="forDeposit">For Deposit</button>
-                <button class="btn btn-outline" type="button" data-records-quick-filter="completed">Completed</button>
+              </div>
+              <div class="records-quick-views">
+                <span>Quick Views</span>
+                <div class="records-quick-filters" aria-label="Quick saved repair filters">
+                  <button class="btn btn-outline" type="button" data-records-quick-filter="unpaid">Unpaid</button>
+                  <button class="btn btn-outline" type="button" data-records-quick-filter="paid">Paid</button>
+                  <button class="btn btn-outline" type="button" data-records-quick-filter="notFinished">Not Finished</button>
+                  <button class="btn btn-outline" type="button" data-records-quick-filter="forDeposit">For Deposit</button>
+                  <button class="btn btn-outline" type="button" data-records-quick-filter="completed">Completed</button>
+                </div>
               </div>
             </div>
 
@@ -1281,7 +1286,7 @@
           </div>
 
           <aside class="saved-records-actions-panel">
-            <p>Saved repair records are read-only. Use filters to find records, then request an edit or delete for manager review. Requests are saved locally and do not modify the original saved data.</p>
+            <p>Select records to generate follow-up messages or review details.</p>
             <div class="saved-records-action-buttons">
               <button id="selectAllSavedRecordsBtn" class="btn btn-outline" type="button">Select All</button>
               <button id="unselectAllSavedRecordsBtn" class="btn btn-outline" type="button">Unselect All</button>

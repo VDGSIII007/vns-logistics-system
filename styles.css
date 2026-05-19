@@ -863,7 +863,7 @@ body.payroll-page{
 .saved-repair-tabs-block{
   display:grid;
   gap:10px;
-  margin:0 0 18px;
+  margin:0 0 14px;
 }
 .saved-repair-category-tabs,
 .saved-repair-history-tabs{
@@ -922,6 +922,41 @@ body.payroll-page{
 .saved-repair-category-tab.active span{
   background:rgba(255,255,255,.18);
   color:#fff;
+}
+.saved-repair-filter-card.compact{
+  gap:14px;
+}
+.saved-repair-main-filters{
+  align-items:end;
+}
+.saved-repair-filter-toggle{
+  justify-self:start;
+  min-height:34px;
+  border:1px solid #d1d5db;
+  border-radius:999px;
+  background:#fff;
+  color:#374151;
+  padding:0 13px;
+  font:inherit;
+  font-size:.78rem;
+  font-weight:900;
+  cursor:pointer;
+}
+.saved-repair-filter-toggle:hover,
+.saved-repair-filter-toggle[aria-expanded="true"]{
+  border-color:#111827;
+  color:#111827;
+}
+.saved-repair-advanced-filters{
+  display:grid;
+  gap:12px;
+  padding:14px;
+  border:1px solid #edf0f5;
+  border-radius:16px;
+  background:#fbfcfe;
+}
+.saved-repair-advanced-filters[hidden]{
+  display:none;
 }
 .repair-page .garage-monitoring,
 .repair-page .repair-entry-section,
@@ -3158,8 +3193,8 @@ body.payroll-page{
 }
 .repair-page .saved-records-filter-panel{
   display:grid;
-  gap:18px;
-  padding:20px;
+  gap:14px;
+  padding:18px;
   border-color:#e1e6ee;
   box-shadow:0 14px 36px rgba(15,23,42,.055);
 }
@@ -3168,7 +3203,7 @@ body.payroll-page{
   align-items:flex-start;
   justify-content:space-between;
   gap:16px;
-  padding-bottom:14px;
+  padding-bottom:10px;
   border-bottom:1px solid #edf0f5;
 }
 .repair-page .records-filter-header h3{
@@ -3193,8 +3228,15 @@ body.payroll-page{
 }
 .repair-page .saved-records-filter-panel .records-filters{
   grid-template-columns:repeat(4,minmax(170px,1fr));
-  gap:12px;
+  gap:10px;
   margin:0;
+}
+.repair-page .saved-records-filter-panel .records-filters label{
+  gap:6px;
+}
+.repair-page .saved-records-filter-panel .records-filters input,
+.repair-page .saved-records-filter-panel .records-filters select{
+  min-height:46px;
 }
 .repair-page .records-quick-views{
   display:grid;
@@ -3254,6 +3296,10 @@ body.payroll-page{
   }
   .repair-page .records-filter-header .btn{
     align-self:flex-start;
+  }
+  .saved-repair-filter-toggle{
+    justify-self:stretch;
+    width:100%;
   }
   .repair-page .saved-records-filter-panel .records-filters{
     grid-template-columns:1fr;
