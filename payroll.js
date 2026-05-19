@@ -185,13 +185,20 @@ function bindPayrollEvents() {
 
   ["group-category", "plate-number", "driver-name", "helper-name", "payroll-status"].forEach(id => {
     $(id).addEventListener("input", () => {
-      if (id === "group-category") applyPayrollGroupToPlateOptions();
+      if (id === "group-category") {
+        applyPayrollGroupToPlateOptions();
+        renderPayrollLaneDatalists(getActivePayrollLaneSource());
+      }
       if (id === "plate-number") applyPayrollTruckToHeader(false);
       calculatePayroll();
       updateLockState();
     });
   });
-  $("group-category").addEventListener("change", applyPayrollGroupToPlateOptions);
+  $("group-category").addEventListener("change", () => {
+    applyPayrollGroupToPlateOptions();
+    renderPayrollLaneDatalists(getActivePayrollLaneSource());
+    applyRateMatrixToAllLines();
+  });
   $("plate-number").addEventListener("change", () => applyPayrollTruckToHeader(true));
   $("plate-number").addEventListener("blur", () => applyPayrollTruckToHeader(true));
   $("driver-name").addEventListener("change", () => updatePersonNoteVisibility("driver-name", "driver-name-note", "Driver"));
@@ -956,8 +963,8 @@ function findPayrollRateMatch(line = {}) {
   }) || null;
 }
 
-function applyRateMatrixToLine(line = {}) {
-  if (line.rateMatchStatus === "Manual") return false;
+function applyRateMatrixToLine(line = {}, options = {}) {
+  if (line.rateMatchStatus === "Manual" && !options.force) return false;
   const rate = findPayrollRateMatch(line);
   if (!rate) {
     line.rateId = "";
@@ -1016,6 +1023,8 @@ function loadPayrollRateMatrix() {
     .then(data => {
       if (!data?.ok || !Array.isArray(data.rates)) throw new Error(data?.error || "Rate matrix unavailable");
       payrollState.rateMatrix = data.rates.map(normalizePayrollRateRecord);
+      console.log("Payroll rates loaded", payrollState.rateMatrix);
+      renderPayrollLaneDatalists(getActivePayrollLaneSource());
       applyRateMatrixToAllLines();
       setStatus(`Loaded ${payrollState.rateMatrix.length} payroll rate${payrollState.rateMatrix.length === 1 ? "" : "s"}.`, "success");
     })
@@ -2024,20 +2033,32 @@ function renderLinesTable(keepFocus = true) {
       if (!line) return;
       if (input.dataset.readonly === "true") return;
       line[input.dataset.field] = input.type === "number" ? parseNumber(input.value) : input.value;
+      if (input.dataset.field === "source") renderPayrollLaneDatalists(line.source);
+      if (input.dataset.field === "destination") renderPayrollLaneDatalists(line.source);
       if (rateAutoFillFields.has(input.dataset.field)) {
         line.rateMatchStatus = "Manual";
       }
     });
     input.addEventListener("change", () => {
       const line = payrollState.lines.find(item => item.id === input.dataset.id);
-      if (line && ["source", "destination"].includes(input.dataset.field)) applyRateMatrixToLine(line);
-      if (line && input.dataset.field === "source") renderPayrollLaneDatalists(line.source);
+      if (line && ["source", "destination"].includes(input.dataset.field)) {
+        console.log("Payroll lane input changed", {
+          field: input.dataset.field,
+          source: line.source,
+          destination: line.destination,
+          group: $("group-category")?.value || ""
+        });
+        line.rateMatchStatus = "";
+        applyRateMatrixToLine(line, { force: true });
+        renderPayrollLaneDatalists(line.source);
+      }
       calculatePayroll();
     });
     input.addEventListener("focus", () => {
       const line = payrollState.lines.find(item => item.id === input.dataset.id);
       if (input.dataset.field === "source") renderPayrollLaneDatalists(line?.source || "");
       if (input.dataset.field === "destination") renderPayrollLaneDatalists(line?.source || "");
+      openPayrollDatalist(input);
     });
   });
   $("payroll-lines-body").querySelectorAll("[data-delete-line-id]").forEach(button => {
@@ -2121,6 +2142,15 @@ function getDestinationSuggestionsForSource(source = "", group = $("group-catego
   return destinations;
 }
 
+function getActivePayrollLaneSource() {
+  const active = document.activeElement;
+  if (active?.dataset?.field === "source" || active?.dataset?.field === "destination") {
+    const line = payrollState.lines.find(item => item.id === active.dataset.id);
+    return line?.source || active.value || "";
+  }
+  return payrollState.lines.find(line => String(line.source || "").trim())?.source || "";
+}
+
 function renderPayrollLaneDatalists(activeSource = "") {
   const sourceList = $("payroll-source-options");
   const destinationList = $("payroll-destination-options");
@@ -2129,11 +2159,21 @@ function renderPayrollLaneDatalists(activeSource = "") {
       .map(source => `<option value="${escapeAttr(source)}"></option>`)
       .join("");
   }
-  const source = activeSource || payrollState.lines.find(line => String(line.source || "").trim())?.source || "";
+  const source = activeSource || getActivePayrollLaneSource();
   if (destinationList) {
     destinationList.innerHTML = getDestinationSuggestionsForSource(source)
       .map(destination => `<option value="${escapeAttr(destination)}"></option>`)
       .join("");
+  }
+}
+
+function openPayrollDatalist(input) {
+  if (!input?.getAttribute("list")) return;
+  if (typeof input.showPicker !== "function") return;
+  try {
+    input.showPicker();
+  } catch (error) {
+    console.debug("Payroll datalist picker not opened", error);
   }
 }
 
