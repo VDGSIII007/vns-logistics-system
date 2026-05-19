@@ -916,27 +916,28 @@ body.payroll-page{
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  min-height:28px;
+  min-height:29px;
   border:1px solid #e5e7eb;
   border-radius:999px;
-  background:transparent;
+  background:#fff;
   color:#6b7280;
-  padding:0 12px;
+  padding:0 13px;
   font:inherit;
   font-size:.77rem;
-  font-weight:900;
+  font-weight:600;
   cursor:pointer;
   white-space:nowrap;
   transition:border-color .15s,background .15s,color .15s;
 }
 .saved-repair-subtab:not(.active):hover{
-  border-color:#9ca3af;
+  border-color:#cbd5e1;
   color:#374151;
 }
 .saved-repair-subtab.active{
   border-color:#374151;
   background:#374151;
   color:#fff;
+  font-weight:700;
 }
 .saved-repair-category-tab span{
   display:inline-flex;
@@ -2285,9 +2286,9 @@ body.payroll-page{
 }
 .ops-view-tabs{
   display:flex;
-  gap:6px;
+  gap:8px;
   flex-wrap:wrap;
-  padding:8px 14px 12px;
+  padding:8px 14px 10px;
   border-bottom:1px solid var(--line);
   background:#f9fafb;
 }
@@ -2311,22 +2312,27 @@ body.payroll-page{
   box-shadow:0 6px 16px rgba(215,25,32,.18);
 }
 .ops-view-btn{
-  min-height:28px;
+  min-height:29px;
   border:1px solid #e5e7eb;
   border-radius:999px;
-  background:transparent;
+  background:#fff;
   color:#6b7280;
-  padding:0 11px;
+  padding:0 13px;
   font:inherit;
   font-size:.77rem;
-  font-weight:900;
+  font-weight:600;
   cursor:pointer;
   transition:border-color .15s,background .15s,color .15s;
+}
+.ops-view-btn:not(.active):hover{
+  border-color:#cbd5e1;
+  color:#374151;
 }
 .ops-view-btn.active{
   border-color:#374151;
   background:#374151;
   color:#fff;
+  font-weight:700;
 }
 .ops-view-note{
   margin:0;
