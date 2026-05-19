@@ -130,6 +130,7 @@ let savedRepairRecords = [];
 let todayRepairRecords = [];
 let hiddenMisalignedRecordCount = 0;
 let garageTruckRecords = [];
+let repairTruckFormOpen = false;
 let garageTruckSearchQuery = '';
 let localForRepairTrucks = [];
 let savedRecordsQuickFilter = '';
@@ -1577,16 +1578,42 @@ async function completeForRepairTruck(index) {
   }
 }
 
+function showRepairTruckForm() {
+  if (!forRepairLocalForm) return;
+  repairTruckFormOpen = true;
+  forRepairLocalForm.hidden = false;
+  if (addForRepairButton) addForRepairButton.textContent = 'Hide Form';
+  if (forRepairLocalStatus) forRepairLocalStatus.textContent = '';
+  console.log('Repair truck form opened');
+}
+
+function hideRepairTruckForm() {
+  if (!forRepairLocalForm) return;
+  repairTruckFormOpen = false;
+  forRepairLocalForm.hidden = true;
+  forRepairLocalForm.reset();
+  if (addForRepairButton) addForRepairButton.textContent = '+ Add For Repair Unit';
+  if (forRepairLocalStatus) forRepairLocalStatus.textContent = '';
+  console.log('Repair truck form closed');
+}
+
+function toggleRepairTruckForm() {
+  if (repairTruckFormOpen) hideRepairTruckForm();
+  else showRepairTruckForm();
+}
+
 function applyRepairTruckFilters(records) {
   const group = forRepairGroupFilter?.value || '';
   const status = forRepairStatusFilter?.value || '';
   const plate = (forRepairPlateSearch?.value || '').toLowerCase().trim();
-  return records.filter(r => {
+  const filtered = records.filter(r => {
     if (group && (r.groupCategory || '').toLowerCase() !== group.toLowerCase()) return false;
     if (status && (r.repairStatus || '').toLowerCase() !== status.toLowerCase()) return false;
     if (plate && !(r.plateNumber || '').toLowerCase().includes(plate)) return false;
     return true;
   });
+  console.log('Repair truck filters applied', { group, status, search: plate, count: filtered.length });
+  return filtered;
 }
 
 function renderLocalForRepairTrucks() {
@@ -1596,7 +1623,10 @@ function renderLocalForRepairTrucks() {
   );
   const visible = applyRepairTruckFilters(active);
   if (!visible.length) {
-    forRepairLocalBody.innerHTML = '<tr><td colspan="9" class="empty">No for repair trucks added yet.</td></tr>';
+    const emptyMsg = active.length
+      ? 'No repair trucks match the current filters.'
+      : 'No for repair trucks added yet.';
+    forRepairLocalBody.innerHTML = `<tr><td colspan="9" class="empty">${emptyMsg}</td></tr>`;
     return;
   }
 
@@ -4474,21 +4504,12 @@ if (garageTruckClearBtn) {
   garageTruckClearBtn.addEventListener('click', clearGarageTruckSearch);
 }
 
-if (addForRepairButton && forRepairLocalForm) {
-  addForRepairButton.addEventListener('click', () => {
-    forRepairLocalForm.hidden = false;
-    addForRepairButton.hidden = true;
-    if (forRepairLocalStatus) forRepairLocalStatus.textContent = '';
-  });
+if (addForRepairButton) {
+  addForRepairButton.addEventListener('click', toggleRepairTruckForm);
 }
 
-if (cancelForRepairButton && forRepairLocalForm) {
-  cancelForRepairButton.addEventListener('click', () => {
-    forRepairLocalForm.reset();
-    forRepairLocalForm.hidden = true;
-    if (addForRepairButton) addForRepairButton.hidden = false;
-    if (forRepairLocalStatus) forRepairLocalStatus.textContent = '';
-  });
+if (cancelForRepairButton) {
+  cancelForRepairButton.addEventListener('click', hideRepairTruckForm);
 }
 
 if (forRepairGroupFilter) forRepairGroupFilter.addEventListener('change', renderLocalForRepairTrucks);
@@ -4530,9 +4551,7 @@ if (forRepairLocalForm) {
     }
 
     saveForRepairTruck(record);
-    forRepairLocalForm.reset();
-    forRepairLocalForm.hidden = true;
-    if (addForRepairButton) addForRepairButton.hidden = false;
+    hideRepairTruckForm();
     if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Saved locally. Syncing to cloud...';
 
     try {
