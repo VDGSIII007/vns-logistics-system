@@ -122,6 +122,9 @@ const cancelForRepairButton = document.getElementById('cancel-for-repair-button'
 const forRepairLocalForm = document.getElementById('for-repair-local-form');
 const forRepairLocalStatus = document.getElementById('for-repair-local-status');
 const forRepairLocalBody = document.getElementById('for-repair-local-body');
+const forRepairGroupFilter = document.getElementById('for-repair-group-filter');
+const forRepairStatusFilter = document.getElementById('for-repair-status-filter');
+const forRepairPlateSearch = document.getElementById('for-repair-plate-search');
 
 let savedRepairRecords = [];
 let todayRepairRecords = [];
@@ -1574,11 +1577,24 @@ async function completeForRepairTruck(index) {
   }
 }
 
+function applyRepairTruckFilters(records) {
+  const group = forRepairGroupFilter?.value || '';
+  const status = forRepairStatusFilter?.value || '';
+  const plate = (forRepairPlateSearch?.value || '').toLowerCase().trim();
+  return records.filter(r => {
+    if (group && (r.groupCategory || '').toLowerCase() !== group.toLowerCase()) return false;
+    if (status && (r.repairStatus || '').toLowerCase() !== status.toLowerCase()) return false;
+    if (plate && !(r.plateNumber || '').toLowerCase().includes(plate)) return false;
+    return true;
+  });
+}
+
 function renderLocalForRepairTrucks() {
   if (!forRepairLocalBody) return;
-  const visible = localForRepairTrucks.filter(r =>
+  const active = localForRepairTrucks.filter(r =>
     !r.isDeleted && !/^(completed|deleted)$/i.test(r.repairStatus || '')
   );
+  const visible = applyRepairTruckFilters(active);
   if (!visible.length) {
     forRepairLocalBody.innerHTML = '<tr><td colspan="9" class="empty">No for repair trucks added yet.</td></tr>';
     return;
@@ -4474,6 +4490,10 @@ if (cancelForRepairButton && forRepairLocalForm) {
     if (forRepairLocalStatus) forRepairLocalStatus.textContent = '';
   });
 }
+
+if (forRepairGroupFilter) forRepairGroupFilter.addEventListener('change', renderLocalForRepairTrucks);
+if (forRepairStatusFilter) forRepairStatusFilter.addEventListener('change', renderLocalForRepairTrucks);
+if (forRepairPlateSearch) forRepairPlateSearch.addEventListener('input', renderLocalForRepairTrucks);
 
 if (forRepairLocalForm) {
   initRepairPlateDropdowns();

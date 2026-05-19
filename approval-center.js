@@ -22,6 +22,7 @@ const acState = {
   view: "approval",
   sort: "date-desc",
   search: "",
+  typeFilter: "all",
   activeItem: null,
   selectedRepairIds: new Set(),
   selectedCashIds: new Set(),
@@ -905,9 +906,21 @@ async function refreshApprovalItems(message = "") {
   if (message) setApprovalMessage(message, "success");
 }
 
+function matchesTypeFilter(item) {
+  const f = acState.typeFilter;
+  if (!f || f === "all") return true;
+  if (item.type === "cash") return normalizeCashRequestType(item.raw || {}) === f;
+  if (item.type === "repair") return normalizeRepairRequestCategory(item.raw || {}) === f;
+  return true;
+}
+
 function applyApprovalFilters() {
   const query = acState.search.trim().toLowerCase();
   let list = acState.items.filter(item => item.type === acState.tab && (acState.view === "history" ? item.isHistory : item.isPending));
+
+  if (acState.typeFilter && acState.typeFilter !== "all") {
+    list = list.filter(matchesTypeFilter);
+  }
 
   if (query) {
     list = list.filter(item => [item.module, item.id, item.systemReference, item.requestNo, acDate(item.date), item.plate, item.group, item.requestCategory, friendlyRepairCategory(item.requestCategory), item.cashType, item.shortDetails, item.payee, item.status, finalStatusLabel(item), friendlyApprovalStatus(item.status), item.amount]
@@ -2194,6 +2207,38 @@ function activateApprovalTab(tab) {
   acState.tab = tab;
 }
 
+const CASH_TYPE_OPTIONS = [
+  { value: "all", label: "All Types" },
+  { value: "Diesel PO", label: "Diesel PO" },
+  { value: "Trip Budget", label: "Trip Budget" },
+  { value: "Bali / Cash Advance", label: "Bali / Cash Advance" },
+  { value: "Other Cash Request", label: "Other / Cash Advance" }
+];
+
+const REPAIR_TYPE_OPTIONS = [
+  { value: "all", label: "All Types" },
+  { value: "Parts Request", label: "Parts Request" },
+  { value: "Labor Payment Request", label: "Labor Payment Request" },
+  { value: "Equipment / Tools Request", label: "Equipment Request" },
+  { value: "Tire / Wheel Request", label: "Tire / Wheel Request" },
+  { value: "Other Repair Request", label: "Other Repair Request" }
+];
+
+function updateTypeFilterOptions() {
+  const select = ac$("ac-type");
+  if (!select) return;
+  const tab = acState.tab;
+  if (tab === "payroll") {
+    select.hidden = true;
+    return;
+  }
+  const options = tab === "cash" ? CASH_TYPE_OPTIONS : REPAIR_TYPE_OPTIONS;
+  select.hidden = false;
+  select.innerHTML = options.map(opt =>
+    `<option value="${acEscape(opt.value)}"${opt.value === acState.typeFilter ? " selected" : ""}>${acEscape(opt.label)}</option>`
+  ).join("");
+}
+
 function bindApprovalEvents() {
   document.querySelectorAll(".ops-tab").forEach(button => {
     button.addEventListener("click", () => {
@@ -2202,6 +2247,8 @@ function bindApprovalEvents() {
         tab.setAttribute("aria-selected", tab === button ? "true" : "false");
       });
       acState.tab = button.dataset.tab;
+      acState.typeFilter = "all";
+      updateTypeFilterOptions();
       applyApprovalFilters();
     });
   });
@@ -2233,6 +2280,11 @@ function bindApprovalEvents() {
     acState.sort = event.target.value;
     applyApprovalFilters();
   });
+  const typeFilter = ac$("ac-type");
+  if (typeFilter) typeFilter.addEventListener("change", event => {
+    acState.typeFilter = event.target.value;
+    applyApprovalFilters();
+  });
   if (refresh) refresh.addEventListener("click", () => {
     refreshApprovalItems();
   });
@@ -2254,6 +2306,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setApprovalAccess();
   bindApprovalEvents();
   activateApprovalTab(tabFromUrl());
+  updateTypeFilterOptions();
   acState.repairRecords = readRealLocalRepairRecords();
   if (!acState.repairRecords.length) acState.repairRecords = readFallbackRepairRecords();
   acState.cashRecords = readLocalCashRecords();
