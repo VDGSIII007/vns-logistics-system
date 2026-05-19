@@ -182,8 +182,21 @@ function isPaid(record) {
 }
 
 function isPaymentUnpaid(record, allowed = ["", "unpaid", "for payment"]) {
-  const paymentStatus = normalizedValue(record, ["paymentStatus", "Payment_Status"]);
+  const paymentStatus = normalizedValue(record, ["paymentStatus", "Payment_Status", "payment_status", "Posted_Status", "postedStatus"]);
   return !paymentStatus || allowed.includes(paymentStatus) || paymentStatus !== "paid";
+}
+
+function isCashPaymentReady(record = {}) {
+  if (record?.isDeleted || record?.is_deleted || String(record?.Is_Deleted || "").trim().toLowerCase() === "true") return false;
+  if (isPaid(record)) return false;
+
+  const status = normalizedValue(record, ["status", "Status", "Review_Status", "reviewStatus"]);
+  const approvalStatus = normalizedValue(record, ["approval_status", "approvalStatus", "Approval_Status"]);
+  const paymentStatus = normalizedValue(record, ["payment_status", "paymentStatus", "Payment_Status", "Posted_Status", "postedStatus"]);
+  const approved = status === "approved" || approvalStatus === "approved";
+  const unpaid = !paymentStatus || ["unpaid", "pending", "pending payment", "for payment"].includes(paymentStatus);
+
+  return approved && unpaid;
 }
 
 function isRepairPaymentReady(record) {
@@ -229,9 +242,7 @@ function isApprovedForPayment(type, record) {
     return (status === "approved" || approvalStatus === "approved" || workflowStatus === "approved") && isPaymentUnpaid(record);
   }
   if (type === "cash") {
-    const statuses = valuesFrom(record, ["Review_Status", "reviewStatus", "Status", "status", "Approval_Status", "approvalStatus", "Payment_Status", "paymentStatus", "Posted_Status", "postedStatus"]);
-    if (statuses.some(value => statusMatches(value, PAYMENT_FINAL_STATUSES))) return false;
-    return statuses.some(value => statusMatches(value, PAYMENT_READY_STATUSES)) && isPaymentUnpaid(record);
+    return isCashPaymentReady(record);
   }
   if (type === "repair") return isRepairPaymentReady(record);
   return (status === "approved" || approvalStatus === "approved") && isPaymentUnpaid(record, ["", "unpaid", "for deposit"]);
@@ -276,7 +287,7 @@ function makeItem(type, module, record, fallbackId) {
     status: paymentStatusLabel(record),
     paid: isPaid(record),
     cloudId: type === "cash"
-      ? String(record.Cash_ID || record.Record_ID || "").trim()
+      ? String(record.request_id || record.requestId || record.Cash_ID || record.Record_ID || record.id || "").trim()
       : type === "repair"
         ? String(record.Request_ID || record.requestId || record.Repair_Record_ID || "").trim()
         : ""
@@ -330,8 +341,13 @@ function currentUser() {
 async function cashMarkPaidPost(raw) {
   const now = new Date().toISOString();
   const user = currentUser();
+  const requestId = String(raw.request_id || raw.requestId || raw.Cash_ID || raw.cashId || raw.Record_ID || raw.id || "").trim();
+  if (!requestId) throw new Error("Cash record has no request ID - cannot mark paid.");
+  const notes = String(raw.notes || raw.Notes || raw.remarks || raw.Remarks || "").trim();
   const record = {
     ...raw,
+    request_id: requestId,
+    Cash_ID: requestId,
     Review_Status: "Paid",
     Status: "Paid",
     Posted_Status: "Paid",
@@ -342,6 +358,34 @@ async function cashMarkPaidPost(raw) {
     Released_At: now,
     Updated_At: now
   };
+
+  const payload = {
+    request_id: requestId,
+    status: "Paid",
+    payment_status: "Paid",
+    paid_by: user,
+    paid_at: now,
+    notes
+  };
+
+  try {
+    console.log("Calling cash payment API", requestId, payload);
+    const response = await fetch(`${VNS_WORKER_API_BASE}/api/cash/update-status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json().catch(() => null);
+    console.log("Cash payment Supabase response", result);
+    if (!response.ok || !result?.ok) {
+      throw new Error(result?.error || `Cash Supabase update failed (${response.status})`);
+    }
+    backupCashPaymentToSheets(record);
+    return result;
+  } catch (error) {
+    console.warn("Cash payment Supabase update failed; using Sheets fallback.", error);
+  }
+
   const response = await fetch(CASH_APP_SCRIPT_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -354,6 +398,38 @@ async function cashMarkPaidPost(raw) {
   const result = await response.json();
   if (!isCloudSuccess(result)) throw new Error(result?.error || result?.message || "Cash update returned an error.");
   return result;
+}
+
+function backupCashPaymentToSheets(record) {
+  console.log("Cash payment backup started");
+  fetch(CASH_APP_SCRIPT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ syncKey: CASH_SYNC_KEY, action: "updateEntry", record })
+  })
+    .then(response => response.json())
+    .then(result => {
+      if (!isCloudSuccess(result)) throw new Error(result?.error || result?.message || "Cash payment backup failed.");
+      console.log("Cash payment backup succeeded");
+      return cashBackupStatusPost(record.request_id || record.Cash_ID, "synced");
+    })
+    .catch(error => {
+      console.log("Cash payment backup failed", error);
+      cashBackupStatusPost(record.request_id || record.Cash_ID, "failed", error?.message || "Cash payment backup failed");
+    });
+}
+
+function cashBackupStatusPost(requestId, backupStatus, backupError = "") {
+  if (!requestId) return Promise.resolve();
+  return fetch(`${VNS_WORKER_API_BASE}/api/cash/backup-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      request_id: requestId,
+      backup_status: backupStatus,
+      backup_error: backupError
+    })
+  }).catch(error => console.warn("Cash backup status update failed", error));
 }
 
 async function repairMarkPaidPost(raw) {
@@ -531,6 +607,18 @@ function normalizeListResponse(data) {
 const normalizeCashListResponse = normalizeListResponse;
 
 async function loadCloudCashRecords() {
+  try {
+    const response = await fetch(`${VNS_WORKER_API_BASE}/api/cash/list?limit=500`);
+    if (!response.ok) throw new Error(`Cash Supabase list failed: ${response.status}`);
+    const data = await response.json();
+    if (data && data.ok === false) throw new Error(data.error || data.message || "Cash Supabase list returned an error.");
+    const records = normalizeCashListResponse(data).filter(record => record && typeof record === "object");
+    console.log("Payment Queue Supabase cash records loaded", records.length);
+    return records;
+  } catch (error) {
+    console.warn("Payment Queue cash Supabase load failed; using Google Sheets fallback.", error);
+  }
+
   const params = new URLSearchParams({
     action: "listEntries",
     syncKey: CASH_SYNC_KEY
@@ -590,8 +678,8 @@ async function loadCashPaymentItems() {
     records = loadLocalCashRecords();
   }
 
-  const approved = records.filter(record => record && !record.isDeleted && (isApprovedForPayment("cash", record) || isPaid(record)));
-  console.log("Payment Queue approved cash records", approved.filter(record => !isPaid(record)).length);
+  const approved = records.filter(record => record && isCashPaymentReady(record));
+  console.log("Payment Queue approved cash records", approved.length);
   return approved.map((record, index) => makeItem("cash", "Cash / PO / Bali", record, `CASH-${index + 1}`));
 }
 

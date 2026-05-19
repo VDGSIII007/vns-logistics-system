@@ -347,11 +347,18 @@ export async function updateCashRequestStatus(env, input = {}) {
   }
 
   const now = new Date().toISOString();
+  const status = textOrNull(input.status || input.Status);
+  const approvalStatus = textOrNull(input.approval_status || input.approvalStatus || input.Approval_Status);
+  const paymentStatus = textOrNull(input.payment_status || input.paymentStatus || input.Payment_Status || input.Posted_Status);
+  const isPaidUpdate = status === "Paid" || paymentStatus === "Paid";
   const payload = {
-    status: textOrNull(input.status || input.Status) || "Approved",
-    approval_status: textOrNull(input.approval_status || input.approvalStatus || input.Approval_Status) || "Approved",
+    status: status || "Approved",
+    approval_status: approvalStatus || (isPaidUpdate ? null : "Approved"),
+    payment_status: paymentStatus,
     approved_by: textOrNull(input.approved_by || input.approvedBy || input.Approved_By),
-    approved_at: timestampOrNull(input.approved_at || input.approvedAt || input.Approved_At) || now,
+    approved_at: timestampOrNull(input.approved_at || input.approvedAt || input.Approved_At) || (isPaidUpdate ? null : now),
+    paid_by: textOrNull(input.paid_by || input.paidBy || input.Paid_By || input.Released_By),
+    paid_at: timestampOrNull(input.paid_at || input.paidAt || input.Paid_At || input.Released_At) || (isPaidUpdate ? now : null),
     remarks: textOrNull(input.notes || input.Notes || input.remarks || input.Remarks),
     backup_status: "pending",
     backup_synced_at: null,
