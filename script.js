@@ -72,6 +72,8 @@ const recordsDateFromFilter = document.getElementById('records-date-from-filter'
 const recordsDateToFilter = document.getElementById('records-date-to-filter');
 const recordsClearFiltersButton = document.getElementById('records-clear-filters-button');
 const recordsQuickFilterButtons = document.querySelectorAll('[data-records-quick-filter]');
+const savedRepairCategoryTabs = document.querySelectorAll('[data-saved-repair-category]');
+const savedRepairSubtabButtons = document.querySelectorAll('[data-saved-repair-subtab]');
 const recordsStatus = document.getElementById('records-status');
 const recordsCount = document.getElementById('records-count');
 const recordsTotalCost = document.getElementById('records-total-cost');
@@ -126,6 +128,8 @@ let garageTruckRecords = [];
 let garageTruckSearchQuery = '';
 let localForRepairTrucks = [];
 let savedRecordsQuickFilter = '';
+let activeSavedRepairCategory = 'equipment';
+let activeSavedRepairSubtab = 'active';
 let savedParsedRequestSignature = '';
 let savedParsedRowKeys = new Set();
 let currentRecordDetails = null;
@@ -2271,7 +2275,131 @@ function getRepairRecordDateByType(record, dateType = 'dateRequested') {
   return '';
 }
 
-function filterSavedRecords(records) {
+function normalizeRepairRequestType(record = {}) {
+  return String(
+    getRecordValue(record, 'Request_Type') ||
+    getRecordValue(record, 'request_type') ||
+    getRecordValue(record, 'Type') ||
+    getRecordValue(record, 'type') ||
+    ''
+  ).replace(/\s+/g, ' ').trim();
+}
+
+function getSavedRepairCategory(record = {}) {
+  const requestType = normalizeRepairRequestType(record);
+  const category = String(getRecordValue(record, 'Category') || getRecordValue(record, 'category') || '').trim();
+  const repairParts = String(
+    getRecordValue(record, 'Repair_Parts') ||
+    getRecordValue(record, 'repair_items') ||
+    getRecordValue(record, 'Parts_Item') ||
+    getRecordValue(record, 'Item_Name') ||
+    getRecordValue(record, 'itemName') ||
+    ''
+  ).trim();
+  const laborText = String(
+    getRecordValue(record, 'Mechanic') ||
+    getRecordValue(record, 'Worker') ||
+    getRecordValue(record, 'Laborer') ||
+    getRecordValue(record, 'Work_Done') ||
+    getRecordValue(record, 'Payee') ||
+    ''
+  ).trim();
+  const text = [requestType, category].join(' ').toLowerCase();
+  const combined = [requestType, category, repairParts, laborText].join(' ').toLowerCase();
+
+  if (/\b(tire|wheel)\b/.test(text)) return 'other';
+  if (/\b(equipment|safety equipment|tools?)\b/.test(text)) return 'equipment';
+  if (/\b(labor|mechanic|worker)\b/.test(combined)) return 'labor';
+  if (/\b(parts?|repair parts?)\b/.test(text) || repairParts) return 'parts';
+  return 'other';
+}
+
+function getSavedRepairStatusBundle(record = {}) {
+  return {
+    status: normalizeStatusFilterValue(getRecordValue(record, 'Status')),
+    approvalStatus: normalizeStatusFilterValue(
+      getRecordValue(record, 'Approval_Status') ||
+      getRecordValue(record, 'approval_status') ||
+      getRecordValue(record, 'approvalStatus')
+    ),
+    paymentStatus: normalizeStatusFilterValue(getRepairPaymentValue(record, 'paymentStatus')),
+    repairStatus: normalizeStatusFilterValue(
+      getRecordValue(record, 'Repair_Status') ||
+      getRecordValue(record, 'repair_status') ||
+      getRecordValue(record, 'repairStatus')
+    )
+  };
+}
+
+function isSavedRepairHistory(record = {}) {
+  const { status, approvalStatus, paymentStatus, repairStatus } = getSavedRepairStatusBundle(record);
+  return paymentStatus === 'paid' ||
+    ['completed', 'finished', 'done'].includes(repairStatus) ||
+    ['rejected', 'cancelled', 'canceled', 'returned'].includes(approvalStatus) ||
+    ['completed', 'paid', 'cancelled', 'canceled', 'rejected'].includes(status);
+}
+
+function isSavedRepairActive(record = {}) {
+  if (isSavedRepairHistory(record)) return false;
+  const { status, approvalStatus, paymentStatus, repairStatus } = getSavedRepairStatusBundle(record);
+  const allowedApproval = ['', 'pending', 'for approval', 'approved'].includes(approvalStatus);
+  const allowedPayment = ['', 'unpaid', 'pending', 'for deposit'].includes(paymentStatus);
+  const allowedRepair = ['', 'pending', 'not finished', 'for repair', 'ongoing', 'ongoing repair', 'waiting parts'].includes(repairStatus);
+  const blockedStatus = ['completed', 'paid', 'cancelled', 'canceled', 'rejected', 'deleted'].includes(status);
+  return allowedApproval && allowedPayment && allowedRepair && !blockedStatus;
+}
+
+function applySavedRepairTypeAndHistoryFilters(records) {
+  return records.filter(record => {
+    const category = getSavedRepairCategory(record);
+    const matchesCategory = category === activeSavedRepairCategory;
+    const matchesSubtab = activeSavedRepairSubtab === 'history'
+      ? isSavedRepairHistory(record)
+      : isSavedRepairActive(record);
+    return matchesCategory && matchesSubtab;
+  });
+}
+
+function updateSavedRepairTabCounts(records) {
+  const counts = { equipment: 0, parts: 0, labor: 0, other: 0 };
+  records.forEach(record => {
+    const category = getSavedRepairCategory(record);
+    const matchesSubtab = activeSavedRepairSubtab === 'history'
+      ? isSavedRepairHistory(record)
+      : isSavedRepairActive(record);
+    if (matchesSubtab && counts[category] !== undefined) counts[category] += 1;
+  });
+  Object.entries(counts).forEach(([category, count]) => {
+    const badge = document.querySelector(`[data-saved-repair-category-count="${category}"]`);
+    if (badge) badge.textContent = String(count);
+  });
+}
+
+function updateSavedRepairTabState() {
+  savedRepairCategoryTabs.forEach(button => {
+    const active = button.dataset.savedRepairCategory === activeSavedRepairCategory;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
+  });
+  savedRepairSubtabButtons.forEach(button => {
+    const active = button.dataset.savedRepairSubtab === activeSavedRepairSubtab;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
+  });
+}
+
+function getAlignedSavedRepairRecords(records) {
+  const deletedIds = readRepairDeletedIds();
+  const alignedRecords = records.filter(record =>
+    !isMisalignedSavedRecord(record) &&
+    !deletedIds.has(getRepairRecordId(record)) &&
+    String(getRecordValue(record, 'Is_Deleted')).toUpperCase() !== 'TRUE'
+  );
+  hiddenMisalignedRecordCount = records.length - alignedRecords.length;
+  return alignedRecords;
+}
+
+function recordMatchesSavedRepairControls(record) {
   const plate = (recordsPlateFilter?.value || '').trim().toLowerCase();
   const requestType = recordsTypeFilter?.value || '';
   const repairStatus = normalizeStatusFilterValue(recordsRepairStatusFilter?.value || '');
@@ -2282,42 +2410,45 @@ function filterSavedRecords(records) {
   const dateTo = normalizeDateForFilter(recordsDateToFilter?.value || '');
   const dateFilterActive = Boolean(dateFrom || dateTo);
 
-  const deletedIds = readRepairDeletedIds();
-  const alignedRecords = records.filter(record =>
-    !isMisalignedSavedRecord(record) &&
-    !deletedIds.has(getRepairRecordId(record))
-  );
-  hiddenMisalignedRecordCount = records.length - alignedRecords.length;
+  const recordPlate = String(getRecordValue(record, 'Plate_Number')).toLowerCase();
+  const recordType = normalizeRepairRequestType(record);
+  const recordRepairStatus = String(getRecordValue(record, 'Repair_Status'));
+  const recordPaymentStatus = String(getRepairPaymentValue(record, 'paymentStatus'));
+  const recordApprovalStatus = String(getRecordValue(record, 'Approval_Status') || getRecordValue(record, 'approvalStatus') || getRecordValue(record, 'Status'));
+  const normalizedRepairStatus = normalizeStatusFilterValue(recordRepairStatus);
+  const normalizedPaymentStatus = normalizeStatusFilterValue(recordPaymentStatus);
+  const normalizedApprovalStatus = normalizeStatusFilterValue(recordApprovalStatus);
+  const matchesApprovalStatus = !approvalStatus ||
+    normalizedApprovalStatus === approvalStatus ||
+    (approvalStatus === 'for approval' && normalizedApprovalStatus === 'draft');
+  const recordDate = getRepairRecordDateByType(record, dateType);
+  const matchesQuickFilter =
+    !savedRecordsQuickFilter ||
+    (savedRecordsQuickFilter === 'unpaid' && normalizedPaymentStatus === 'unpaid') ||
+    (savedRecordsQuickFilter === 'paid' && isRepairPaidRecord(record)) ||
+    (savedRecordsQuickFilter === 'forDeposit' && normalizedPaymentStatus === 'for deposit') ||
+    (savedRecordsQuickFilter === 'notFinished' && !['done', 'completed', 'cancelled', 'canceled'].includes(normalizedRepairStatus)) ||
+    (savedRecordsQuickFilter === 'completed' && ['done', 'completed', 'finished'].includes(normalizedRepairStatus));
 
-  return alignedRecords.filter(record => {
-    const recordPlate = String(getRecordValue(record, 'Plate_Number')).toLowerCase();
-    const recordType = String(getRecordValue(record, 'Request_Type'));
-    const recordRepairStatus = String(getRecordValue(record, 'Repair_Status'));
-    const recordPaymentStatus = String(getRepairPaymentValue(record, 'paymentStatus'));
-    const recordApprovalStatus = String(getRecordValue(record, 'Approval_Status') || getRecordValue(record, 'approvalStatus') || getRecordValue(record, 'Status'));
-    const normalizedRepairStatus = normalizeStatusFilterValue(recordRepairStatus);
-    const normalizedPaymentStatus = normalizeStatusFilterValue(recordPaymentStatus);
-    const normalizedApprovalStatus = normalizeStatusFilterValue(recordApprovalStatus);
-    const matchesApprovalStatus = !approvalStatus ||
-      normalizedApprovalStatus === approvalStatus ||
-      (approvalStatus === 'for approval' && normalizedApprovalStatus === 'draft');
-    const recordDate = getRepairRecordDateByType(record, dateType);
-    const matchesQuickFilter =
-      !savedRecordsQuickFilter ||
-      (savedRecordsQuickFilter === 'unpaid' && normalizedPaymentStatus === 'unpaid') ||
-      (savedRecordsQuickFilter === 'paid' && isRepairPaidRecord(record)) ||
-      (savedRecordsQuickFilter === 'forDeposit' && normalizedPaymentStatus === 'for deposit') ||
-      (savedRecordsQuickFilter === 'notFinished' && !['done', 'completed', 'cancelled'].includes(normalizedRepairStatus)) ||
-      (savedRecordsQuickFilter === 'completed' && ['done', 'completed'].includes(normalizedRepairStatus));
+  return (!plate || recordPlate.includes(plate)) &&
+    (!requestType || recordType === requestType) &&
+    (!repairStatus || normalizedRepairStatus === repairStatus) &&
+    (!paymentStatus || normalizedPaymentStatus === paymentStatus) &&
+    matchesApprovalStatus &&
+    (!dateFilterActive || (recordDate && (!dateFrom || recordDate >= dateFrom) && (!dateTo || recordDate <= dateTo))) &&
+    matchesQuickFilter;
+}
 
-    return (!plate || recordPlate.includes(plate)) &&
-      (!requestType || recordType === requestType) &&
-      (!repairStatus || normalizedRepairStatus === repairStatus) &&
-      (!paymentStatus || normalizedPaymentStatus === paymentStatus) &&
-      matchesApprovalStatus &&
-      (!dateFilterActive || (recordDate && (!dateFrom || recordDate >= dateFrom) && (!dateTo || recordDate <= dateTo))) &&
-      matchesQuickFilter;
+function filterSavedRecords(records) {
+  const filteredByControls = getAlignedSavedRepairRecords(records).filter(recordMatchesSavedRepairControls);
+  updateSavedRepairTabCounts(filteredByControls);
+  const filtered = applySavedRepairTypeAndHistoryFilters(filteredByControls);
+  console.log('Saved repairs filtered', {
+    activeCategory: activeSavedRepairCategory,
+    activeSubtab: activeSavedRepairSubtab,
+    count: filtered.length
   });
+  return filtered;
 }
 
 function setQuickFilterActiveState() {
@@ -2476,6 +2607,7 @@ function renderTodayRepairRequests() {
 
 function renderSavedRecords() {
   if (!savedRecordsBody) return;
+  updateSavedRepairTabState();
   const records = filterSavedRecords(savedRepairRecords);
   renderTodayRepairRequests();
   updateRecordsSummary(records);
@@ -4448,6 +4580,24 @@ if (clearViberFollowupBtn) {
 if (recordsClearFiltersButton) {
   recordsClearFiltersButton.addEventListener('click', clearSavedRecordFilters);
 }
+
+savedRepairCategoryTabs.forEach(button => {
+  button.addEventListener('click', () => {
+    activeSavedRepairCategory = button.dataset.savedRepairCategory || 'equipment';
+    console.log('Saved repair category tab changed', activeSavedRepairCategory);
+    updateSavedRepairTabState();
+    renderSavedRecords();
+  });
+});
+
+savedRepairSubtabButtons.forEach(button => {
+  button.addEventListener('click', () => {
+    activeSavedRepairSubtab = button.dataset.savedRepairSubtab || 'active';
+    console.log('Saved repair subtab changed', activeSavedRepairSubtab);
+    updateSavedRepairTabState();
+    renderSavedRecords();
+  });
+});
 
 recordsQuickFilterButtons.forEach(button => {
   button.addEventListener('click', () => applySavedRecordsQuickFilter(button.dataset.recordsQuickFilter || ''));
