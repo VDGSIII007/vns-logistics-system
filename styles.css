@@ -862,66 +862,96 @@ body.payroll-page{
 }
 .saved-repair-tabs-block{
   display:grid;
-  gap:10px;
-  margin:0 0 14px;
+  gap:8px;
+  margin:0 0 12px;
 }
-.saved-repair-category-tabs,
+.saved-repair-category-tabs{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  flex-wrap:wrap;
+}
 .saved-repair-history-tabs{
   display:flex;
   align-items:center;
-  gap:8px;
+  gap:6px;
   flex-wrap:wrap;
 }
-.saved-repair-category-tab,
-.saved-repair-subtab{
+.saved-repair-category-tab{
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  gap:8px;
-  min-height:42px;
-  border:1px solid #d1d5db;
+  gap:7px;
+  min-height:38px;
+  border:1px solid #e5e7eb;
   border-radius:999px;
   background:#fff;
   color:#374151;
-  padding:0 16px;
+  padding:0 14px;
   font:inherit;
-  font-size:.84rem;
+  font-size:.83rem;
   font-weight:900;
   cursor:pointer;
   white-space:nowrap;
+  transition:border-color .15s,background .15s,color .15s;
+}
+.saved-repair-category-tab:not(.active):hover{
+  border-color:#f2b6ba;
+  background:#fff7f7;
+  color:var(--red);
 }
 .saved-repair-category-tab.active{
   border-color:var(--red);
   background:var(--red);
   color:#fff;
-  box-shadow:0 10px 24px rgba(215,25,32,.18);
+  box-shadow:0 4px 12px rgba(215,25,32,.15);
 }
 .saved-repair-subtab{
-  min-height:36px;
-  padding:0 13px;
-  font-size:.8rem;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:28px;
+  border:1px solid #e5e7eb;
+  border-radius:999px;
+  background:transparent;
+  color:#6b7280;
+  padding:0 12px;
+  font:inherit;
+  font-size:.77rem;
+  font-weight:900;
+  cursor:pointer;
+  white-space:nowrap;
+  transition:border-color .15s,background .15s,color .15s;
+}
+.saved-repair-subtab:not(.active):hover{
+  border-color:#9ca3af;
+  color:#374151;
 }
 .saved-repair-subtab.active{
-  border-color:#111827;
-  background:#111827;
+  border-color:#374151;
+  background:#374151;
   color:#fff;
 }
 .saved-repair-category-tab span{
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  min-width:24px;
-  height:24px;
+  min-width:20px;
+  height:20px;
   border-radius:999px;
-  padding:0 7px;
+  padding:0 6px;
   background:#f3f4f6;
-  color:#374151;
-  font-size:.72rem;
+  color:#6b7280;
+  font-size:.7rem;
   font-weight:900;
 }
+.saved-repair-category-tab:not(.active):hover span{
+  background:#fde8e8;
+  color:var(--red);
+}
 .saved-repair-category-tab.active span{
-  background:rgba(255,255,255,.18);
-  color:#fff;
+  background:rgba(255,255,255,.9);
+  color:var(--red);
 }
 .saved-repair-filter-card.compact{
   gap:14px;
@@ -1778,9 +1808,14 @@ body.payroll-page{
   .saved-repair-history-tabs{
     align-items:stretch;
   }
-  .saved-repair-category-tab,
+  .saved-repair-category-tab{
+    flex:1 1 180px;
+    max-width:100%;
+    white-space:normal;
+    text-align:center;
+  }
   .saved-repair-subtab{
-    flex:1 1 210px;
+    flex:1 1 140px;
     max-width:100%;
     white-space:normal;
     text-align:center;
