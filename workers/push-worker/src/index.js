@@ -32,6 +32,13 @@ import {
   updateRepairBackupStatus,
   upsertRepairRequestToSupabase
 } from "./repair-api.js";
+import {
+  createPayrollBalanceEventInSupabase,
+  listPayrollRecordsFromSupabase,
+  listPersonBalancesFromSupabase,
+  updatePayrollStatusInSupabase,
+  upsertPayrollRecordToSupabase
+} from "./payroll-api.js";
 import { sendWebPush } from "./webpush.js";
 
 const JSON_HEADERS = {
@@ -51,6 +58,13 @@ const REPAIR_API_PATHS = new Set([
   "/api/repair/media/signed-url",
   "/api/repair/update-status",
   "/api/repair/backup-status"
+]);
+const PAYROLL_API_PATHS = new Set([
+  "/api/payroll/list",
+  "/api/payroll/create",
+  "/api/payroll/update-status",
+  "/api/payroll/balances",
+  "/api/payroll/balance-event"
 ]);
 const CORS_ALLOWED_ORIGINS = new Set([
   "https://portal.vns-logistics.com",
@@ -427,6 +441,90 @@ async function handleRepairUpdateStatus(request, env) {
   });
 }
 
+async function handlePayrollCreate(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
+
+  const result = await upsertPayrollRecordToSupabase(env, input);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Payroll save failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse({
+    ok: true,
+    payroll_id: result.payroll_id,
+    source: result.source,
+    record: result.record
+  });
+}
+
+async function handlePayrollList(url, env) {
+  const result = await listPayrollRecordsFromSupabase(env, url.searchParams);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Payroll list failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse(result);
+}
+
+async function handlePayrollUpdateStatus(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
+
+  const result = await updatePayrollStatusInSupabase(env, input);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Payroll status update failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse({
+    ok: true,
+    payroll_id: result.payroll_id,
+    source: result.source,
+    record: result.record
+  });
+}
+
+async function handlePayrollBalances(url, env) {
+  const result = await listPersonBalancesFromSupabase(env, url.searchParams);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Payroll balances fetch failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse(result);
+}
+
+async function handlePayrollBalanceEvent(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
+
+  const result = await createPayrollBalanceEventInSupabase(env, input);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Payroll balance event save failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse({
+    ok: true,
+    event_id: result.event_id,
+    source: result.source,
+    record: result.record
+  });
+}
+
 async function routeRequest(request, env) {
   const url = new URL(request.url);
   const isCashApiRoute = CASH_API_PATHS.has(url.pathname);
@@ -445,6 +543,14 @@ async function routeRequest(request, env) {
   if (request.method === "POST" && url.pathname === "/api/repair/update-status") return withCors(await handleRepairUpdateStatus(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/repair/backup-status") return withCors(await handleRepairBackupStatus(request, env), request);
   if (isRepairApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
+  const isPayrollApiRoute = PAYROLL_API_PATHS.has(url.pathname);
+  if (isPayrollApiRoute && request.method === "OPTIONS") return handleOptions(request);
+  if (request.method === "POST" && url.pathname === "/api/payroll/create") return withCors(await handlePayrollCreate(request, env), request);
+  if (request.method === "GET" && url.pathname === "/api/payroll/list") return withCors(await handlePayrollList(url, env), request);
+  if (request.method === "POST" && url.pathname === "/api/payroll/update-status") return withCors(await handlePayrollUpdateStatus(request, env), request);
+  if (request.method === "GET" && url.pathname === "/api/payroll/balances") return withCors(await handlePayrollBalances(url, env), request);
+  if (request.method === "POST" && url.pathname === "/api/payroll/balance-event") return withCors(await handlePayrollBalanceEvent(request, env), request);
+  if (isPayrollApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
   if (request.method === "GET" && url.pathname === "/api/push/check") return handleCheck(env);
   if (request.method === "GET" && url.pathname === "/api/push/debug-sources") return handleDebugSources(env);
   if (request.method === "GET" && url.pathname === "/api/push/debug-payment-queue") return handleDebugPaymentQueue(env);

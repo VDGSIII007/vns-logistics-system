@@ -97,6 +97,7 @@ function initPayrollPage() {
   newPayroll();
   loadPayrollRecordsFromCloud();
   loadSavedPayrollRecordsFromSupabase();
+  loadPersonBalancesFromWorker();
 }
 
 function bindPayrollMenu() {
@@ -411,7 +412,7 @@ function savePayrollRecord() {
         .then(() => setStatus("Saved locally and synced to Google Sheets.", "success"))
         .catch(error => {
           console.warn("Payroll cloud sync also failed", error);
-          setStatus("Saved locally. Cloud sync failed.", "warning");
+          setStatus("Payroll cloud sync failed. Saved locally only.", "warning");
         });
     });
   return record;
@@ -2411,6 +2412,42 @@ function loadSavedPayrollRecordsFromSupabase() {
     .catch(error => {
       console.warn("Payroll Supabase load failed; using local records", error);
       if (statusEl) statusEl.textContent = "Supabase not connected yet. Showing local records.";
+    });
+}
+
+// ── Worker: update payroll status only ───────────────────────────────────────
+async function updatePayrollStatusInWorker(payrollId, statusData) {
+  const response = await fetch(`${VNS_PAYROLL_WORKER_API_BASE}/api/payroll/update-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ payroll_id: payrollId, ...statusData })
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.ok) throw new Error(data?.error || `Payroll status update failed (${response.status})`);
+  return data;
+}
+
+// ── Worker: load person balances ─────────────────────────────────────────────
+function loadPersonBalancesFromWorker() {
+  fetch(`${VNS_PAYROLL_WORKER_API_BASE}/api/payroll/balances`)
+    .then(response => response.json())
+    .catch(() => null)
+    .then(data => {
+      if (!data?.ok || !Array.isArray(data.balances)) return;
+      data.balances.forEach(b => {
+        if (!b.person_name || !b.person_role) return;
+        const key = `${String(b.person_name).toLowerCase().replace(/\s+/g, " ").trim()}|${b.person_role}`;
+        payrollState.balances[key] = {
+          personName: b.person_name,
+          role: b.person_role,
+          runningBalance: parseNumber(b.current_balance)
+        };
+      });
+      writeJson(PEOPLE_BALANCES_KEY, payrollState.balances);
+      renderPayrollBalanceSection();
+    })
+    .catch(error => {
+      console.warn("Person balances load failed", error);
     });
 }
 
