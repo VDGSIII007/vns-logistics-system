@@ -81,7 +81,8 @@
             <option>Sugar</option>
             <option>Preform / Resin</option>
             <option>Caps / Crown</option>
-            <option>Needs Update / Unknown</option>
+            <option>2GO</option>
+            <option>Other / Needs Update</option>
           </select></label>
           <label><span>Plate Number</span><input id="plate-number" type="text" list="payroll-truck-plates" placeholder="ABC1234"></label>
           <label><span>Driver Name</span><input id="driver-name" type="text"></label>
@@ -89,11 +90,14 @@
           <label><span>Encoder Name</span><input id="encoder-name" type="text"></label>
           <label><span>Status</span><select id="payroll-status">
             <option>Draft</option>
+            <option>For Approval</option>
+            <option>Approved</option>
+            <option>For Deposit</option>
+            <option>Deposited</option>
             <option>Submitted</option>
             <option>Returned</option>
-            <option>Approved</option>
             <option>Rejected</option>
-            <option>Paid</option>
+            <option>Cancelled</option>
           </select></label>
           <label class="wide-field"><span>General Remarks</span><textarea id="general-remarks" rows="2"></textarea></label>
         </form>
@@ -160,6 +164,7 @@
             <button id="calculate-payroll-button" class="btn btn-outline" type="button">Calculate Payroll</button>
             <button id="save-draft-button" class="btn btn-primary" type="button">Save Draft</button>
             <button id="submit-payroll-button" class="btn btn-outline" type="button">Submit for Approval</button>
+            <button id="apply-deduction-button" class="btn btn-outline" type="button" disabled title="Coming next after payroll review is validated.">Apply Payroll Deduction</button>
           </div>
         </div>
         <span id="payroll-save-status" class="payroll-status-line"></span>
@@ -265,6 +270,37 @@
         </div>
         <div id="pasahod-budget-summary" class="payroll-summary-grid"></div>
       </section>
+
+      <section class="payroll-section-card payroll-balance-card">
+        <div class="payroll-card-head">
+          <div>
+            <p class="payroll-eyebrow">Balance Tracking</p>
+            <h2>Balance / Bali Summary</h2>
+            <p>Previous balance and new cash advance this cutoff. Loaded from approved cash requests in Supabase.</p>
+          </div>
+          <button id="refresh-bali-button" class="btn btn-outline" type="button">Refresh Balance</button>
+        </div>
+        <div id="payroll-bali-load-status" class="payroll-status-line"></div>
+        <div id="payroll-balance-section" class="payroll-balance-grid">
+          <div class="payroll-balance-person">
+            <h3>Driver Balance</h3>
+            <div class="paper-row"><span>Previous Balance</span><strong id="driver-prev-balance">₱0.00</strong></div>
+            <div class="paper-row"><span>New Bali / Cash Advance This Cutoff</span><strong id="driver-new-bali">₱0.00</strong></div>
+            <div class="paper-row"><span>Suggested Balance Deduction</span><strong id="driver-balance-deduction">₱0.00</strong></div>
+            <div class="paper-row net"><span>Balance After Payroll</span><strong id="driver-balance-after">₱0.00</strong></div>
+          </div>
+          <div class="payroll-balance-person">
+            <h3>Helper Balance</h3>
+            <div class="paper-row"><span>Previous Balance</span><strong id="helper-prev-balance">₱0.00</strong></div>
+            <div class="paper-row"><span>New Bali / Cash Advance This Cutoff</span><strong id="helper-new-bali">₱0.00</strong></div>
+            <div class="paper-row"><span>Suggested Balance Deduction</span><strong id="helper-balance-deduction">₱0.00</strong></div>
+            <div class="paper-row net"><span>Balance After Payroll</span><strong id="helper-balance-after">₱0.00</strong></div>
+          </div>
+        </div>
+        <p class="payroll-info-note" id="truck-monitoring-note">
+          Truck Monitoring data source not connected yet. Trip data will be pulled from Google Sheets once connected.
+        </p>
+      </section>
       </section>
 
       <section id="approval-payment-tab" class="payroll-tab-panel" data-vns-role="Admin">
@@ -321,7 +357,7 @@
         </div>
         <div class="payroll-filters">
           <label><span>Plate Number</span><input id="approval-filter-plate" type="text"></label>
-          <label><span>Group</span><select id="approval-filter-group"><option value="">All</option><option>Bottle</option><option>Sugar</option><option>Preform / Resin</option><option>Caps / Crown</option><option>Needs Update / Unknown</option></select></label>
+          <label><span>Group</span><select id="approval-filter-group"><option value="">All</option><option>Bottle</option><option>Sugar</option><option>Preform / Resin</option><option>Caps / Crown</option><option>2GO</option><option>Other / Needs Update</option></select></label>
           <label><span>Status</span><select id="approval-filter-status"><option value="">Submitted / For Review</option><option>Submitted</option><option>For Review</option></select></label>
           <label><span>From Date</span><input id="approval-filter-date-from" type="date"></label>
           <label><span>To Date</span><input id="approval-filter-date-to" type="date"></label>
@@ -344,12 +380,35 @@
         <div class="payroll-card-head">
           <div>
             <h2>Saved Payroll Records</h2>
-            <p>Local records saved in this browser.</p>
+            <p>Records saved to Supabase (falls back to local browser storage if not yet connected).</p>
+          </div>
+          <div class="payroll-toolbar">
+            <button id="refresh-payroll-records-button" class="btn btn-outline" type="button">Refresh Records</button>
           </div>
         </div>
+        <div id="payroll-records-load-status" class="payroll-status-line"></div>
         <div class="payroll-filters">
-          <label><span>Status</span><select id="filter-status"><option value="">All</option><option>Draft</option><option>Submitted / For Review</option><option>Returned</option><option>Approved / For Payment</option><option>Rejected</option><option>Paid</option></select></label>
-          <label><span>Group</span><select id="filter-group"><option value="">All</option><option>Sugar</option><option>Bottle</option><option>Preform</option><option>Resin</option><option>Caps</option><option>Crowns</option></select></label>
+          <label><span>Status</span><select id="filter-status">
+            <option value="">All</option>
+            <option>Draft</option>
+            <option>For Approval</option>
+            <option>Approved</option>
+            <option>For Deposit</option>
+            <option>Deposited</option>
+            <option>Submitted</option>
+            <option>Returned</option>
+            <option>Rejected</option>
+            <option>Cancelled</option>
+          </select></label>
+          <label><span>Group</span><select id="filter-group">
+            <option value="">All</option>
+            <option>Bottle</option>
+            <option>Sugar</option>
+            <option>Preform / Resin</option>
+            <option>Caps / Crown</option>
+            <option>2GO</option>
+            <option>Other / Needs Update</option>
+          </select></label>
           <label><span>Plate Number</span><input id="filter-plate" type="text"></label>
           <label><span>Driver</span><input id="filter-driver" type="text"></label>
           <label><span>Payroll Date</span><input id="filter-payroll-date" type="date"></label>
@@ -358,7 +417,9 @@
           <table class="payroll-table payroll-records-table">
             <thead>
               <tr>
-                <th>Payroll Date</th><th>Plate</th><th>Driver</th><th>Helper</th><th>Status</th><th>Total Expenses</th><th>Driver Net Pay</th><th>Helper Net Pay</th><th>Actions</th>
+                <th>Payroll Date</th><th>Plate</th><th>Driver</th><th>Helper</th>
+                <th>Status</th><th>Approval Status</th><th>Payment Status</th>
+                <th>Total Expenses</th><th>Driver Net Pay</th><th>Helper Net Pay</th><th>Actions</th>
               </tr>
             </thead>
             <tbody id="records-body"></tbody>

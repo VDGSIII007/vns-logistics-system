@@ -7,6 +7,7 @@ const PAYROLL_LIQUIDATION_SYNC_KEY = "vns-payroll-liquidation-sync-2026-Jay";
 const PAYROLL_TRUCK_MASTER_KEY = "vnsTruckMaster";
 const PAYROLL_MASTER_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbySWpFu-ZwtsC4uGK4uNgZSRlHUzS4bAMX4X0vAQjt-iuF7pbgT3loFGU2fU2YL4rq6pQ/exec";
 const PAYROLL_MASTER_SYNC_KEY = "vns-truck-sync-2026-Jay";
+const VNS_PAYROLL_WORKER_API_BASE = "https://vns-push-worker.santosvicenteiii.workers.dev";
 
 const payrollState = {
   currentId: null,
@@ -22,7 +23,9 @@ const payrollState = {
   sheetSelection: null,
   isSelectingSheetRange: false,
   truckMaster: [],
-  selectedTruckType: ""
+  selectedTruckType: "",
+  baliSummary: {},
+  supabaseSource: false
 };
 
 const amountFields = [
@@ -93,6 +96,7 @@ function initPayrollPage() {
   renderBalanceLedger();
   newPayroll();
   loadPayrollRecordsFromCloud();
+  loadSavedPayrollRecordsFromSupabase();
 }
 
 function bindPayrollMenu() {
@@ -136,6 +140,17 @@ function bindPayrollEvents() {
   $("save-rules-button").addEventListener("click", saveRules);
   $("delete-rule-button").addEventListener("click", deleteRule);
   $("load-sample-rules-button").addEventListener("click", loadSampleRules);
+
+  if ($("refresh-bali-button")) {
+    $("refresh-bali-button").addEventListener("click", () => {
+      const driver = $("driver-name")?.value || "";
+      const helper = $("helper-name")?.value || "";
+      loadBaliSummaryFromSupabase(driver, helper);
+    });
+  }
+  if ($("refresh-payroll-records-button")) {
+    $("refresh-payroll-records-button").addEventListener("click", loadSavedPayrollRecordsFromSupabase);
+  }
 
   ["filter-status", "filter-group", "filter-plate", "filter-driver", "filter-payroll-date"].forEach(id => {
     $(id).addEventListener("input", renderPayrollRecordsTable);
@@ -353,8 +368,9 @@ function normalizePayrollGroup(value) {
   if (key === "bottle" || key === "bottles") return "Bottle";
   if (key === "sugar") return "Sugar";
   if (key === "preform" || key === "resin" || key === "preform / resin" || compact === "preformresin") return "Preform / Resin";
-  if (key === "caps" || key === "crown" || key === "crowns" || key === "caps / crown" || key === "caps / crowns" || compact === "capscrown" || compact === "capscrowns") return "Caps / Crown";
-  if (key.includes("unknown") || key.includes("update")) return "Needs Update / Unknown";
+  if (key === "caps" || key === "crown" || key === "crowns" || key === "caps / crown" || key === "caps / crowns" || key === "caps & crown" || key === "caps & crowns" || compact === "capscrown" || compact === "capscrowns") return "Caps / Crown";
+  if (key === "2go" || key === "2 go" || compact === "2go") return "2GO";
+  if (key.includes("unknown") || key.includes("update") || key.includes("other")) return "Other / Needs Update";
   return raw;
 }
 
@@ -384,12 +400,19 @@ function savePayrollRecord() {
   renderPayrollRecordsTable();
   renderForApprovalQueue();
   renderWarnings(headerWarnings.concat(payrollState.warnings));
-  setStatus("Saved locally. Syncing to cloud...", "info");
-  syncPayrollRecordToCloud(record)
-    .then(() => setStatus("Saved locally and synced to cloud.", "success"))
-    .catch(error => {
-      console.warn("Payroll cloud sync failed", error);
-      setStatus("Saved locally. Cloud sync failed.", "warning");
+  setStatus("Saved locally. Syncing to Supabase...", "info");
+  savePayrollToSupabase(record)
+    .then(() => {
+      setStatus("Saved and synced to Supabase.", "success");
+    })
+    .catch(supabaseError => {
+      console.warn("Payroll Supabase save failed; trying Google Sheets fallback", supabaseError);
+      syncPayrollRecordToCloud(record)
+        .then(() => setStatus("Saved locally and synced to Google Sheets.", "success"))
+        .catch(error => {
+          console.warn("Payroll cloud sync also failed", error);
+          setStatus("Saved locally. Cloud sync failed.", "warning");
+        });
     });
   return record;
 }
@@ -590,6 +613,7 @@ function calculatePayroll(options = {}) {
   renderCalculationSummary();
   renderDriverHelperSummary();
   renderApprovalSection();
+  renderPayrollBalanceSection();
   renderWarnings(validatePayrollHeader().concat(payrollState.warnings));
   return totals;
 }
@@ -798,22 +822,26 @@ function renderPayrollRecordsTable() {
       <td>${escapeHtml(record.driverName)}</td>
       <td>${escapeHtml(record.helperName)}</td>
       <td>${statusBadge(getSavedPayrollDisplayStatus(record))}</td>
+      <td>${statusBadge(record.approvalStatus || getSavedPayrollDisplayStatus(record))}</td>
+      <td>${statusBadge(record.paymentStatus || "Unpaid")}</td>
       <td>${formatCurrency(record.totals?.totalExpenses)}</td>
       <td>${formatCurrency(record.totals?.driverNetPay)}</td>
       <td>${formatCurrency(record.totals?.helperNetPay)}</td>
       <td class="payroll-row-actions">
         <button type="button" data-action="edit" data-id="${record.id}">View/Edit</button>
+        <button type="button" data-action="submit" data-id="${record.id}">Submit</button>
         <button type="button" data-action="duplicate" data-id="${record.id}">Duplicate</button>
         <button type="button" data-action="delete" data-id="${record.id}">Delete</button>
         <button type="button" data-action="viber" data-id="${record.id}">Generate Message</button>
       </td>
     </tr>
-  `).join("") : `<tr><td colspan="9" class="empty-table">No payroll records yet.</td></tr>`;
+  `).join("") : `<tr><td colspan="11" class="empty-table">No payroll records yet.</td></tr>`;
 
   recordsBody.querySelectorAll("button").forEach(button => {
     button.addEventListener("click", () => {
       const { action, id } = button.dataset;
       if (action === "edit") editPayrollRecord(id);
+      if (action === "submit") submitPayrollFromRecords(id);
       if (action === "duplicate") duplicatePayrollRecord(id);
       if (action === "delete") deletePayrollRecord(id);
       if (action === "viber") {
@@ -1960,6 +1988,7 @@ function syncRulesFromTable() {
 
 function buildPayrollRecord(existing = {}) {
   const totals = calculatePayroll();
+  const status = $("payroll-status").value || "Draft";
   return {
     id: payrollState.currentId,
     payrollNumber: $("payroll-number").value || generatePayrollId(),
@@ -1972,7 +2001,9 @@ function buildPayrollRecord(existing = {}) {
     driverName: $("driver-name").value.trim(),
     helperName: $("helper-name").value.trim(),
     encoderName: $("encoder-name").value.trim(),
-    status: $("payroll-status").value,
+    status,
+    approvalStatus: mapPayrollToApprovalStatus(status, existing.approvalStatus),
+    paymentStatus: existing.paymentStatus || "Unpaid",
     remarks: $("general-remarks").value.trim(),
     lines: payrollState.lines.filter(line => !isLineBlank(line)),
     totals,
@@ -2041,7 +2072,7 @@ function updateLockState() {
 }
 
 function isLockedStatus(status) {
-  return ["Approved", "Rejected", "Paid"].includes(status);
+  return ["Approved", "Rejected", "Paid", "For Deposit", "Deposited", "Cancelled"].includes(status);
 }
 
 function statusBadge(status, id = "") {
@@ -2282,6 +2313,218 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value).replace(/`/g, "&#096;");
+}
+
+// ── Supabase: save payroll record ────────────────────────────────────────────
+async function savePayrollToSupabase(record) {
+  const totals = record.totals || {};
+  const response = await fetch(`${VNS_PAYROLL_WORKER_API_BASE}/api/payroll/create`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      payroll_id: record.payrollNumber || record.id,
+      payroll_date: record.payrollDate || null,
+      cutoff_from: record.cutoffStart || null,
+      cutoff_to: record.cutoffEnd || null,
+      group_category: record.groupCategory || null,
+      plate_number: record.plateNumber || null,
+      driver_name: record.driverName || null,
+      helper_name: record.helperName || null,
+      driver_salary: totals.totalDriverSalary || 0,
+      helper_salary: totals.totalHelperSalary || 0,
+      driver_allowance: totals.totalDriverAllowance || 0,
+      helper_allowance: totals.totalHelperAllowance || 0,
+      total_expenses: totals.totalExpenses || 0,
+      driver_net_pay: totals.driverNetPay || 0,
+      helper_net_pay: totals.helperNetPay || 0,
+      status: record.status || "Draft",
+      approval_status: record.approvalStatus || record.status || "Draft",
+      payment_status: record.paymentStatus || "Unpaid",
+      raw_data: record
+    })
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.ok) throw new Error(data?.error || `Payroll save failed (${response.status})`);
+  return data;
+}
+
+// ── Supabase: load saved payroll records ─────────────────────────────────────
+async function loadPayrollRecordsFromSupabase() {
+  const response = await fetch(`${VNS_PAYROLL_WORKER_API_BASE}/api/payroll/list?limit=200`);
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.ok) throw new Error(data?.error || `Payroll list failed (${response.status})`);
+  return Array.isArray(data.records) ? data.records.map(normalizeSupabasePayrollRecord) : [];
+}
+
+function normalizeSupabasePayrollRecord(r) {
+  const raw = r.raw_data || {};
+  return {
+    id: r.id || createId("payroll"),
+    payrollNumber: r.payroll_id || raw.payrollNumber || "",
+    payrollDate: r.payroll_date ? String(r.payroll_date).slice(0, 10) : "",
+    cutoffStart: r.cutoff_from ? String(r.cutoff_from).slice(0, 10) : "",
+    cutoffEnd: r.cutoff_to ? String(r.cutoff_to).slice(0, 10) : "",
+    groupCategory: normalizePayrollGroup(r.group_category || ""),
+    plateNumber: normalizePlateForCloud(r.plate_number || ""),
+    driverName: r.driver_name || "",
+    helperName: r.helper_name || "",
+    status: r.status || "Draft",
+    approvalStatus: r.approval_status || r.status || "Draft",
+    paymentStatus: r.payment_status || "Unpaid",
+    totals: {
+      ...getEmptyTotals(),
+      totalDriverSalary: parseNumber(r.driver_salary),
+      totalHelperSalary: parseNumber(r.helper_salary),
+      totalDriverAllowance: parseNumber(r.driver_allowance),
+      totalHelperAllowance: parseNumber(r.helper_allowance),
+      totalExpenses: parseNumber(r.total_expenses),
+      driverNetPay: parseNumber(r.driver_net_pay),
+      helperNetPay: parseNumber(r.helper_net_pay)
+    },
+    lines: raw.lines || [],
+    approval: raw.approval || {},
+    deductions: raw.deductions || { driver: {}, helper: {} },
+    remarks: raw.remarks || "",
+    encoderName: raw.encoderName || "",
+    truckType: raw.truckType || "",
+    createdBy: raw.createdBy || "",
+    createdAt: r.created_at || raw.createdAt || "",
+    updatedAt: r.updated_at || raw.updatedAt || ""
+  };
+}
+
+function loadSavedPayrollRecordsFromSupabase() {
+  const statusEl = $("payroll-records-load-status");
+  if (statusEl) statusEl.textContent = "Loading payroll records from Supabase...";
+  loadPayrollRecordsFromSupabase()
+    .then(cloudRecords => {
+      if (!cloudRecords.length) {
+        if (statusEl) statusEl.textContent = "No Supabase records found. Showing local records.";
+        return;
+      }
+      payrollState.supabaseSource = true;
+      payrollState.records = mergePayrollRecords(payrollState.records, cloudRecords);
+      writeJson(PAYROLL_RECORDS_KEY, payrollState.records);
+      renderPayrollRecordsTable();
+      if (statusEl) statusEl.textContent = `Loaded ${cloudRecords.length} payroll record${cloudRecords.length === 1 ? "" : "s"} from Supabase.`;
+    })
+    .catch(error => {
+      console.warn("Payroll Supabase load failed; using local records", error);
+      if (statusEl) statusEl.textContent = "Supabase not connected yet. Showing local records.";
+    });
+}
+
+// ── Bali / Cash Advance summary from Supabase cash_requests ──────────────────
+function loadBaliSummaryFromSupabase(driverName, helperName) {
+  const statusEl = $("payroll-bali-load-status");
+  if (statusEl) statusEl.textContent = "Loading balance data from Supabase...";
+  fetch(`${VNS_PAYROLL_WORKER_API_BASE}/api/cash/list?limit=500`)
+    .then(response => response.json())
+    .catch(() => null)
+    .then(data => {
+      if (!data?.ok || !Array.isArray(data.records)) throw new Error("Cash records unavailable");
+      const approved = data.records.filter(r => {
+        const st = String(r.approval_status || r.status || "").toLowerCase();
+        return !r.is_deleted && !/(cancel|reject|draft)/i.test(st) && /(approved|paid|released)/i.test(st);
+      });
+      const driverNorm = normalize(driverName);
+      const helperNorm = normalize(helperName);
+      let driverBali = 0;
+      let helperBali = 0;
+      approved.forEach(r => {
+        const type = String(r.request_type || "").toLowerCase();
+        if (!/(bali|cash.?advance|\bca\b)/i.test(type)) return;
+        const person = normalize(r.driver_name || r.receiver_name || "");
+        const amount = parseNumber(r.amount);
+        if (driverNorm && person === driverNorm) driverBali += amount;
+        if (helperNorm && person === helperNorm) helperBali += amount;
+      });
+      payrollState.baliSummary = { driverBali, helperBali };
+      if (statusEl) statusEl.textContent = `Balance data loaded from ${approved.length} approved cash records.`;
+      renderPayrollBalanceSection();
+    })
+    .catch(error => {
+      console.warn("Bali summary load failed", error);
+      if (statusEl) statusEl.textContent = "Balance data could not be loaded from Supabase.";
+      renderPayrollBalanceSection();
+    });
+}
+
+// ── Balance section rendering ─────────────────────────────────────────────────
+function renderPayrollBalanceSection() {
+  const totals = payrollState.totals || getEmptyTotals();
+  const bali = payrollState.baliSummary || {};
+  const driverName = $("driver-name")?.value || "";
+  const helperName = $("helper-name")?.value || "";
+  const driverPrev = getPersonRunningBalance(driverName, "Driver");
+  const helperPrev = getPersonRunningBalance(helperName, "Helper");
+  const driverNewBali = parseNumber(bali.driverBali);
+  const helperNewBali = parseNumber(bali.helperBali);
+  const driverDeducted = totals.driverDeduction || 0;
+  const helperDeducted = totals.helperDeduction || 0;
+  const driverBalanceAfter = driverPrev + driverNewBali - driverDeducted;
+  const helperBalanceAfter = helperPrev + helperNewBali - helperDeducted;
+
+  setText("driver-prev-balance", formatCurrency(driverPrev));
+  setText("driver-new-bali", formatCurrency(driverNewBali));
+  setText("driver-balance-deduction", formatCurrency(driverDeducted));
+  setBalanceAfterText("driver-balance-after", driverBalanceAfter);
+  setText("helper-prev-balance", formatCurrency(helperPrev));
+  setText("helper-new-bali", formatCurrency(helperNewBali));
+  setText("helper-balance-deduction", formatCurrency(helperDeducted));
+  setBalanceAfterText("helper-balance-after", helperBalanceAfter);
+}
+
+function getPersonRunningBalance(name, role) {
+  const key = `${normalize(name)}|${role}`;
+  return payrollState.balances[key]?.runningBalance || 0;
+}
+
+function setBalanceAfterText(id, value) {
+  const el = $(id);
+  if (!el) return;
+  const amount = parseNumber(value);
+  if (amount > 0) {
+    el.textContent = `${formatCurrency(amount)} (Remaining Balance)`;
+    el.className = "balance-positive";
+  } else if (amount < 0) {
+    el.textContent = `${formatCurrency(Math.abs(amount))} (Salary Remaining to Deposit)`;
+    el.className = "balance-negative";
+  } else {
+    el.textContent = formatCurrency(0);
+    el.className = "";
+  }
+}
+
+// ── Truck Monitoring placeholder ──────────────────────────────────────────────
+function loadTruckMonitoringTripsForCutoff() {
+  console.info("loadTruckMonitoringTripsForCutoff: Truck Monitoring data source not connected yet. Will pull from Google Sheets once connected.");
+  return Promise.resolve({ ok: false, placeholder: true, trips: [] });
+}
+
+// ── Status helpers ─────────────────────────────────────────────────────────────
+function mapPayrollToApprovalStatus(status, existing) {
+  if (status === "For Approval" || status === "Submitted") return "For Approval";
+  if (status === "Approved") return "Approved";
+  if (status === "For Deposit") return "Approved";
+  if (status === "Deposited") return "Approved";
+  if (status === "Returned") return "Returned";
+  if (status === "Rejected") return "Rejected";
+  if (status === "Cancelled") return "Cancelled";
+  return existing || status || "Draft";
+}
+
+function submitPayrollFromRecords(id) {
+  const record = payrollState.records.find(item => item.id === id);
+  if (!record) return;
+  if (!["Draft", "Returned"].includes(record.status)) {
+    setStatus("Only Draft or Returned payrolls can be submitted.", "warning");
+    return;
+  }
+  editPayrollRecord(id);
+  $("payroll-status").value = "For Approval";
+  savePayrollRecord();
+  setStatus(`${record.payrollNumber || record.id} submitted for approval.`, "success");
 }
 
 document.addEventListener("DOMContentLoaded", initPayrollPage);
