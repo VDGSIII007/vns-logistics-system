@@ -36,12 +36,14 @@ const amountFields = [
 ];
 
 const lineColumns = [
-  ["tripDate", "date"], ["source", "text"], ["destination", "text"], ["referenceNo", "text"],
-  ["poNumber", "text"], ["diesel", "number"], ["driverSalary", "number"], ["helperSalary", "number"],
-  ["tollFee", "number"], ["passway", "number"], ["parking", "number"], ["lagayLoaded", "number"],
-  ["lagayEmpty", "number"], ["mano", "number"], ["vulcanize", "number"], ["driverAllowance", "number"],
-  ["helperAllowance", "number"], ["hugasTruck", "number"], ["checkpoint", "number"], ["otherExpenses", "number"],
-  ["rowTotal", "number"], ["rateMatchStatus", "text"], ["remarks", "text"]
+  ["tripDate", "date", "Date"], ["source", "text", "Source"], ["destination", "text", "Destination"],
+  ["referenceNo", "text", "Reference No."], ["poNumber", "text", "PO Number"], ["diesel", "number", "Diesel"],
+  ["driverSalary", "number", "Driver Salary"], ["helperSalary", "number", "Helper Salary"], ["tollFee", "number", "Toll"],
+  ["passway", "number", "Passway"], ["parking", "number", "Parking"], ["lagayLoaded", "number", "Lagay Loaded"],
+  ["lagayEmpty", "number", "Lagay Empty"], ["mano", "number", "Mano"], ["vulcanize", "number", "Vulcanize"],
+  ["driverAllowance", "number", "Allowance Driver"], ["helperAllowance", "number", "Allowance Helper"],
+  ["hugasTruck", "number", "Hugas Truck"], ["checkpoint", "number", "Checkpoint"], ["otherExpenses", "number", "Other Expenses"],
+  ["rowTotal", "number", "Row Total"], ["rateMatchStatus", "text", "Rate Match Status"], ["remarks", "text", "Remarks"]
 ];
 
 const rateAutoFillFields = new Set([
@@ -947,9 +949,15 @@ function validatePayrollLine(line) {
   if (!line.source) warnings.push("Missing source");
   if (!line.destination) warnings.push("Missing destination");
 
+  const rateStatus = normalizePayrollRateMatchStatus(line.rateMatchStatus);
+  if (rateStatus === "Matched" || rateStatus === "Manual") {
+    if (isDuplicateTrip(line)) warnings.push("Possible duplicate trip.");
+    return warnings;
+  }
+
   const rule = matchSalaryRule(line);
   if (!rule) {
-    if (line.source || line.destination) warnings.push("No matching rule found.");
+    if ((line.source || line.destination) && rateStatus === "No Match") warnings.push("No matching rule found.");
     return warnings;
   }
 
@@ -1882,17 +1890,18 @@ function renderLinesTable(keepFocus = true) {
   const active = keepFocus ? document.activeElement : null;
   const activeId = active?.dataset?.id;
   const activeField = active?.dataset?.field;
+  renderPayrollTripTableHeader();
+  console.log("Payroll trip table columns", lineColumns.length + 2);
   payrollState.lines.forEach(line => {
     line.rowTotal = getLineRowTotal(line);
-    if (!line.rateMatchStatus) line.rateMatchStatus = "No Match";
+    line.rateMatchStatus = normalizePayrollRateMatchStatus(line.rateMatchStatus);
   });
   $("payroll-lines-body").innerHTML = payrollState.lines.map(line => `
     <tr>
       <td class="sticky-col sticky-col-1"><input class="line-select" type="checkbox" data-id="${line.id}"></td>
-      ${lineColumns.map(([field, type], columnIndex) => `<td class="${getLineCellClass(field)}">${lineInput(line, field, type, columnIndex)}</td>`).join("")}
+      ${renderPayrollTripLineCells(line)}
       <td class="payroll-line-actions">
         <button type="button" class="payroll-line-delete" data-delete-line-id="${line.id}">Delete</button>
-        ${(line.warnings || []).map(warning => `<span class="warning-badge small">${escapeHtml(warning)}</span>`).join("")}
       </td>
     </tr>
   `).join("");
@@ -1933,6 +1942,26 @@ function renderTripTable() {
   renderLinesTable();
 }
 
+function renderPayrollTripTableHeader() {
+  const headerRow = document.querySelector(".payroll-encoding-table thead tr");
+  if (!headerRow) return;
+  headerRow.innerHTML = [
+    '<th class="sticky-col sticky-col-1">Select</th>',
+    ...lineColumns.map(([field, , label]) => `<th class="${getLineCellClass(field)}">${escapeHtml(label)}</th>`),
+    '<th class="payroll-line-actions">Actions</th>'
+  ].join("");
+}
+
+function renderPayrollTripLineCells(line) {
+  console.log("Rendering payroll trip row", line);
+  const cells = lineColumns.map(([field, type], columnIndex) =>
+    `<td class="${getLineCellClass(field)}">${lineInput(line, field, type, columnIndex)}</td>`
+  );
+  const cellCount = cells.length + 2;
+  console.log("Payroll trip row cell count", cellCount);
+  return cells.join("");
+}
+
 function getLineCellClass(field) {
   if (field === "tripDate") return "sticky-col sticky-col-2";
   if (field === "source") return "sticky-col sticky-col-3";
@@ -1942,7 +1971,15 @@ function getLineCellClass(field) {
   return "";
 }
 
+function normalizePayrollRateMatchStatus(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "matched") return "Matched";
+  if (normalized === "manual") return "Manual";
+  return "No Match";
+}
+
 function lineInput(line, field, type, columnIndex) {
+  if (field === "rateMatchStatus") line[field] = normalizePayrollRateMatchStatus(line[field]);
   const value = isLineBlank(line) && type === "number" ? "" : line[field] ?? "";
   const readonly = field === "rowTotal" || field === "rateMatchStatus";
   const disabled = isLockedStatus($("payroll-status").value) || readonly ? "disabled" : "";
