@@ -855,7 +855,7 @@ function applyRateMatrixToLine(line = {}) {
   const rate = findPayrollRateMatch(line);
   if (!rate) {
     line.rateId = "";
-    line.rateMatchStatus = line.source || line.destination ? "No Match" : "";
+    line.rateMatchStatus = line.source && line.destination ? "No Match" : "";
     line.rowTotal = getLineRowTotal(line);
     return false;
   }
@@ -873,6 +873,7 @@ function applyRateMatrixToLine(line = {}) {
   line.rateId = rate.rateId || rate.rate_id || "";
   line.rateMatchStatus = "Matched";
   line.rowTotal = getLineRowTotal(line);
+  console.log("Payroll rate matched from lane input", { source: line.source, destination: line.destination, rate });
   return true;
 }
 
@@ -943,23 +944,16 @@ function matchSalaryRule(line) {
 }
 
 function validatePayrollLine(line) {
-  const warnings = [];
+  const warnings = getPayrollTripLineIssues(line, {
+    showRequired: payrollState.hasCalculatedPayroll || payrollState.hasSubmittedPayroll
+  });
   if (isLineBlank(line)) return warnings;
-  if (!line.tripDate) warnings.push("Missing trip date");
-  if (!line.source) warnings.push("Missing source");
-  if (!line.destination) warnings.push("Missing destination");
 
   const rateStatus = normalizePayrollRateMatchStatus(line.rateMatchStatus);
-  if (rateStatus === "Matched" || rateStatus === "Manual") {
-    if (isDuplicateTrip(line)) warnings.push("Possible duplicate trip.");
-    return warnings;
-  }
-
+  if (isDuplicateTrip(line)) warnings.push("Possible duplicate trip.");
+  if (rateStatus === "Matched" || rateStatus === "Manual") return warnings;
   const rule = matchSalaryRule(line);
-  if (!rule) {
-    if ((line.source || line.destination) && rateStatus === "No Match") warnings.push("No matching rule found.");
-    return warnings;
-  }
+  if (!rule) return warnings;
 
   compareRuleAmount(warnings, "Driver salary", line.driverSalary, rule.driverSalary);
   compareRuleAmount(warnings, "Helper salary", line.helperSalary, rule.helperSalary);
@@ -970,8 +964,20 @@ function validatePayrollLine(line) {
   compareAllowedAmount(warnings, "Parking", line.parking, rule.allowedParking);
   compareAllowedAmount(warnings, "Passway", line.passway, rule.allowedPassway);
 
-  if (isDuplicateTrip(line)) warnings.push("Possible duplicate trip.");
   return warnings;
+}
+
+function getPayrollTripLineIssues(line = {}, options = {}) {
+  const issues = [];
+  const hasUserInput = !isLineBlank(line);
+  const showRequired = Boolean(options.showRequired || hasUserInput);
+  const rateStatus = normalizePayrollRateMatchStatus(line.rateMatchStatus);
+  if (showRequired && !line.tripDate) issues.push("Missing date");
+  if (showRequired && !String(line.source || "").trim()) issues.push("Missing source");
+  if (showRequired && !String(line.destination || "").trim()) issues.push("Missing destination");
+  if (String(line.source || "").trim() && String(line.destination || "").trim() && rateStatus === "No Match") issues.push("No rate");
+  console.log("Payroll trip row issues", { lineId: line.id, issues });
+  return issues;
 }
 
 function validatePayrollHeader() {
@@ -1891,7 +1897,8 @@ function renderLinesTable(keepFocus = true) {
   const activeId = active?.dataset?.id;
   const activeField = active?.dataset?.field;
   renderPayrollTripTableHeader();
-  console.log("Payroll trip table columns", lineColumns.length + 2);
+  renderPayrollLaneDatalists();
+  console.log("Payroll trip table columns", lineColumns.length + 3);
   payrollState.lines.forEach(line => {
     line.rowTotal = getLineRowTotal(line);
     line.rateMatchStatus = normalizePayrollRateMatchStatus(line.rateMatchStatus);
@@ -1911,14 +1918,20 @@ function renderLinesTable(keepFocus = true) {
       if (!line) return;
       if (input.dataset.readonly === "true") return;
       line[input.dataset.field] = input.type === "number" ? parseNumber(input.value) : input.value;
-      if (rateAutoFillFields.has(input.dataset.field) && line.rateMatchStatus === "Matched") {
+      if (rateAutoFillFields.has(input.dataset.field)) {
         line.rateMatchStatus = "Manual";
       }
     });
     input.addEventListener("change", () => {
       const line = payrollState.lines.find(item => item.id === input.dataset.id);
       if (line && ["source", "destination"].includes(input.dataset.field)) applyRateMatrixToLine(line);
+      if (line && input.dataset.field === "source") renderPayrollLaneDatalists(line.source);
       calculatePayroll();
+    });
+    input.addEventListener("focus", () => {
+      const line = payrollState.lines.find(item => item.id === input.dataset.id);
+      if (input.dataset.field === "source") renderPayrollLaneDatalists(line?.source || "");
+      if (input.dataset.field === "destination") renderPayrollLaneDatalists(line?.source || "");
     });
   });
   $("payroll-lines-body").querySelectorAll("[data-delete-line-id]").forEach(button => {
@@ -1945,21 +1958,77 @@ function renderTripTable() {
 function renderPayrollTripTableHeader() {
   const headerRow = document.querySelector(".payroll-encoding-table thead tr");
   if (!headerRow) return;
+  const visibleColumns = lineColumns.filter(([field]) => field !== "remarks");
   headerRow.innerHTML = [
     '<th class="sticky-col sticky-col-1">Select</th>',
-    ...lineColumns.map(([field, , label]) => `<th class="${getLineCellClass(field)}">${escapeHtml(label)}</th>`),
+    ...visibleColumns.map(([field, , label]) => `<th class="${getLineCellClass(field)}">${escapeHtml(label)}</th>`),
+    '<th class="payroll-line-issues">Issues</th>',
+    '<th class="remarks-cell">Remarks</th>',
     '<th class="payroll-line-actions">Actions</th>'
   ].join("");
 }
 
 function renderPayrollTripLineCells(line) {
   console.log("Rendering payroll trip row", line);
-  const cells = lineColumns.map(([field, type], columnIndex) =>
-    `<td class="${getLineCellClass(field)}">${lineInput(line, field, type, columnIndex)}</td>`
-  );
-  const cellCount = cells.length + 2;
+  const cells = lineColumns
+    .filter(([field]) => field !== "remarks")
+    .map(([field, type]) => {
+      const columnIndex = lineColumns.findIndex(([columnField]) => columnField === field);
+      return `<td class="${getLineCellClass(field)}">${lineInput(line, field, type, columnIndex)}</td>`;
+    });
+  const remarksColumnIndex = lineColumns.findIndex(([field]) => field === "remarks");
+  const remarksCell = `<td class="remarks-cell">${lineInput(line, "remarks", "text", remarksColumnIndex)}</td>`;
+  const cellCount = cells.length + 4;
   console.log("Payroll trip row cell count", cellCount);
-  return cells.join("");
+  return `${cells.join("")}<td class="payroll-line-issues">${renderPayrollLineIssues(line)}</td>${remarksCell}`;
+}
+
+function renderPayrollLineIssues(line) {
+  const issues = getPayrollTripLineIssues(line, {
+    showRequired: payrollState.hasCalculatedPayroll || payrollState.hasSubmittedPayroll
+  });
+  if (!issues.length) return '<span class="payroll-issues-empty">-</span>';
+  return issues.map(issue => `<span class="payroll-issue-chip">${escapeHtml(issue)}</span>`).join("");
+}
+
+function getUniquePayrollSources() {
+  const sources = [...new Set(payrollState.rateMatrix
+    .filter(rate => rate.active !== false)
+    .map(rate => String(rate.source || "").trim())
+    .filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+  console.log("Payroll source suggestions", sources);
+  return sources;
+}
+
+function getDestinationSuggestionsForSource(source = "", group = $("group-category")?.value || "") {
+  const normalizedSource = normalizeRateKey(source);
+  const normalizedGroup = normalizeRateKey(group);
+  const destinations = [...new Set(payrollState.rateMatrix
+    .filter(rate => rate.active !== false)
+    .filter(rate => !normalizedSource || normalizeRateKey(rate.source) === normalizedSource)
+    .filter(rate => !normalizedGroup || !rate.groupCategory || normalizeRateKey(rate.groupCategory) === normalizedGroup)
+    .map(rate => String(rate.destination || "").trim())
+    .filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+  console.log("Payroll destination suggestions", { source, destinations });
+  return destinations;
+}
+
+function renderPayrollLaneDatalists(activeSource = "") {
+  const sourceList = $("payroll-source-options");
+  const destinationList = $("payroll-destination-options");
+  if (sourceList) {
+    sourceList.innerHTML = getUniquePayrollSources()
+      .map(source => `<option value="${escapeAttr(source)}"></option>`)
+      .join("");
+  }
+  const source = activeSource || payrollState.lines.find(line => String(line.source || "").trim())?.source || "";
+  if (destinationList) {
+    destinationList.innerHTML = getDestinationSuggestionsForSource(source)
+      .map(destination => `<option value="${escapeAttr(destination)}"></option>`)
+      .join("");
+  }
 }
 
 function getLineCellClass(field) {
@@ -1975,7 +2044,8 @@ function normalizePayrollRateMatchStatus(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "matched") return "Matched";
   if (normalized === "manual") return "Manual";
-  return "No Match";
+  if (normalized === "no match" || normalized === "no-rate" || normalized === "norate") return "No Match";
+  return "";
 }
 
 function lineInput(line, field, type, columnIndex) {
@@ -1984,7 +2054,12 @@ function lineInput(line, field, type, columnIndex) {
   const readonly = field === "rowTotal" || field === "rateMatchStatus";
   const disabled = isLockedStatus($("payroll-status").value) || readonly ? "disabled" : "";
   const rowIndex = payrollState.lines.findIndex(item => item.id === line.id);
-  return `<input class="payroll-cell-input ${readonly ? "payroll-readonly-cell" : ""}" data-id="${line.id}" data-field="${field}" data-readonly="${readonly ? "true" : "false"}" data-row-index="${rowIndex}" data-col-index="${columnIndex}" type="${type}" ${type === "number" ? 'step="0.01" min="0"' : ""} value="${escapeAttr(value)}" ${disabled}>`;
+  const listAttr = field === "source"
+    ? ' list="payroll-source-options"'
+    : field === "destination"
+      ? ' list="payroll-destination-options"'
+      : "";
+  return `<input class="payroll-cell-input ${readonly ? "payroll-readonly-cell" : ""}" data-id="${line.id}" data-field="${field}" data-readonly="${readonly ? "true" : "false"}" data-row-index="${rowIndex}" data-col-index="${columnIndex}" type="${type}"${listAttr} ${type === "number" ? 'step="0.01" min="0"' : ""} value="${escapeAttr(value)}" ${disabled}>`;
 }
 
 function syncLinesFromTable() {
