@@ -38,6 +38,7 @@ import {
   listBudgetBalanceTransactionsFromSupabase,
   listPayrollRecordsFromSupabase,
   listPayrollRatesFromSupabase,
+  listPayrollTripLinesByPlateFromSupabase,
   listPayrollTripLinesFromSupabase,
   listPersonBalancesFromSupabase,
   updatePayrollStatusInSupabase,
@@ -74,6 +75,7 @@ const PAYROLL_API_PATHS = new Set([
   "/api/payroll/rates",
   "/api/payroll/rate-create",
   "/api/payroll/trip-lines",
+  "/api/payroll/trip-lines-by-plate",
   "/api/payroll/trip-line-upsert",
   "/api/payroll/trip-lines-bulk-upsert"
 ]);
@@ -575,6 +577,14 @@ async function handlePayrollTripLines(url, env) {
   return jsonResponse(result);
 }
 
+async function handlePayrollTripLinesByPlate(url, env) {
+  const result = await listPayrollTripLinesByPlateFromSupabase(env, url.searchParams);
+  if (!result.ok) {
+    return jsonResponse({ ok: false, error: result.error || "Payroll trip lines by plate fetch failed" }, result.status || 500);
+  }
+  return jsonResponse(result);
+}
+
 async function handlePayrollTripLineUpsert(request, env) {
   const input = await readJson(request);
   if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
@@ -723,6 +733,7 @@ async function routeRequest(request, env) {
   if (request.method === "GET" && url.pathname === "/api/payroll/rates") return withCors(await handlePayrollRates(url, env), request);
   if (request.method === "POST" && url.pathname === "/api/payroll/rate-create") return withCors(await handlePayrollRateCreate(request, env), request);
   if (request.method === "GET" && url.pathname === "/api/payroll/trip-lines") return withCors(await handlePayrollTripLines(url, env), request);
+  if (request.method === "GET" && url.pathname === "/api/payroll/trip-lines-by-plate") return withCors(await handlePayrollTripLinesByPlate(url, env), request);
   if (request.method === "POST" && url.pathname === "/api/payroll/trip-line-upsert") return withCors(await handlePayrollTripLineUpsert(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/payroll/trip-lines-bulk-upsert") return withCors(await handlePayrollTripLineUpsert(request, env), request);
   if (isPayrollApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);

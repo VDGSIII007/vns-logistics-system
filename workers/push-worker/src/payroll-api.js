@@ -405,7 +405,9 @@ function formatPayrollTripLine(r = {}) {
     diesel: r.diesel ?? 0,
     cost_per_liter: r.cost_per_liter ?? 0,
     costPerLiter: r.cost_per_liter ?? 0,
+    driver_salary: r.driver_salary ?? 0,
     driverSalary: r.driver_salary ?? 0,
+    helper_salary: r.helper_salary ?? 0,
     helperSalary: r.helper_salary ?? 0,
     tollFee: r.toll ?? 0,
     passway: r.passway ?? 0,
@@ -726,6 +728,56 @@ export async function listPayrollTripLinesFromSupabase(env, searchParams) {
   if (result.error) return { ok: false, error: SAFE_ERROR, details: result.error, status: result.status || 500 };
   const lines = Array.isArray(result.body) ? result.body : [];
   return { ok: true, source: "supabase", lines: lines.map(formatPayrollTripLine), count: lines.length };
+}
+
+export async function listPayrollTripLinesByPlateFromSupabase(env, searchParams) {
+  const plateNumber = textOrNull(searchParams.get("plate_number") || searchParams.get("plateNumber"));
+  const limit = Math.min(Math.max(Number(searchParams.get("limit") || 4), 1), 50);
+  if (!plateNumber) return { ok: false, error: "plate_number is required", status: 400 };
+
+  const payrollFilters = new URLSearchParams({
+    select: "payroll_id",
+    plate_number: `eq.${plateNumber}`,
+    order: "payroll_date.desc,created_at.desc",
+    limit: "200"
+  });
+  payrollFilters.set("or", "(is_deleted.is.false,is_deleted.is.null)");
+
+  const payrollResult = await supabaseFetch(env, `payroll_records?${payrollFilters.toString()}`, { method: "GET" });
+  if (payrollResult.error) return { ok: false, error: SAFE_ERROR, details: payrollResult.error, status: payrollResult.status || 500 };
+
+  const payrollIds = (Array.isArray(payrollResult.body) ? payrollResult.body : [])
+    .map(record => textOrNull(record.payroll_id))
+    .filter(Boolean);
+
+  const lineFilters = new URLSearchParams({
+    select: "payroll_id,source,destination,driver_salary,helper_salary,trip_date,rate_id,rate_match_status,plate_number,driver_name,helper_name",
+    order: "trip_date.desc,created_at.desc",
+    limit: String(limit)
+  });
+  lineFilters.set("or", "(is_deleted.is.false,is_deleted.is.null)");
+
+  if (payrollIds.length) {
+    lineFilters.set("payroll_id", `in.(${payrollIds.join(",")})`);
+  } else {
+    lineFilters.set("plate_number", `eq.${plateNumber}`);
+  }
+
+  const linesResult = await supabaseFetch(env, `payroll_trip_lines?${lineFilters.toString()}`, { method: "GET" });
+  if (linesResult.error) return { ok: false, error: SAFE_ERROR, details: linesResult.error, status: linesResult.status || 500 };
+
+  const lines = (Array.isArray(linesResult.body) ? linesResult.body : [])
+    .filter(line => !line.plate_number || String(line.plate_number).trim().toUpperCase() === plateNumber.toUpperCase())
+    .sort((a, b) => String(b.trip_date || "").localeCompare(String(a.trip_date || "")))
+    .slice(0, limit);
+
+  return {
+    ok: true,
+    source: "supabase",
+    plate_number: plateNumber,
+    lines: lines.map(formatPayrollTripLine),
+    count: lines.length
+  };
 }
 
 export async function upsertPayrollTripLinesToSupabase(env, input = {}) {
