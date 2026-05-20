@@ -4723,3 +4723,139 @@ body.payroll-page{
     grid-template-columns:1fr;
   }
 }
+
+/* ── Incident Report Module ─────────────────────────────────────────────── */
+
+.incident-intro{
+  padding:52px 0 30px;
+  background:linear-gradient(135deg,#fff 0,#fff7f7 100%);
+  border-bottom:1px solid rgba(231,231,234,.8);
+}
+.incident-title{
+  margin:0;
+  font-size:clamp(2.4rem,4.4vw,4.8rem);
+  line-height:.98;
+  letter-spacing:-.05em;
+}
+.incident-desc{
+  max-width:800px;
+  margin:14px 0 28px;
+  color:#5e6470;
+  font-size:1.02rem;
+  font-weight:700;
+}
+.incident-workspace{
+  padding-bottom:70px;
+}
+.inc-form-section{
+  margin-bottom:6px;
+}
+.inc-form-section+.inc-form-section{
+  border-top:1px solid var(--line);
+  padding-top:22px;
+  margin-top:22px;
+}
+.inc-section-heading{
+  font-size:.78rem;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--muted);
+  margin:0 0 16px;
+}
+.inc-req{
+  color:var(--red);
+  font-weight:900;
+}
+.inc-evidence-note{
+  margin:0 0 14px;
+  padding:10px 14px;
+  background:#fef9c3;
+  border:1px solid #fde68a;
+  border-radius:10px;
+  font-size:.8rem;
+  color:#92400e;
+  line-height:1.5;
+}
+.inc-file-label{
+  display:grid;
+  gap:8px;
+  color:#222;
+  font-size:.84rem;
+  font-weight:900;
+}
+.inc-file-input{
+  position:absolute;
+  width:1px;
+  height:1px;
+  opacity:0;
+  pointer-events:none;
+}
+.inc-file-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:42px;
+  border:1px solid var(--line);
+  border-radius:13px;
+  background:#fff;
+  color:var(--red);
+  font-weight:900;
+  font-size:.84rem;
+  cursor:pointer;
+  padding:0 16px;
+}
+.inc-file-label:hover .inc-file-btn{
+  border-color:var(--red);
+}
+.inc-file-name{
+  font-size:.78rem;
+  color:var(--muted);
+  font-weight:600;
+}
+.inc-ca-fields-wrap{
+  grid-column:1/-1;
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:16px;
+  background:#fafafa;
+  margin-top:4px;
+}
+.inc-row-actions{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+  min-width:230px;
+}
+.inc-filter-grid{
+  grid-template-columns:repeat(3,minmax(160px,1fr));
+}
+
+/* Severity badges */
+.inc-sev-low{background:#f0fdf4;color:#166534;border-color:#bbf7d0;}
+.inc-sev-medium{background:#fefce8;color:#854d0e;border-color:#fde047;}
+.inc-sev-high{background:#fff7ed;color:#c2410c;border-color:#fed7aa;}
+.inc-sev-critical{background:#fee2e2;color:#991b1b;border-color:#fecaca;font-weight:900;}
+
+/* Incident status badges */
+.inc-status-new{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;}
+.inc-status-under-review{background:#f5f3ff;color:#6d28d9;border-color:#ddd6fe;}
+.inc-status-ca-required{background:#fff7ed;color:#c2410c;border-color:#fed7aa;}
+.inc-status-ca-progress{background:#fefce8;color:#854d0e;border-color:#fde047;}
+.inc-status-for-verification{background:#f0f9ff;color:#0369a1;border-color:#bae6fd;}
+.inc-status-closed{background:#f0fdf4;color:#166534;border-color:#bbf7d0;}
+.inc-status-cancelled{background:#f3f4f6;color:#4b5563;border-color:#d1d5db;}
+
+/* Corrective action status badges */
+.inc-ca-not-required{background:#f3f4f6;color:#4b5563;border-color:#d1d5db;}
+.inc-ca-pending{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;}
+.inc-ca-in-progress{background:#fefce8;color:#854d0e;border-color:#fde047;}
+.inc-ca-for-verification{background:#f0f9ff;color:#0369a1;border-color:#bae6fd;}
+.inc-ca-completed{background:#f0fdf4;color:#166534;border-color:#bbf7d0;}
+.inc-ca-overdue{background:#fee2e2;color:#991b1b;border-color:#fecaca;font-weight:900;}
+
+@media(max-width:760px){
+  .incident-intro{padding:36px 0 22px;}
+  .inc-filter-grid{grid-template-columns:1fr;}
+  .inc-ca-fields-wrap .payroll-form-grid{grid-template-columns:1fr;}
+}

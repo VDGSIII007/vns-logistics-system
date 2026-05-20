@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Incident Report — VNS Logistics</title>
+  <meta name="description" content="Log safety, truck, driver, cargo, workplace, and operational incidents with corrective action tracking." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="incident-page">
+
+  <header class="site-header" id="top">
+    <nav class="nav-shell" aria-label="Primary navigation">
+      <a href="index.html" class="brand" aria-label="VNS Logistics home">
+        <span class="brand-mark">VNS</span>
+        <span class="brand-text">Logistics</span>
+      </a>
+      <div class="notification-center" data-vns-notification-bell>
+        <button class="notification-bell" type="button" aria-expanded="false" aria-controls="vns-notification-dropdown" aria-label="Open notifications">
+          <span class="notification-bell-icon" aria-hidden="true">🔔</span>
+          <span class="notification-count-badge" data-vns-notification-total hidden>0</span>
+        </button>
+        <div class="notification-dropdown" id="vns-notification-dropdown" hidden>
+          <div class="notification-dropdown-header">
+            <div>
+              <strong>Notifications</strong>
+              <span data-vns-notification-last-checked>Last checked: --</span>
+              <span data-vns-browser-alert-status>Browser alerts: Not enabled</span>
+              <span data-vns-background-push-status>Background push: Checking...</span>
+            </div>
+            <button class="notification-refresh" type="button" data-vns-notification-refresh>Refresh Notifications</button>
+          </div>
+          <div class="notification-alert-controls">
+            <button class="notification-alert-button" type="button" data-vns-enable-browser-alerts>Enable Browser Alerts</button>
+            <p data-vns-browser-alert-message></p>
+            <button class="notification-alert-button" type="button" data-vns-subscribe-push>Subscribe to Background Alerts</button>
+            <button class="notification-alert-button" type="button" data-vns-unsubscribe-push hidden>Unsubscribe</button>
+            <button class="notification-alert-button" type="button" data-vns-test-push hidden>Send Test Push</button>
+            <p data-vns-background-push-message></p>
+          </div>
+          <div class="notification-list" data-vns-notification-list>
+            <p class="notification-empty">All clear. No pending items.</p>
+          </div>
+        </div>
+      </div>
+      <button class="menu-toggle" aria-expanded="false" aria-controls="main-nav">Menu</button>
+      <div class="nav-links" id="main-nav">
+        <a href="index.html">Home</a>
+        <a href="portal.html">System Portal</a>
+        <details class="nav-modules">
+          <summary>Modules</summary>
+          <div class="nav-dropdown">
+            <a href="dispatch.html">Dispatch</a>
+            <a href="repair.html">Repair &amp; Maintenance</a>
+            <a href="cash.html">Cash / PO / Bali</a>
+            <a href="parts-inventory.html">Parts Inventory</a>
+            <a href="tire-monitoring.html">Tire Monitoring</a>
+            <a href="expenses.html">Expenses</a>
+            <a href="payroll.html">Payroll</a>
+            <a href="budget-balance.html">Budget &amp; Balance Center</a>
+            <a href="master-data.html">Master Data</a>
+            <a href="incident-report.html" class="active-link">Incident Report</a>
+          </div>
+        </details>
+        <a href="index.html#contact" class="nav-cta">Request Quote</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+
+    <!-- ─── INTRO ──────────────────────────────────────────────────── -->
+    <section class="incident-intro">
+      <div class="container">
+        <p class="eyebrow">Operations Module</p>
+        <h1 class="incident-title">Incident Report</h1>
+        <p class="incident-desc">Log safety, truck, driver, cargo, workplace, and operational incidents.</p>
+
+        <div class="payroll-summary-grid" id="inc-summary-cards">
+          <div class="payroll-stat">
+            <span>Total Incidents</span>
+            <strong id="inc-stat-total">0</strong>
+          </div>
+          <div class="payroll-stat">
+            <span>Open Incidents</span>
+            <strong id="inc-stat-open">0</strong>
+          </div>
+          <div class="payroll-stat">
+            <span>CA Pending / In Progress</span>
+            <strong id="inc-stat-ca-pending">0</strong>
+          </div>
+          <div class="payroll-stat">
+            <span>CA Completed</span>
+            <strong id="inc-stat-ca-done">0</strong>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── WORKSPACE ─────────────────────────────────────────────── -->
+    <section class="section-pad incident-workspace">
+      <div class="container">
+
+        <!-- Tabs -->
+        <div class="payroll-tabs" role="tablist">
+          <button class="payroll-tab-btn active" role="tab" aria-selected="true" data-inc-tab="log" id="tab-btn-log">Log Incident</button>
+          <button class="payroll-tab-btn" role="tab" aria-selected="false" data-inc-tab="records" id="tab-btn-records">Records</button>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════
+             TAB: LOG INCIDENT
+        ══════════════════════════════════════════════════════════════ -->
+        <div class="payroll-tab-panel active" id="inc-tab-log" role="tabpanel">
+
+          <div class="payroll-card">
+            <div class="payroll-card-head">
+              <div>
+                <h2>Incident Details</h2>
+                <p id="inc-edit-notice">New incident — ID will be auto-generated on save.</p>
+              </div>
+              <div class="button-group">
+                <button class="btn btn-outline" id="inc-demo-btn" type="button">Load Demo</button>
+                <button class="btn btn-outline" id="inc-clear-btn" type="button">Clear Form</button>
+              </div>
+            </div>
+
+            <form id="inc-form" novalidate autocomplete="off">
+              <!-- Internal state -->
+              <input type="hidden" id="inc-internal-id" />
+              <input type="hidden" id="inc-created-at" />
+
+              <!-- ── SECTION 1: Basic Info ─────────────────────────── -->
+              <div class="inc-form-section">
+                <h3 class="inc-section-heading">Basic Information</h3>
+                <div class="payroll-form-grid">
+
+                  <label>
+                    Incident ID
+                    <input type="text" id="inc-incident-id" placeholder="Auto-generated on save" readonly />
+                  </label>
+
+                  <label>
+                    Date Reported <span class="inc-req">*</span>
+                    <input type="date" id="inc-date-reported" required />
+                  </label>
+
+                  <label>
+                    Time Reported
+                    <input type="time" id="inc-time-reported" />
+                  </label>
+
+                  <label>
+                    Logged By <span class="inc-req">*</span>
+                    <input type="text" id="inc-logged-by" placeholder="Staff name or position" required />
+                  </label>
+
+                  <label>
+                    Department / Role
+                    <input type="text" id="inc-department-role" placeholder="e.g. Dispatch, Driver, Helper" />
+                  </label>
+
+                  <label>
+                    Plate Number
+                    <input type="text" id="inc-plate-number" placeholder="e.g. ABC-1234" />
+                  </label>
+
+                  <label>
+                    Driver Name
+                    <input type="text" id="inc-driver-name" placeholder="Driver's full name" />
+                  </label>
+
+                  <label>
+                    Helper Name
+                    <input type="text" id="inc-helper-name" placeholder="Helper's full name" />
+                  </label>
+
+                  <label>
+                    Incident Date <span class="inc-req">*</span>
+                    <input type="date" id="inc-incident-date" required />
+                  </label>
+
+                  <label>
+                    Incident Time
+                    <input type="time" id="inc-incident-time" />
+                  </label>
+
+                  <label class="wide-field">
+                    Location
+                    <input type="text" id="inc-location" placeholder="Where did the incident happen?" />
+                  </label>
+
+                  <label>
+                    Incident Type <span class="inc-req">*</span>
+                    <select id="inc-type" required>
+                      <option value="">— Select type —</option>
+                      <option>Safety violation</option>
+                      <option>Accident</option>
+                      <option>Truck damage</option>
+                      <option>Cargo issue</option>
+                      <option>GPS issue</option>
+                      <option>Driver behavior</option>
+                      <option>Helper behavior</option>
+                      <option>Workplace issue</option>
+                      <option>Client complaint</option>
+                      <option>Other</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Severity <span class="inc-req">*</span>
+                    <select id="inc-severity" required>
+                      <option value="">— Select severity —</option>
+                      <option>Low</option>
+                      <option>Medium</option>
+                      <option>High</option>
+                      <option>Critical</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Status <span class="inc-req">*</span>
+                    <select id="inc-status" required>
+                      <option value="">— Select status —</option>
+                      <option>New</option>
+                      <option>Under review</option>
+                      <option>Corrective action required</option>
+                      <option>Corrective action in progress</option>
+                      <option>For verification</option>
+                      <option>Closed</option>
+                      <option>Cancelled</option>
+                    </select>
+                  </label>
+
+                </div>
+              </div>
+
+              <!-- ── SECTION 2: Incident Details ──────────────────── -->
+              <div class="inc-form-section">
+                <h3 class="inc-section-heading">Incident Details</h3>
+                <div class="payroll-form-grid">
+
+                  <label class="wide-field">
+                    Incident Description <span class="inc-req">*</span>
+                    <textarea id="inc-description" rows="4" placeholder="Describe what happened in full detail." required></textarea>
+                  </label>
+
+                  <label class="wide-field">
+                    Immediate Action Taken
+                    <textarea id="inc-immediate-action" rows="3" placeholder="What was done immediately after the incident?"></textarea>
+                  </label>
+
+                  <label class="wide-field">
+                    People Involved
+                    <textarea id="inc-people-involved" rows="2" placeholder="Names and roles of all people involved."></textarea>
+                  </label>
+
+                  <label class="wide-field">
+                    Witnesses
+                    <textarea id="inc-witnesses" rows="2" placeholder="Names of anyone who witnessed the incident."></textarea>
+                  </label>
+
+                  <label class="wide-field">
+                    Remarks
+                    <textarea id="inc-remarks" rows="2" placeholder="Any additional notes or context."></textarea>
+                  </label>
+
+                </div>
+              </div>
+
+              <!-- ── SECTION 3: Evidence ──────────────────────────── -->
+              <div class="inc-form-section">
+                <h3 class="inc-section-heading">Photo / Video Evidence</h3>
+                <p class="inc-evidence-note">Files are referenced only. Actual upload will be connected later to Google Drive or Firebase Storage.</p>
+                <div class="payroll-form-grid">
+
+                  <label>
+                    Photo Link / Filename
+                    <input type="text" id="inc-photo-reference" placeholder="Filename or Google Drive link" />
+                  </label>
+
+                  <label>
+                    Video Link / Filename
+                    <input type="text" id="inc-video-reference" placeholder="Filename or Google Drive link" />
+                  </label>
+
+                  <label class="wide-field">
+                    Evidence Notes
+                    <textarea id="inc-evidence-notes" rows="2" placeholder="Describe what the photos or videos show."></textarea>
+                  </label>
+
+                  <label class="inc-file-label">
+                    Photo Preview (local — not saved)
+                    <input type="file" id="inc-photo-file" accept="image/*" class="inc-file-input" />
+                    <span class="inc-file-btn">Choose Photo</span>
+                    <span class="inc-file-name" id="inc-photo-filename">No file selected</span>
+                  </label>
+
+                  <label class="inc-file-label">
+                    Video Preview (local — not saved)
+                    <input type="file" id="inc-video-file" accept="video/*" class="inc-file-input" />
+                    <span class="inc-file-btn">Choose Video</span>
+                    <span class="inc-file-name" id="inc-video-filename">No file selected</span>
+                  </label>
+
+                </div>
+              </div>
+
+              <!-- ── SECTION 4: Corrective Action ─────────────────── -->
+              <div class="inc-form-section">
+                <h3 class="inc-section-heading">Corrective Action Plan</h3>
+                <div class="payroll-form-grid">
+
+                  <label>
+                    Corrective Action Required?
+                    <select id="inc-ca-required">
+                      <option value="No">No</option>
+                      <option value="Yes">Yes</option>
+                    </select>
+                  </label>
+
+                  <!-- CA detail fields — shown/hidden by JS -->
+                  <div id="inc-ca-fields-wrap" class="inc-ca-fields-wrap wide-field" hidden>
+                    <div class="payroll-form-grid" style="margin:0;">
+
+                      <label class="wide-field">
+                        Root Cause <span class="inc-req">*</span>
+                        <textarea id="inc-root-cause" rows="2" placeholder="What caused the incident?"></textarea>
+                      </label>
+
+                      <label class="wide-field">
+                        Corrective Action Plan <span class="inc-req">*</span>
+                        <textarea id="inc-ca-plan" rows="3" placeholder="Describe the corrective steps to prevent recurrence."></textarea>
+                      </label>
+
+                      <label>
+                        Assigned To <span class="inc-req">*</span>
+                        <input type="text" id="inc-assigned-to" placeholder="Person responsible for corrective action" />
+                      </label>
+
+                      <label>
+                        Target Completion Date <span class="inc-req">*</span>
+                        <input type="date" id="inc-target-date" />
+                      </label>
+
+                      <label>
+                        Follow-Up Date
+                        <input type="date" id="inc-followup-date" />
+                      </label>
+
+                      <label>
+                        Corrective Action Status <span class="inc-req">*</span>
+                        <select id="inc-ca-status">
+                          <option value="Pending">Pending</option>
+                          <option value="In progress">In progress</option>
+                          <option value="For verification">For verification</option>
+                          <option value="Completed">Completed</option>
+                          <option value="Overdue">Overdue</option>
+                        </select>
+                      </label>
+
+                    </div>
+                  </div>
+
+                  <!-- Completion fields — shown when CA status = Completed -->
+                  <div id="inc-completion-wrap" class="inc-ca-fields-wrap wide-field" hidden>
+                    <div class="payroll-form-grid" style="margin:0;">
+
+                      <label>
+                        Completion Date <span class="inc-req">*</span>
+                        <input type="date" id="inc-completion-date" />
+                      </label>
+
+                      <label class="wide-field">
+                        Completion Notes <span class="inc-req">*</span>
+                        <textarea id="inc-completion-notes" rows="2" placeholder="What was done to complete the corrective action?"></textarea>
+                      </label>
+
+                      <label>
+                        Verified By <span class="inc-req">*</span>
+                        <input type="text" id="inc-verified-by" placeholder="Who verified the completion?" />
+                      </label>
+
+                      <label class="wide-field">
+                        Verification Remarks
+                        <textarea id="inc-verification-remarks" rows="2" placeholder="Verification notes."></textarea>
+                      </label>
+
+                    </div>
+                  </div>
+
+                  <!-- CA status = Not Required label (shown when CA = No) -->
+                  <div id="inc-ca-not-required-note" class="wide-field" style="display:none;">
+                    <p style="margin:0;color:var(--muted);font-size:.85rem;font-weight:700;">No corrective action required for this incident.</p>
+                  </div>
+
+                </div>
+              </div>
+
+              <!-- ── Form Actions ──────────────────────────────────── -->
+              <div class="payroll-actions" style="grid-column:1/-1;margin-top:8px;">
+                <button type="submit" class="btn btn-primary" id="inc-save-btn">Save Incident</button>
+                <button type="button" class="btn btn-outline" id="inc-export-btn">Export CSV</button>
+                <p class="payroll-status-line" id="inc-status-msg" aria-live="polite"></p>
+              </div>
+
+            </form>
+          </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════
+             TAB: RECORDS
+        ══════════════════════════════════════════════════════════════ -->
+        <div class="payroll-tab-panel" id="inc-tab-records" role="tabpanel">
+
+          <div class="payroll-card">
+            <div class="payroll-card-head">
+              <div>
+                <h2>Incident Records</h2>
+                <p>Search, filter, and manage all logged incidents.</p>
+              </div>
+              <div class="button-group">
+                <button class="btn btn-outline" id="inc-export-records-btn" type="button">Export CSV</button>
+              </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="payroll-form-grid inc-filter-grid" style="margin-bottom:18px;">
+              <label>
+                Search
+                <input type="text" id="inc-search" placeholder="Plate, driver, logged by, type…" />
+              </label>
+              <label>
+                Status
+                <select id="inc-filter-status">
+                  <option value="">All statuses</option>
+                  <option>New</option>
+                  <option>Under review</option>
+                  <option>Corrective action required</option>
+                  <option>Corrective action in progress</option>
+                  <option>For verification</option>
+                  <option>Closed</option>
+                  <option>Cancelled</option>
+                </select>
+              </label>
+              <label>
+                Severity
+                <select id="inc-filter-severity">
+                  <option value="">All severities</option>
+                  <option>Low</option>
+                  <option>Medium</option>
+                  <option>High</option>
+                  <option>Critical</option>
+                </select>
+              </label>
+              <label>
+                CA Status
+                <select id="inc-filter-ca-status">
+                  <option value="">All CA statuses</option>
+                  <option>Not required</option>
+                  <option>Pending</option>
+                  <option>In progress</option>
+                  <option>For verification</option>
+                  <option>Completed</option>
+                  <option>Overdue</option>
+                </select>
+              </label>
+              <label>
+                Date From
+                <input type="date" id="inc-filter-date-from" />
+              </label>
+              <label>
+                Date To
+                <input type="date" id="inc-filter-date-to" />
+              </label>
+            </div>
+
+            <!-- Table -->
+            <div class="table-wrap">
+              <table class="module-table" id="inc-records-table">
+                <thead>
+                  <tr>
+                    <th>Incident ID</th>
+                    <th>Date Reported</th>
+                    <th>Plate</th>
+                    <th>Driver</th>
+                    <th>Type</th>
+                    <th>Severity</th>
+                    <th>Status</th>
+                    <th>CA Status</th>
+                    <th>Assigned To</th>
+                    <th>Target Date</th>
+                    <th>Logged By</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="inc-records-body">
+                  <tr>
+                    <td colspan="12" class="empty">No incidents logged yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-grid">
+      <div>
+        <strong>VNS Logistics</strong>
+        <p>Moving Business Forward</p>
+      </div>
+      <a href="#top">Back to top ↑</a>
+    </div>
+  </footer>
+
+  <script src="auth.js"></script>
+  <script src="push-config.js"></script>
+  <script src="notifications.js"></script>
+  <script src="script.js"></script>
+  <script src="incident-report.js"></script>
+</body>
+</html>
