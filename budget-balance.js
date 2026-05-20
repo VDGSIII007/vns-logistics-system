@@ -609,6 +609,23 @@ function bbcRouteBreakdown(lines, mode) {
   return [...map.values()].sort((a, b) => b.total - a.total || a.route.localeCompare(b.route));
 }
 
+function bbcCombinedRouteBreakdown(lines = []) {
+  const map = new Map();
+  lines.forEach(line => {
+    const route = bbcPlainRouteLabel(line);
+    if (!map.has(route)) {
+      map.set(route, { route, count: 0, dates: [], driverTotal: 0, helperTotal: 0 });
+    }
+    const item = map.get(route);
+    item.count += 1;
+    item.driverTotal += bbcNumber(line.driverSalary);
+    item.helperTotal += bbcNumber(line.helperSalary);
+    const date = bbcDate(line.tripDate);
+    if (date !== "-" && !item.dates.includes(date)) item.dates.push(date);
+  });
+  return [...map.values()].sort((a, b) => (b.driverTotal + b.helperTotal) - (a.driverTotal + a.helperTotal) || a.route.localeCompare(b.route));
+}
+
 async function bbcFetchTripLinesForPayrollIds(payrollIds) {
   const uniqueIds = [...new Set(payrollIds.filter(Boolean))];
   const chunks = await Promise.all(uniqueIds.map(async payrollId => {
@@ -1075,17 +1092,42 @@ function bbcBuildPayrollDraftPayload(row) {
   const preview = bbcTruckPreviewData(row);
   const payrollId = bbcGeneratePayrollDraftId(row);
   const today = new Date().toISOString().slice(0, 10);
+  const routeBreakdown = bbcCombinedRouteBreakdown(preview.lines);
+  const moneyLedgerRefs = preview.moneyLedger.map(record => ({
+    id: record.id,
+    date: record.date,
+    type: record.type,
+    po_number: record.poNumber,
+    amount: record.amount,
+    status: record.status,
+    payment_status: record.paymentStatus
+  }));
   const rawData = {
     source: "Budget Balance",
     preview_only: true,
+    plate_number: row.plate,
+    group_category: row.group,
+    driver_name: row.driver,
+    helper_name: row.helper,
     period_start: bbcState.periodStart,
     period_label: bbcState.periodLabel,
     route_lines: preview.lines,
+    route_breakdown: routeBreakdown,
     driver_route_breakdown: preview.driverRouteBreakdown,
     helper_route_breakdown: preview.helperRouteBreakdown,
+    money_ledger_refs: moneyLedgerRefs,
     driver_cash_advance_history: preview.driverCashAdvances,
     helper_cash_advance_history: preview.helperCashAdvances,
     money_ledger: preview.moneyLedger,
+    driver_gross: preview.driverGross,
+    helper_gross: preview.helperGross,
+    driver_cash_advance_balance: preview.driverTotals.currentBalance,
+    helper_cash_advance_balance: preview.helperTotals.currentBalance,
+    suggested_driver_deduction: preview.driverTotals.deduction,
+    suggested_helper_deduction: preview.helperTotals.deduction,
+    driver_take_home: preview.driverTotals.takeHome,
+    helper_take_home: preview.helperTotals.takeHome,
+    preview_warning: "Draft only. Deductions are not applied until payroll is finalized.",
     warning: "Draft only. Deductions are not applied and balances are not updated."
   };
   return {
@@ -1112,6 +1154,10 @@ function bbcBuildPayrollDraftPayload(row) {
     approval_status: "Draft",
     payment_status: "Unpaid",
     source: "Budget Balance",
+    route_breakdown: routeBreakdown,
+    money_ledger_refs: moneyLedgerRefs,
+    driver_cash_advance_history: preview.driverCashAdvances,
+    helper_cash_advance_history: preview.helperCashAdvances,
     driver_gross: preview.driverGross,
     helper_gross: preview.helperGross,
     driver_cash_advance_balance: preview.driverTotals.currentBalance,
@@ -1120,6 +1166,7 @@ function bbcBuildPayrollDraftPayload(row) {
     suggested_helper_deduction: preview.helperTotals.deduction,
     driver_take_home: preview.driverTotals.takeHome,
     helper_take_home: preview.helperTotals.takeHome,
+    preview_warning: "Draft only. Deductions are not applied until payroll is finalized.",
     raw_data: rawData
   };
 }
@@ -1420,6 +1467,22 @@ function bbcClosePayrollDraftModal() {
   modal.dataset.rowKey = "";
 }
 
+function bbcDraftRouteBreakdownList(rows = []) {
+  return `
+    <section class="budget-draft-route-section">
+      <h4>Route Breakdown</h4>
+      <div class="budget-draft-route-list">
+        ${rows.length ? rows.map(row => `
+          <div>
+            <strong>${bbcEscape(row.route)}</strong>
+            <span>${bbcEscape(row.dates.join(", ") || "-")} | ${row.count} ${row.count === 1 ? "trip" : "trips"} | Driver ${bbcEscape(bbcMoney(row.driverTotal))} | Helper ${bbcEscape(bbcMoney(row.helperTotal))}</span>
+          </div>
+        `).join("") : `<p>No route preview yet.</p>`}
+      </div>
+    </section>
+  `;
+}
+
 async function bbcOpenPayrollDraftModal(rowKey) {
   const row = bbcFindRow("trucks", rowKey);
   if (!row) return;
@@ -1442,15 +1505,20 @@ async function bbcOpenPayrollDraftModal(rowKey) {
   }
   if (title) title.textContent = `Create payroll draft for ${row.plate}?`;
   if (body) {
+    const routeBreakdown = bbcCombinedRouteBreakdown(preview.lines);
     body.innerHTML = `
+      ${bbcDraftRouteBreakdownList(routeBreakdown)}
       <div class="budget-draft-confirm-grid">
+        ${bbcMiniCard("Driver Cash Advance", bbcMoney(preview.driverTotals.currentBalance))}
+        ${bbcMiniCard("Helper Cash Advance", bbcMoney(preview.helperTotals.currentBalance))}
         ${bbcMiniCard("Driver Gross", bbcMoney(preview.driverTotals.gross))}
         ${bbcMiniCard("Helper Gross", bbcMoney(preview.helperTotals.gross))}
-        ${bbcMiniCard("Driver Deduct", bbcMoney(preview.driverTotals.deduction))}
-        ${bbcMiniCard("Helper Deduct", bbcMoney(preview.helperTotals.deduction))}
+        ${bbcMiniCard("Suggested Driver Deduction", bbcMoney(preview.driverTotals.deduction))}
+        ${bbcMiniCard("Suggested Helper Deduction", bbcMoney(preview.helperTotals.deduction))}
         ${bbcMiniCard("Driver Take-home", bbcMoney(preview.driverTotals.takeHome))}
         ${bbcMiniCard("Helper Take-home", bbcMoney(preview.helperTotals.takeHome))}
       </div>
+      <p class="budget-draft-note">Preview only - deductions are not applied until payroll is finalized.</p>
     `;
   }
 }

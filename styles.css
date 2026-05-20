@@ -3204,10 +3204,51 @@ body.payroll-page{
 .budget-draft-modal-body{
   padding:18px 20px 8px;
 }
+.budget-draft-route-section{
+  margin:0 0 14px;
+  border:1px solid #edf0f5;
+  border-radius:14px;
+  background:#fbfcfe;
+  padding:12px;
+}
+.budget-draft-route-section h4{
+  margin:0 0 8px;
+  color:#111827;
+  font-size:.88rem;
+}
+.budget-draft-route-list{
+  display:grid;
+  gap:8px;
+}
+.budget-draft-route-list div{
+  display:grid;
+  gap:3px;
+  padding:9px 10px;
+  border-radius:10px;
+  background:#fff;
+  border:1px solid #eef0f3;
+}
+.budget-draft-route-list strong{
+  color:#111827;
+  font-size:.9rem;
+}
+.budget-draft-route-list span,
+.budget-draft-route-list p{
+  margin:0;
+  color:#6b7280;
+  font-size:.78rem;
+  font-weight:800;
+}
 .budget-draft-confirm-grid{
   display:grid;
   grid-template-columns:repeat(2,minmax(0,1fr));
   gap:10px;
+}
+.budget-draft-note{
+  margin:12px 0 0;
+  color:#6b7280;
+  font-size:.8rem;
+  font-weight:850;
 }
 .budget-draft-status{
   min-height:22px;
@@ -3238,6 +3279,120 @@ body.payroll-page{
   justify-content:flex-end;
   gap:10px;
   padding:0 20px 20px;
+}
+.payroll-budget-draft-row td{
+  background:#fff;
+  padding:14px;
+}
+.payroll-budget-draft-card{
+  border:1px solid #e5e7eb;
+  border-radius:16px;
+  background:#fbfcfe;
+  padding:14px;
+}
+.payroll-budget-draft-head{
+  display:flex;
+  justify-content:space-between;
+  gap:14px;
+  align-items:flex-start;
+  border-bottom:1px solid #edf0f5;
+  padding-bottom:12px;
+  margin-bottom:12px;
+}
+.payroll-budget-draft-head span{
+  display:block;
+  color:var(--red);
+  font-size:.7rem;
+  font-weight:900;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.payroll-budget-draft-head h3{
+  margin:3px 0 4px;
+  color:#111827;
+  font-size:1rem;
+}
+.payroll-budget-draft-head p{
+  margin:0;
+  color:#4b5563;
+  font-size:.82rem;
+  font-weight:800;
+}
+.payroll-budget-draft-head button{
+  border:1px solid #d1d5db;
+  border-radius:999px;
+  background:#f3f4f6;
+  color:#6b7280;
+  padding:8px 12px;
+  font:inherit;
+  font-size:.74rem;
+  font-weight:900;
+  cursor:pointer;
+}
+.payroll-budget-draft-section h4,
+.payroll-budget-computation-card h4{
+  margin:0 0 8px;
+  color:#111827;
+  font-size:.84rem;
+}
+.payroll-budget-route-list{
+  display:grid;
+  gap:8px;
+  margin-bottom:12px;
+}
+.payroll-budget-route-list div{
+  display:grid;
+  gap:3px;
+  padding:9px 10px;
+  border:1px solid #eef0f3;
+  border-radius:10px;
+  background:#fff;
+}
+.payroll-budget-route-list strong{
+  color:#111827;
+  font-size:.86rem;
+}
+.payroll-budget-route-list span,
+.payroll-budget-route-list p{
+  margin:0;
+  color:#6b7280;
+  font-size:.76rem;
+  font-weight:800;
+}
+.payroll-budget-computation-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+}
+.payroll-budget-computation-card{
+  border:1px solid #edf0f5;
+  border-radius:12px;
+  background:#fff;
+  padding:12px;
+}
+.payroll-budget-computation-card div{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  padding:6px 0;
+  border-top:1px solid #f1f2f4;
+}
+.payroll-budget-computation-card div:first-of-type{
+  border-top:0;
+}
+.payroll-budget-computation-card span{
+  color:#6b7280;
+  font-weight:800;
+}
+.payroll-budget-computation-card strong{
+  color:#111827;
+  white-space:nowrap;
+}
+.payroll-budget-draft-note{
+  margin:12px 0 0;
+  color:#6b7280;
+  font-size:.8rem;
+  font-weight:850;
 }
 .budget-status-chip{
   display:inline-flex;
@@ -3877,6 +4032,21 @@ body.payroll-page{
   background:#fff;
   font:inherit;
   resize:vertical;
+}
+@media(max-width:720px){
+  .payroll-budget-draft-head,
+  .payroll-budget-computation-grid{
+    grid-template-columns:1fr;
+  }
+  .payroll-budget-draft-head{
+    display:grid;
+  }
+  .payroll-budget-draft-head button{
+    width:100%;
+  }
+  .budget-draft-confirm-grid{
+    grid-template-columns:1fr;
+  }
 }
 .approval-modal-actions{
   display:flex;

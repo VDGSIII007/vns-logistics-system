@@ -1125,6 +1125,132 @@ function renderWarnings(warnings = payrollState.warnings) {
   content.innerHTML = unique.length ? unique.map(warning => `<span class="warning-badge">${escapeHtml(warning)}</span>`).join("") : `<span class="ok-badge">No warnings.</span>`;
 }
 
+function getBudgetBalanceDraftData(record = {}) {
+  const raw = record.rawData || record.raw_data || {};
+  if (raw?.source === "Budget Balance") return raw;
+  if (raw?.raw_data?.source === "Budget Balance") return raw;
+  if (record.source === "Budget Balance") return raw;
+  return null;
+}
+
+function getBudgetBalanceDraftDetail(raw = {}) {
+  return raw?.raw_data && typeof raw.raw_data === "object" ? raw.raw_data : raw;
+}
+
+function isBudgetBalanceDraft(record = {}) {
+  const status = normalize(getSavedPayrollDisplayStatus(record) || record.status);
+  return status === "draft" && !!getBudgetBalanceDraftData(record);
+}
+
+function formatDraftDate(value) {
+  if (!value) return "-";
+  const text = String(value).slice(0, 10);
+  const date = new Date(`${text}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? escapeHtml(text) : escapeHtml(date.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }));
+}
+
+function getDraftRouteLabel(line = {}) {
+  const source = line.source || line.Source || "";
+  const destination = line.destination || line.Destination || "";
+  if (source && destination) return `${source} \u2192 ${destination}`;
+  return line.route || line.Route || "No route data yet";
+}
+
+function getDraftRouteBreakdown(raw = {}) {
+  const detail = getBudgetBalanceDraftDetail(raw);
+  if (Array.isArray(detail.route_breakdown) && detail.route_breakdown.length) return detail.route_breakdown;
+  const map = new Map();
+  (detail.route_lines || raw.route_lines || []).forEach(line => {
+    const route = getDraftRouteLabel(line);
+    if (!map.has(route)) map.set(route, { route, count: 0, dates: [], driverTotal: 0, helperTotal: 0 });
+    const item = map.get(route);
+    item.count += 1;
+    item.driverTotal += parseNumber(line.driverSalary ?? line.driver_salary);
+    item.helperTotal += parseNumber(line.helperSalary ?? line.helper_salary);
+    const date = line.tripDate || line.trip_date || line.date || "";
+    const formatted = formatDraftDate(date);
+    if (formatted !== "-" && !item.dates.includes(formatted)) item.dates.push(formatted);
+  });
+  return [...map.values()];
+}
+
+function renderDraftRouteBreakdown(raw = {}) {
+  const rows = getDraftRouteBreakdown(raw);
+  return `
+    <section class="payroll-budget-draft-section">
+      <h4>Route Breakdown</h4>
+      <div class="payroll-budget-route-list">
+        ${rows.length ? rows.map(row => `
+          <div>
+            <strong>${escapeHtml(row.route || "No route data yet")}</strong>
+            <span>${escapeHtml((row.dates || []).join(", ") || "-")} | ${parseNumber(row.count) || 0} ${(parseNumber(row.count) || 0) === 1 ? "trip" : "trips"} | Driver ${formatCurrency(row.driverTotal)} | Helper ${formatCurrency(row.helperTotal)}</span>
+          </div>
+        `).join("") : `<p>No route preview saved.</p>`}
+      </div>
+    </section>
+  `;
+}
+
+function payrollDraftValue(record = {}, raw = {}, rawKey, recordKey) {
+  const detail = getBudgetBalanceDraftDetail(raw);
+  return raw[rawKey] ?? detail[rawKey] ?? record[recordKey] ?? 0;
+}
+
+function renderBudgetBalanceDraftComputation(title, rows) {
+  return `
+    <article class="payroll-budget-computation-card">
+      <h4>${escapeHtml(title)}</h4>
+      ${rows.map(row => `
+        <div>
+          <span>${escapeHtml(row.label)}</span>
+          <strong>${formatCurrency(row.value)}</strong>
+        </div>
+      `).join("")}
+    </article>
+  `;
+}
+
+function renderBudgetBalanceDraftCard(record = {}) {
+  const raw = getBudgetBalanceDraftData(record) || {};
+  const detail = getBudgetBalanceDraftDetail(raw);
+  const plate = detail.plate_number || raw.plate_number || record.plateNumber || "";
+  const group = detail.group_category || raw.group_category || record.groupCategory || "";
+  const driver = detail.driver_name || raw.driver_name || record.driverName || "";
+  const helper = detail.helper_name || raw.helper_name || record.helperName || "";
+  return `
+    <tr class="payroll-budget-draft-row">
+      <td colspan="11">
+        <article class="payroll-budget-draft-card">
+          <div class="payroll-budget-draft-head">
+            <div>
+              <span>Payroll Draft</span>
+              <h3>Plate: ${escapeHtml(plate || "-")}</h3>
+              <p>Group: ${escapeHtml(group || "-")} | Driver: ${escapeHtml(driver || "-")} | Helper: ${escapeHtml(helper || "-")} | Status: Draft</p>
+            </div>
+            <button type="button" data-action="draft-finalize-placeholder" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}">Finalize Payroll</button>
+          </div>
+          ${renderDraftRouteBreakdown(raw)}
+          <div class="payroll-budget-computation-grid">
+            ${renderBudgetBalanceDraftComputation("Driver Computation", [
+              { label: "Gross", value: payrollDraftValue(record, raw, "driver_gross", "driver_gross") || record.totals?.totalDriverSalary },
+              { label: "Cash Advance", value: payrollDraftValue(record, raw, "driver_cash_advance_balance", "driver_cash_advance_balance") },
+              { label: "Suggested Deduction", value: payrollDraftValue(record, raw, "suggested_driver_deduction", "suggested_driver_deduction") },
+              { label: "Take-home", value: payrollDraftValue(record, raw, "driver_take_home", "driver_take_home") || record.totals?.driverNetPay }
+            ])}
+            ${renderBudgetBalanceDraftComputation("Helper Computation", [
+              { label: "Gross", value: payrollDraftValue(record, raw, "helper_gross", "helper_gross") || record.totals?.totalHelperSalary },
+              { label: "Cash Advance", value: payrollDraftValue(record, raw, "helper_cash_advance_balance", "helper_cash_advance_balance") },
+              { label: "Suggested Deduction", value: payrollDraftValue(record, raw, "suggested_helper_deduction", "suggested_helper_deduction") },
+              { label: "Take-home", value: payrollDraftValue(record, raw, "helper_take_home", "helper_take_home") || record.totals?.helperNetPay }
+            ])}
+          </div>
+          <p class="payroll-budget-draft-note">${escapeHtml(detail.preview_warning || "Draft only - review before finalizing.")}</p>
+        </article>
+      </td>
+    </tr>
+  `;
+}
+
 function renderPayrollRecordsTable() {
   const recordsBody = $("records-body");
   if (!recordsBody) {
@@ -1167,6 +1293,7 @@ function renderPayrollRecordsTable() {
         <button type="button" data-action="message" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}">Generate Message</button>
       </td>
     </tr>
+    ${isBudgetBalanceDraft(record) ? renderBudgetBalanceDraftCard(record) : ""}
   `).join("") : `<tr><td colspan="11" class="empty-table">No payroll records yet.</td></tr>`;
   renderForApprovalQueue();
 }
@@ -1204,6 +1331,8 @@ function handleSavedPayrollRecordAction(event) {
     deletePayrollRecord(payrollId);
   } else if (action === "message") {
     editPayrollRecord(payrollId).then(() => generateViberMessage());
+  } else if (action === "draft-finalize-placeholder") {
+    setStatus("Finalize payroll will be added next. This draft has not applied deductions yet.", "info");
   }
 }
 
@@ -2952,6 +3081,7 @@ function normalizeSupabasePayrollRecord(r) {
     lines: raw.lines || [],
     approval: raw.approval || {},
     deductions: raw.deductions || { driver: {}, helper: {} },
+    rawData: raw,
     remarks: raw.remarks || "",
     encoderName: raw.encoderName || "",
     truckType: raw.truckType || "",
