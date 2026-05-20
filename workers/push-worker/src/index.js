@@ -34,6 +34,8 @@ import {
 } from "./repair-api.js";
 import {
   createPayrollBalanceEventInSupabase,
+  getBudgetBalanceSummaryFromSupabase,
+  listBudgetBalanceTransactionsFromSupabase,
   listPayrollRecordsFromSupabase,
   listPayrollRatesFromSupabase,
   listPayrollTripLinesFromSupabase,
@@ -74,6 +76,10 @@ const PAYROLL_API_PATHS = new Set([
   "/api/payroll/trip-lines",
   "/api/payroll/trip-line-upsert",
   "/api/payroll/trip-lines-bulk-upsert"
+]);
+const BUDGET_BALANCE_API_PATHS = new Set([
+  "/api/budget-balance/summary",
+  "/api/budget-balance/transactions"
 ]);
 const CORS_ALLOWED_ORIGINS = new Set([
   "https://portal.vns-logistics.com",
@@ -570,6 +576,22 @@ async function handlePayrollTripLineUpsert(request, env) {
   return jsonResponse(result);
 }
 
+async function handleBudgetBalanceSummary(url, env) {
+  const result = await getBudgetBalanceSummaryFromSupabase(env, url.searchParams);
+  if (!result.ok) {
+    return jsonResponse({ ok: false, error: result.error || "Budget Balance summary fetch failed" }, result.status || 500);
+  }
+  return jsonResponse(result);
+}
+
+async function handleBudgetBalanceTransactions(url, env) {
+  const result = await listBudgetBalanceTransactionsFromSupabase(env, url.searchParams);
+  if (!result.ok) {
+    return jsonResponse({ ok: false, error: result.error || "Budget Balance transactions fetch failed" }, result.status || 500);
+  }
+  return jsonResponse(result);
+}
+
 async function routeRequest(request, env) {
   const url = new URL(request.url);
   const isCashApiRoute = CASH_API_PATHS.has(url.pathname);
@@ -601,6 +623,11 @@ async function routeRequest(request, env) {
   if (request.method === "POST" && url.pathname === "/api/payroll/trip-line-upsert") return withCors(await handlePayrollTripLineUpsert(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/payroll/trip-lines-bulk-upsert") return withCors(await handlePayrollTripLineUpsert(request, env), request);
   if (isPayrollApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
+  const isBudgetBalanceApiRoute = BUDGET_BALANCE_API_PATHS.has(url.pathname);
+  if (isBudgetBalanceApiRoute && request.method === "OPTIONS") return handleOptions(request);
+  if (request.method === "GET" && url.pathname === "/api/budget-balance/summary") return withCors(await handleBudgetBalanceSummary(url, env), request);
+  if (request.method === "GET" && url.pathname === "/api/budget-balance/transactions") return withCors(await handleBudgetBalanceTransactions(url, env), request);
+  if (isBudgetBalanceApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
   if (request.method === "GET" && url.pathname === "/api/push/check") return handleCheck(env);
   if (request.method === "GET" && url.pathname === "/api/push/debug-sources") return handleDebugSources(env);
   if (request.method === "GET" && url.pathname === "/api/push/debug-payment-queue") return handleDebugPaymentQueue(env);

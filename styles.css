@@ -2558,6 +2558,65 @@ body.payroll-page{
   background:#f3f4f6;
   color:#4b5563;
 }
+.budget-filter-card{
+  margin-bottom:18px;
+}
+.budget-filter-grid{
+  align-items:end;
+  display:grid;
+  grid-template-columns:repeat(6,minmax(130px,1fr)) auto;
+  gap:10px;
+}
+.budget-filter-grid label{
+  display:grid;
+  gap:6px;
+  min-width:0;
+}
+.budget-filter-grid label span{
+  color:#6b7280;
+  font-size:.72rem;
+  font-weight:900;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+.budget-filter-grid .ops-input,
+.budget-filter-grid .ops-select{
+  min-width:0;
+}
+.budget-summary-card{
+  display:grid;
+  gap:9px;
+}
+.budget-summary-card strong{
+  font-size:1.55rem;
+  overflow-wrap:anywhere;
+}
+.budget-summary-line{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding-top:7px;
+  border-top:1px solid #edf0f5;
+}
+.budget-summary-line em{
+  color:#6b7280;
+  font-size:.76rem;
+  font-style:normal;
+  font-weight:850;
+}
+.budget-summary-line b{
+  color:#111827;
+  font-size:.84rem;
+  text-align:right;
+  overflow-wrap:anywhere;
+}
+.budget-balance-table{
+  min-width:1280px;
+}
+.budget-balance-table .ops-secondary-btn{
+  min-height:32px;
+}
 .details-clamp{
   display:-webkit-box;
   -webkit-line-clamp:2;
@@ -3120,6 +3179,9 @@ body.payroll-page{
   .ops-summary-grid{
     grid-template-columns:repeat(2,minmax(0,1fr));
   }
+  .budget-filter-grid{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
   .ops-toolbar .ops-input{
     flex-basis:100%;
   }
@@ -3154,6 +3216,10 @@ body.payroll-page{
   .ops-toolbar .ops-secondary-btn{
     flex:1 1 100%;
     min-width:0;
+  }
+  .budget-filter-grid{
+    display:grid;
+    grid-template-columns:1fr;
   }
   .ops-tabs{
     align-items:stretch;

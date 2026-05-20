@@ -749,3 +749,244 @@ export async function upsertPayrollTripLinesToSupabase(env, input = {}) {
     lines: saved.map(formatPayrollTripLine)
   };
 }
+
+function budgetBalanceDate(record = {}) {
+  return dateOrNull(firstValue(record, ["request_date", "payroll_date", "created_at", "updated_at"])) ||
+    dateOrNull(record.created_at) ||
+    "";
+}
+
+function budgetBalanceStatus(record = {}) {
+  const payment = String(record.payment_status || "").trim().toLowerCase();
+  const approval = String(record.approval_status || "").trim().toLowerCase();
+  const status = String(record.status || "").trim().toLowerCase();
+  if (["cancelled", "canceled", "rejected", "returned"].includes(status) || ["cancelled", "canceled", "rejected", "returned"].includes(approval)) return "Cancelled";
+  if (["paid", "released", "deposited", "used"].includes(payment) || ["paid", "released", "deposited", "used"].includes(status)) return "Paid / Released";
+  if (approval === "approved" || status === "approved") return "Approved";
+  if (["pending", "for approval", "submitted", "for review"].includes(approval) || ["pending", "for approval", "submitted", "for review"].includes(status)) return "For Approval";
+  if (["deducted", "salary deduction"].includes(status)) return "Deducted";
+  return "Open";
+}
+
+function normalizeBudgetBalanceGroup(value) {
+  const text = String(value || "").trim();
+  const lower = text.toLowerCase();
+  if (!text) return "";
+  if (lower.includes("bottle")) return "Bottle";
+  if (lower.includes("sugar")) return "Sugar";
+  if (lower.includes("preform") || lower.includes("resin")) return "Preform and Resin";
+  if (lower.includes("cap") || lower.includes("crown")) return "Caps and Crown";
+  if (lower.includes("2go") || lower.includes("2 go")) return "2GO";
+  return text;
+}
+
+function budgetBalanceCashType(record = {}) {
+  const rawType = String(record.request_type || "").trim();
+  const type = rawType.toLowerCase();
+  if (type.includes("diesel")) return "Diesel PO";
+  if (type.includes("budget")) return "Trip Budget";
+  if (type.includes("bali") || type.includes("cash advance")) return "Bali / Cash Advance";
+  return "";
+}
+
+function budgetBalancePersonRole(record = {}) {
+  const raw = record.raw_data && typeof record.raw_data === "object" ? record.raw_data : {};
+  const role = textOrNull(firstValue(raw, ["role", "Role", "person_role", "personRole"]));
+  if (role) return role;
+  const person = String(record.receiver_name || "").trim().toLowerCase();
+  if (person && person === String(record.helper_name || "").trim().toLowerCase()) return "Helper";
+  if (person && person === String(record.driver_name || "").trim().toLowerCase()) return "Driver";
+  return "";
+}
+
+function cashToBudgetBalanceTransaction(record = {}) {
+  const type = budgetBalanceCashType(record);
+  if (!type) return null;
+  const person = type === "Bali / Cash Advance"
+    ? textOrNull(record.receiver_name || record.driver_name || record.helper_name)
+    : textOrNull([record.driver_name, record.helper_name].filter(Boolean).join(" / "));
+  return {
+    id: record.request_id || record.id || "",
+    date: budgetBalanceDate(record),
+    plate: record.plate_number || "",
+    group: normalizeBudgetBalanceGroup(record.group_name),
+    person: person || "",
+    role: type === "Bali / Cash Advance" ? budgetBalancePersonRole(record) : "",
+    type,
+    details: [record.budget_type, record.source, record.destination, record.remarks].filter(Boolean).join(" | "),
+    amount: Number(record.amount) || 0,
+    source: "cash_requests",
+    status: budgetBalanceStatus(record),
+    payrollId: "",
+    cutoff: "",
+    raw: record
+  };
+}
+
+function balanceEventToBudgetBalanceTransaction(record = {}, payrollById = new Map()) {
+  const eventType = String(record.event_type || "").trim();
+  const normalized = eventType.toLowerCase();
+  const payroll = payrollById.get(String(record.payroll_id || ""));
+  let type = "Adjustment";
+  let status = "Open";
+  if (normalized.includes("deduction")) {
+    type = "Payroll Deduction";
+    status = "Deducted";
+  } else if (normalized.includes("bali") || normalized.includes("cash advance")) {
+    type = "Bali / Cash Advance";
+  }
+  return {
+    id: record.event_id || record.id || "",
+    date: dateOrNull(record.created_at) || "",
+    plate: record.plate_number || payroll?.plate_number || "",
+    group: normalizeBudgetBalanceGroup(record.group_category || payroll?.group_category),
+    person: record.person_name || "",
+    role: record.person_role || "",
+    type,
+    details: record.notes || eventType || "Balance event",
+    amount: Number(record.amount) || 0,
+    source: "payroll_balance_events",
+    status,
+    payrollId: record.payroll_id || "",
+    cutoff: payroll ? [payroll.cutoff_from, payroll.cutoff_to].filter(Boolean).join(" to ") : "",
+    raw: record
+  };
+}
+
+function budgetBalanceMatches(transaction = {}, searchParams) {
+  const group = String(searchParams.get("group") || "").trim();
+  const plate = String(searchParams.get("plate") || "").trim().toLowerCase();
+  const person = String(searchParams.get("person") || "").trim().toLowerCase();
+  const status = String(searchParams.get("status") || "").trim();
+  const dateFrom = dateOrNull(searchParams.get("date_from"));
+  const dateTo = dateOrNull(searchParams.get("date_to"));
+  const txDate = dateOrNull(transaction.date);
+
+  if (group && group !== "All Groups" && transaction.group !== group) return false;
+  if (plate && !String(transaction.plate || "").toLowerCase().includes(plate)) return false;
+  if (person && !String(transaction.person || "").toLowerCase().includes(person)) return false;
+  if (status && status !== "All" && transaction.status !== status) return false;
+  if (dateFrom && txDate && txDate < dateFrom) return false;
+  if (dateTo && txDate && txDate > dateTo) return false;
+  return true;
+}
+
+function latestDate(records, predicate) {
+  return records
+    .filter(predicate)
+    .map(record => dateOrNull(record.date))
+    .filter(Boolean)
+    .sort()
+    .pop() || "";
+}
+
+function sumAmounts(records, predicate) {
+  return records.filter(predicate).reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
+}
+
+function buildBudgetBalanceSummary(transactions, balances, selectedPlate, selectedPerson) {
+  const selectedPlateNorm = String(selectedPlate || "").trim().toLowerCase();
+  const selectedPersonNorm = String(selectedPerson || "").trim().toLowerCase();
+  const plateRows = selectedPlateNorm
+    ? transactions.filter(row => String(row.plate || "").toLowerCase().includes(selectedPlateNorm))
+    : transactions;
+  const personRows = selectedPersonNorm
+    ? transactions.filter(row => String(row.person || "").toLowerCase().includes(selectedPersonNorm))
+    : transactions;
+  const selectedDriver = balances.find(row => String(row.person_role || "").toLowerCase() === "driver" &&
+    (!selectedPersonNorm || String(row.person_name || "").toLowerCase().includes(selectedPersonNorm))) || {};
+  const selectedHelper = balances.find(row => String(row.person_role || "").toLowerCase() === "helper" &&
+    (!selectedPersonNorm || String(row.person_name || "").toLowerCase().includes(selectedPersonNorm))) || {};
+
+  return {
+    truckBudget: {
+      selectedPlate: selectedPlate || plateRows.find(row => row.plate)?.plate || "All Plates",
+      group: plateRows.find(row => row.group)?.group || "All Groups",
+      openTripBudgetTotal: sumAmounts(plateRows, row => row.type === "Trip Budget" && !["Paid / Released", "Cancelled", "Deducted"].includes(row.status)),
+      openDieselPoTotal: sumAmounts(plateRows, row => row.type === "Diesel PO" && !["Paid / Released", "Cancelled", "Deducted"].includes(row.status)),
+      latestBudgetDate: latestDate(plateRows, row => row.type === "Trip Budget"),
+      latestPoDate: latestDate(plateRows, row => row.type === "Diesel PO")
+    },
+    driverBalance: {
+      name: selectedDriver.person_name || personRows.find(row => row.role === "Driver")?.person || "All Drivers",
+      currentBalance: Number(selectedDriver.current_balance) || 0,
+      latestBaliDate: latestDate(personRows, row => row.role === "Driver" && row.type === "Bali / Cash Advance"),
+      totalBaliCashAdvance: sumAmounts(personRows, row => row.role === "Driver" && row.type === "Bali / Cash Advance"),
+      totalPayrollDeductions: sumAmounts(personRows, row => row.role === "Driver" && row.type === "Payroll Deduction")
+    },
+    helperBalance: {
+      name: selectedHelper.person_name || personRows.find(row => row.role === "Helper")?.person || "All Helpers",
+      currentBalance: Number(selectedHelper.current_balance) || 0,
+      latestBaliDate: latestDate(personRows, row => row.role === "Helper" && row.type === "Bali / Cash Advance"),
+      totalBaliCashAdvance: sumAmounts(personRows, row => row.role === "Helper" && row.type === "Bali / Cash Advance"),
+      totalPayrollDeductions: sumAmounts(personRows, row => row.role === "Helper" && row.type === "Payroll Deduction")
+    },
+    payrollReadiness: {
+      openBudgetCount: plateRows.filter(row => row.type === "Trip Budget" && !["Paid / Released", "Cancelled", "Deducted"].includes(row.status)).length,
+      openPoCount: plateRows.filter(row => row.type === "Diesel PO" && !["Paid / Released", "Cancelled", "Deducted"].includes(row.status)).length,
+      openBaliCount: personRows.filter(row => row.type === "Bali / Cash Advance" && !["Deducted", "Cancelled"].includes(row.status)).length,
+      recordsNeedingReview: transactions.filter(row => ["Open", "For Approval"].includes(row.status)).length
+    }
+  };
+}
+
+async function loadBudgetBalanceRaw(env) {
+  const cashResult = await supabaseFetch(env, "cash_requests?select=*&or=(is_deleted.is.false,is_deleted.is.null)&order=request_date.desc,created_at.desc&limit=1000", { method: "GET" });
+  if (cashResult.error) return { ok: false, error: SAFE_ERROR, details: cashResult.error, status: cashResult.status || 500 };
+  const eventsResult = await supabaseFetch(env, "payroll_balance_events?select=*&order=created_at.desc&limit=1000", { method: "GET" });
+  if (eventsResult.error) return { ok: false, error: SAFE_ERROR, details: eventsResult.error, status: eventsResult.status || 500 };
+  const balancesResult = await supabaseFetch(env, "person_balances?select=*&or=(is_deleted.is.false,is_deleted.is.null)&order=updated_at.desc&limit=1000", { method: "GET" });
+  if (balancesResult.error) return { ok: false, error: SAFE_ERROR, details: balancesResult.error, status: balancesResult.status || 500 };
+  const payrollResult = await supabaseFetch(env, "payroll_records?select=*&or=(is_deleted.is.false,is_deleted.is.null)&order=payroll_date.desc,created_at.desc&limit=1000", { method: "GET" });
+  if (payrollResult.error) return { ok: false, error: SAFE_ERROR, details: payrollResult.error, status: payrollResult.status || 500 };
+
+  return {
+    ok: true,
+    cash: Array.isArray(cashResult.body) ? cashResult.body : [],
+    events: Array.isArray(eventsResult.body) ? eventsResult.body : [],
+    balances: Array.isArray(balancesResult.body) ? balancesResult.body : [],
+    payroll: Array.isArray(payrollResult.body) ? payrollResult.body : []
+  };
+}
+
+export async function listBudgetBalanceTransactionsFromSupabase(env, searchParams) {
+  const raw = await loadBudgetBalanceRaw(env);
+  if (!raw.ok) return raw;
+
+  const payrollById = new Map(raw.payroll.map(record => [String(record.payroll_id || ""), record]));
+  const transactions = [
+    ...raw.cash.map(cashToBudgetBalanceTransaction).filter(Boolean),
+    ...raw.events.map(record => balanceEventToBudgetBalanceTransaction(record, payrollById))
+  ]
+    .filter(row => budgetBalanceMatches(row, searchParams))
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+
+  return {
+    ok: true,
+    source: "supabase",
+    transactions,
+    count: transactions.length
+  };
+}
+
+export async function getBudgetBalanceSummaryFromSupabase(env, searchParams) {
+  const raw = await loadBudgetBalanceRaw(env);
+  if (!raw.ok) return raw;
+
+  const payrollById = new Map(raw.payroll.map(record => [String(record.payroll_id || ""), record]));
+  const transactions = [
+    ...raw.cash.map(cashToBudgetBalanceTransaction).filter(Boolean),
+    ...raw.events.map(record => balanceEventToBudgetBalanceTransaction(record, payrollById))
+  ].filter(row => budgetBalanceMatches(row, searchParams));
+
+  return {
+    ok: true,
+    source: "supabase",
+    summary: buildBudgetBalanceSummary(
+      transactions,
+      raw.balances,
+      searchParams.get("plate") || "",
+      searchParams.get("person") || ""
+    )
+  };
+}
