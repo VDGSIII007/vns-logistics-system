@@ -3,7 +3,11 @@ const BBC_TABS = ["trucks", "drivers", "helpers"];
 
 const bbcState = {
   activeTab: "trucks",
-  expandedKey: "",
+  drawer: {
+    open: false,
+    tab: "",
+    key: ""
+  },
   cashRecords: [],
   balances: [],
   payrollRecords: [],
@@ -577,7 +581,7 @@ function bbcStatusChip(status) {
 }
 
 function bbcMiniCard(label, value) {
-  return `<article class="budget-mini-card"><span>${bbcEscape(label)}</span><strong>${bbcEscape(value)}</strong></article>`;
+  return `<article class="budget-mini-card budget-detail-card"><span>${bbcEscape(label)}</span><strong>${bbcEscape(value)}</strong></article>`;
 }
 
 function bbcLedgerRow(record, mode) {
@@ -614,7 +618,7 @@ function bbcRenderTruckDetail(row) {
   const records = [...row.records].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   return `
     <div class="budget-detail-panel">
-      <div class="budget-summary-grid">
+      <div class="budget-detail-summary-grid">
         ${bbcMiniCard("Trip Budget Since Last Payroll", bbcMoney(bbcSum(records, record => record.type === "Trip Budget")))}
         ${bbcMiniCard("Diesel PO Since Last Payroll", bbcMoney(bbcSum(records, record => record.type === "Diesel PO")))}
         ${bbcMiniCard("Paid / Released Total", bbcMoney(bbcSum(records, record => bbcNormalizeStatus(record) === "Paid / Released")))}
@@ -624,7 +628,7 @@ function bbcRenderTruckDetail(row) {
         ${bbcMiniCard("Latest Request Date", bbcDate(bbcLatest(records)))}
       </div>
       <div class="budget-ledger-scroll">
-        <table class="budget-ledger-table">
+        <table class="budget-ledger-table budget-detail-ledger">
           <thead><tr><th>Date</th><th>Type</th><th>PO No.</th><th>Route</th><th>Amount</th><th>Status</th><th>Payment Status</th><th>Logged By</th><th>Remarks</th></tr></thead>
           <tbody>${records.length ? records.map(record => bbcLedgerRow(record, "truck")).join("") : `<tr><td colspan="9">No truck records found.</td></tr>`}</tbody>
         </table>
@@ -637,16 +641,15 @@ function bbcRenderPersonDetail(row, role) {
   const records = [...row.records].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   return `
     <div class="budget-detail-panel">
-      <div class="budget-summary-grid">
-        ${bbcMiniCard("Current Balance", bbcMoney(row.currentBalance))}
+      <div class="budget-detail-summary-grid">
+        ${bbcMiniCard("Current Bali Balance", bbcMoney(row.currentBalance))}
         ${bbcMiniCard("Bali / Cash Advance Since Last Payroll", bbcMoney(row.baliSinceLastPayroll))}
-        ${bbcMiniCard("Payroll Deduction Total", bbcMoney(row.payrollDeducted))}
+        ${bbcMiniCard("Payroll Deducted", bbcMoney(row.payrollDeducted))}
         ${bbcMiniCard("Latest Bali Date", bbcDate(row.latestBaliDate))}
         ${bbcMiniCard("Latest Payroll Date", bbcDate(row.latestPayrollDate))}
-        ${bbcMiniCard("Assigned Truck", bbcText(row.assignedTruck, "No Plate"))}
       </div>
       <div class="budget-ledger-scroll">
-        <table class="budget-ledger-table">
+        <table class="budget-ledger-table budget-detail-ledger">
           <thead><tr><th>Date</th><th>Type</th><th>Plate</th><th>Amount</th><th>Status</th><th>Payment Status</th><th>Payroll ID / Cutoff</th><th>Remarks</th></tr></thead>
           <tbody>${records.length ? records.map(record => bbcLedgerRow(record, role)).join("") : `<tr><td colspan="8">No ${bbcEscape(role.toLowerCase())} bali records found.</td></tr>`}</tbody>
         </table>
@@ -663,7 +666,7 @@ function bbcRenderTruckRows(rows) {
         <thead><tr><th>Plate Number</th><th>Group</th><th>Current Driver</th><th>Current Helper</th><th>Open Trip Budget</th><th>Open Diesel PO</th><th>Total Since Last Payroll</th><th>Latest Activity</th><th>Status</th></tr></thead>
         <tbody>
           ${rows.map(row => `
-            <tr class="budget-row" data-bbc-expand="${bbcEscape(row.key)}">
+            <tr class="budget-row" data-bbc-detail-key="${bbcEscape(row.key)}" tabindex="0">
               <td><strong>${bbcEscape(row.plate)}</strong></td>
               <td>${bbcEscape(bbcText(row.group))}</td>
               <td>${bbcEscape(bbcText(row.driver))}</td>
@@ -672,9 +675,8 @@ function bbcRenderTruckRows(rows) {
               <td class="ops-amount">${bbcEscape(bbcMoney(row.openDieselPo))}</td>
               <td class="ops-amount">${bbcEscape(bbcMoney(row.totalSinceLastPayroll))}</td>
               <td>${bbcEscape(bbcDate(row.latestActivity))}</td>
-              <td>${bbcStatusChip(row.status)}</td>
+              <td>${bbcStatusChip(row.status)} <button class="budget-row-action" type="button" data-bbc-detail-key="${bbcEscape(row.key)}">View details</button></td>
             </tr>
-            ${bbcState.expandedKey === row.key ? `<tr class="budget-row-expanded"><td colspan="9">${bbcRenderTruckDetail(row)}</td></tr>` : ""}
           `).join("")}
         </tbody>
       </table>
@@ -682,7 +684,7 @@ function bbcRenderTruckRows(rows) {
     <div class="budget-mobile-list">
       ${rows.map(row => `
         <article class="budget-mobile-card">
-          <button class="budget-row-main" type="button" data-bbc-expand="${bbcEscape(row.key)}">
+          <button class="budget-row-main" type="button" data-bbc-detail-key="${bbcEscape(row.key)}">
             <span><strong>${bbcEscape(row.plate)}</strong><small>${bbcEscape(bbcText(row.group))}</small></span>
             ${bbcStatusChip(row.status)}
           </button>
@@ -694,7 +696,6 @@ function bbcRenderTruckRows(rows) {
             <div><dt>Total Since Last Payroll</dt><dd>${bbcEscape(bbcMoney(row.totalSinceLastPayroll))}</dd></div>
             <div><dt>Latest Activity</dt><dd>${bbcEscape(bbcDate(row.latestActivity))}</dd></div>
           </dl>
-          ${bbcState.expandedKey === row.key ? bbcRenderTruckDetail(row) : ""}
         </article>
       `).join("")}
     </div>
@@ -710,7 +711,7 @@ function bbcRenderPersonRows(rows, role) {
         <thead><tr><th>${nameLabel}</th><th>Assigned Truck</th><th>Group</th><th>Current Bali Balance</th><th>Bali Since Last Payroll</th><th>Payroll Deducted</th><th>Latest Bali Date</th><th>Status</th></tr></thead>
         <tbody>
           ${rows.map(row => `
-            <tr class="budget-row" data-bbc-expand="${bbcEscape(row.key)}">
+            <tr class="budget-row" data-bbc-detail-key="${bbcEscape(row.key)}" tabindex="0">
               <td><strong>${bbcEscape(row.name)}</strong></td>
               <td>${bbcEscape(bbcText(row.assignedTruck, "No Plate"))}</td>
               <td>${bbcEscape(bbcText(row.group))}</td>
@@ -718,9 +719,8 @@ function bbcRenderPersonRows(rows, role) {
               <td class="ops-amount">${bbcEscape(bbcMoney(row.baliSinceLastPayroll))}</td>
               <td class="ops-amount">${bbcEscape(bbcMoney(row.payrollDeducted))}</td>
               <td>${bbcEscape(bbcDate(row.latestBaliDate))}</td>
-              <td>${bbcStatusChip(row.status)}</td>
+              <td>${bbcStatusChip(row.status)} <button class="budget-row-action" type="button" data-bbc-detail-key="${bbcEscape(row.key)}">View details</button></td>
             </tr>
-            ${bbcState.expandedKey === row.key ? `<tr class="budget-row-expanded"><td colspan="8">${bbcRenderPersonDetail(row, role)}</td></tr>` : ""}
           `).join("")}
         </tbody>
       </table>
@@ -728,7 +728,7 @@ function bbcRenderPersonRows(rows, role) {
     <div class="budget-mobile-list">
       ${rows.map(row => `
         <article class="budget-mobile-card">
-          <button class="budget-row-main" type="button" data-bbc-expand="${bbcEscape(row.key)}">
+          <button class="budget-row-main" type="button" data-bbc-detail-key="${bbcEscape(row.key)}">
             <span><strong>${bbcEscape(row.name)}</strong><small>${bbcEscape(bbcText(row.assignedTruck, "No Plate"))}</small></span>
             ${bbcStatusChip(row.status)}
           </button>
@@ -739,7 +739,6 @@ function bbcRenderPersonRows(rows, role) {
             <div><dt>Payroll Deducted</dt><dd>${bbcEscape(bbcMoney(row.payrollDeducted))}</dd></div>
             <div><dt>Latest Bali Date</dt><dd>${bbcEscape(bbcDate(row.latestBaliDate))}</dd></div>
           </dl>
-          ${bbcState.expandedKey === row.key ? bbcRenderPersonDetail(row, role) : ""}
         </article>
       `).join("")}
     </div>
@@ -762,6 +761,48 @@ function bbcRenderTabSummary() {
   `;
 }
 
+function bbcFindRow(tab = bbcState.drawer.tab, key = bbcState.drawer.key) {
+  return (bbcState.rows[tab] || []).find(row => row.key === key) || null;
+}
+
+function bbcRenderDrawer() {
+  const drawer = bbc$("bbc-detail-drawer");
+  const backdrop = bbc$("bbc-drawer-backdrop");
+  const title = bbc$("bbc-drawer-title");
+  const subtitle = bbc$("bbc-drawer-subtitle");
+  const kicker = bbc$("bbc-drawer-kicker");
+  const body = bbc$("bbc-drawer-body");
+  if (!drawer || !backdrop || !title || !subtitle || !kicker || !body) return;
+
+  const row = bbcFindRow();
+  const open = bbcState.drawer.open && row;
+  drawer.classList.toggle("open", Boolean(open));
+  drawer.setAttribute("aria-hidden", open ? "false" : "true");
+  backdrop.hidden = !open;
+  backdrop.classList.toggle("open", Boolean(open));
+
+  if (!open) {
+    title.textContent = "Select a row";
+    subtitle.textContent = "";
+    body.innerHTML = "";
+    return;
+  }
+
+  if (bbcState.drawer.tab === "trucks") {
+    kicker.textContent = "Truck Details";
+    title.textContent = row.plate;
+    subtitle.textContent = [row.group, row.driver ? `Driver: ${row.driver}` : "", row.helper ? `Helper: ${row.helper}` : ""].filter(Boolean).join(" | ");
+    body.innerHTML = bbcRenderTruckDetail(row);
+    return;
+  }
+
+  const role = bbcState.drawer.tab === "drivers" ? "Driver" : "Helper";
+  kicker.textContent = `${role} Details`;
+  title.textContent = row.name;
+  subtitle.textContent = [row.assignedTruck ? `Truck: ${row.assignedTruck}` : "No Plate", row.group].filter(Boolean).join(" | ");
+  body.innerHTML = bbcRenderPersonDetail(row, role);
+}
+
 function bbcRender() {
   const note = bbc$("bbc-period-note");
   if (note) note.textContent = bbcState.periodLabel;
@@ -771,12 +812,13 @@ function bbcRender() {
   if (bbcState.activeTab === "trucks") content.innerHTML = bbcRenderTruckRows(bbcState.rows.trucks);
   if (bbcState.activeTab === "drivers") content.innerHTML = bbcRenderPersonRows(bbcState.rows.drivers, "Driver");
   if (bbcState.activeTab === "helpers") content.innerHTML = bbcRenderPersonRows(bbcState.rows.helpers, "Helper");
+  bbcRenderDrawer();
 }
 
 function bbcSetActiveTab(tab) {
   if (!BBC_TABS.includes(tab)) return;
   bbcState.activeTab = tab;
-  bbcState.expandedKey = "";
+  bbcCloseDrawer();
   console.log("Budget Balance active tab", bbcState.activeTab);
   document.querySelectorAll("[data-bbc-tab]").forEach(button => {
     const active = button.dataset.bbcTab === tab;
@@ -786,10 +828,21 @@ function bbcSetActiveTab(tab) {
   bbcRender();
 }
 
-function bbcToggleExpanded(key) {
-  bbcState.expandedKey = bbcState.expandedKey === key ? "" : key;
-  console.log("Budget Balance expanded row", bbcState.expandedKey);
+function bbcOpenDrawer(key) {
+  if (!key) return;
+  bbcState.drawer = {
+    open: true,
+    tab: bbcState.activeTab,
+    key
+  };
+  console.log("Budget Balance expanded row", key);
   bbcRender();
+}
+
+function bbcCloseDrawer() {
+  bbcState.drawer.open = false;
+  bbcState.drawer.key = "";
+  bbcRenderDrawer();
 }
 
 function bbcBindEvents() {
@@ -799,13 +852,13 @@ function bbcBindEvents() {
     el.addEventListener("input", () => {
       bbcReadFilters();
       bbcBuildRows();
-      bbcState.expandedKey = "";
+      bbcCloseDrawer();
       bbcRender();
     });
     el.addEventListener("change", () => {
       bbcReadFilters();
       bbcBuildRows();
-      bbcState.expandedKey = "";
+      bbcCloseDrawer();
       bbcRender();
     });
   });
@@ -814,10 +867,21 @@ function bbcBindEvents() {
     button.addEventListener("click", () => bbcSetActiveTab(button.dataset.bbcTab));
   });
   document.addEventListener("click", event => {
-    const target = event.target?.closest?.("[data-bbc-expand]");
+    const target = event.target?.closest?.("[data-bbc-detail-key]");
     if (!target) return;
-    bbcToggleExpanded(target.dataset.bbcExpand || "");
+    bbcOpenDrawer(target.dataset.bbcDetailKey || "");
   });
+  document.addEventListener("keydown", event => {
+    const row = event.target?.closest?.("[data-bbc-detail-key]");
+    if (row && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      bbcOpenDrawer(row.dataset.bbcDetailKey || "");
+      return;
+    }
+    if (event.key === "Escape") bbcCloseDrawer();
+  });
+  bbc$("bbc-drawer-close")?.addEventListener("click", bbcCloseDrawer);
+  bbc$("bbc-drawer-backdrop")?.addEventListener("click", bbcCloseDrawer);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
