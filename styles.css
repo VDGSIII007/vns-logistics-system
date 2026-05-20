@@ -2984,6 +2984,13 @@ body.payroll-page{
   color:#111827;
   font-size:.92rem;
 }
+.budget-preview-note{
+  margin:-4px 0 10px;
+  color:#6b7280;
+  font-size:.76rem;
+  font-weight:800;
+  line-height:1.35;
+}
 .budget-preview-card dl{
   display:grid;
   gap:8px;
@@ -3050,6 +3057,19 @@ body.payroll-page{
   border-radius:8px;
   background:#fbfcfe;
   padding:8px 10px;
+}
+.budget-route-breakdown .budget-route-breakdown-head{
+  border:0;
+  background:transparent;
+  padding:0 2px;
+}
+.budget-route-breakdown .budget-route-breakdown-head span,
+.budget-route-breakdown .budget-route-breakdown-head strong,
+.budget-route-breakdown .budget-route-breakdown-head em{
+  color:#6b7280;
+  font-size:.68rem;
+  letter-spacing:.04em;
+  text-transform:uppercase;
 }
 .budget-route-breakdown span{
   color:#111827;
