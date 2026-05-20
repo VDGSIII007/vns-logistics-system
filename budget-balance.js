@@ -186,6 +186,7 @@ function bbcNormalizeCashRecord(record = {}) {
   const source = record.Source || record.source || record.origin || record.Origin || "";
   const destination = record.Destination || record.destination || record.dest || record.Dest || "";
   const route = record.Route || record.route || record.Route_Trip || record.routeText || (!source ? destination : "");
+  const fuelStation = record.Fuel_Station || record.fuelStation || record.fuel_station || "";
   const rawRole = record.Role || record.role || record.personType || "";
   const personLower = String(person).trim().toLowerCase();
   const role = rawRole ||
@@ -208,6 +209,7 @@ function bbcNormalizeCashRecord(record = {}) {
     poNumber: record.PO_Number || record.poNumber || record.po_number || "",
     source: String(source || "").trim(),
     destination: String(destination || "").trim(),
+    fuelStation: String(fuelStation || "").trim(),
     route: String(route || "").trim(),
     loggedBy: record.Logged_By || record.loggedBy || record.Encoded_By || "",
     remarks: record.Remarks || record.remarks || record.Notes || "",
@@ -463,7 +465,8 @@ function bbcRouteLabel(line = {}) {
 
 function bbcMoneyRouteDetails(record = {}) {
   const route = String(record.route || "").trim();
-  if (!route || bbcIsPlaceholderRoute(route)) return "-";
+  if (record.type === "Diesel PO" && record.fuelStation) return bbcEscape(record.fuelStation);
+  if (!route || bbcIsPlaceholderRoute(route)) return bbcEscape(record.fuelStation || "-");
   return bbcEscape(route);
 }
 
@@ -483,40 +486,62 @@ function bbcFindRateForRoute(group, source, destination) {
   }) || null;
 }
 
+function bbcIsFuelSource(record = {}) {
+  const source = String(record.source || "").trim().toLowerCase();
+  const fuelStation = String(record.fuelStation || "").trim().toLowerCase();
+  if (!source) return false;
+  return source === "fuel station" || (fuelStation && source === fuelStation);
+}
+
+function bbcPlannedPreviewRow(record, row, sourceLabel) {
+  const rate = bbcFindRateForRoute(record.group || row.group, record.source, record.destination);
+  const hasRoutePair = Boolean(record.source && record.destination);
+  const needsRoute = record.type === "Trip Budget" && !hasRoutePair;
+  return {
+    previewSource: "planned",
+    sourceLabel,
+    payrollId: "",
+    plate: record.plate,
+    driver: record.driver,
+    helper: record.helper,
+    tripDate: record.date,
+    source: hasRoutePair ? record.source : "",
+    destination: hasRoutePair ? record.destination : "",
+    route: needsRoute ? "Route needed" : record.route,
+    type: record.type,
+    reference: record.poNumber || record.id || "-",
+    driverSalary: rate ? rate.driverSalary : 0,
+    helperSalary: rate ? rate.helperSalary : 0,
+    rateId: rate?.rateId || "",
+    rateMatchStatus: rate ? "Matched" : (needsRoute ? "Needs route" : "No rate match")
+  };
+}
+
 function bbcBuildPlannedRoutePreview(records, row, role = "") {
   const roleLower = String(role || "").trim().toLowerCase();
-  return records
+  const eligibleRecords = records
     .filter(record => ["Trip Budget", "Diesel PO"].includes(record.type))
     .filter(record => bbcIsNotCancelled(record))
     .filter(record => {
       if (!roleLower) return true;
       const person = roleLower === "driver" ? record.driver : record.helper;
       return String(person || "").trim().toLowerCase() === String(row.name || "").trim().toLowerCase();
-    })
-    .filter(record => record.source || record.destination || (record.route && !bbcIsPlaceholderRoute(record.route)))
+    });
+
+  const tripBudgets = eligibleRecords
+    .filter(record => record.type === "Trip Budget")
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  if (tripBudgets.length) {
+    return tripBudgets.slice(0, 4).map(record => bbcPlannedPreviewRow(record, row, "From Trip Budget"));
+  }
+
+  return eligibleRecords
+    .filter(record => record.type === "Diesel PO")
+    .filter(record => record.source && record.destination)
+    .filter(record => !bbcIsFuelSource(record))
     .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))
     .slice(0, 4)
-    .map(record => {
-      const rate = bbcFindRateForRoute(record.group || row.group, record.source, record.destination);
-      const hasRoutePair = Boolean(record.source && record.destination);
-      return {
-        previewSource: "planned",
-        payrollId: "",
-        plate: record.plate,
-        driver: record.driver,
-        helper: record.helper,
-        tripDate: record.date,
-        source: record.source,
-        destination: record.destination,
-        route: record.route,
-        type: record.type,
-        reference: record.poNumber || record.id || "-",
-        driverSalary: rate ? rate.driverSalary : 0,
-        helperSalary: rate ? rate.helperSalary : 0,
-        rateId: rate?.rateId || "",
-        rateMatchStatus: rate ? "Matched" : (hasRoutePair ? "No rate match" : "Needs review")
-      };
-    });
+    .map(record => bbcPlannedPreviewRow(record, row, "From Diesel PO route"));
 }
 
 function bbcCashAdvanceRecords(person, role) {
@@ -876,8 +901,8 @@ function bbcMiniCard(label, value) {
 function bbcRouteLineRow(line, mode) {
   if (mode === "truck") {
     const routeText = String(line.route || "").trim();
-    const source = line.source || (!line.destination && routeText && !bbcIsPlaceholderRoute(routeText) ? routeText : "-");
-    const destination = line.destination || "-";
+    const source = line.source || (line.rateMatchStatus === "Needs route" ? "Route needed" : !line.destination && routeText && !bbcIsPlaceholderRoute(routeText) ? routeText : "-");
+    const destination = line.destination || (line.rateMatchStatus === "Needs route" ? "Needs route" : "-");
     return `
       <tr>
         <td>${bbcEscape(bbcDate(line.tripDate))}</td>
@@ -1006,11 +1031,12 @@ function bbcRenderRoutePreview(row, tab, role = "") {
     const helperTotals = bbcPreviewTotals(helperGross, bbcBalanceFor(row.helper, "Helper"));
     const driverCashAdvances = bbcCashAdvanceRecords(row.driver, "Driver");
     const helperCashAdvances = bbcCashAdvanceRecords(row.helper, "Helper");
+    const previewBadge = lines.find(line => line.sourceLabel)?.sourceLabel || "Preview only";
     return `
       <section class="budget-route-preview">
         <div class="budget-route-preview-head">
           <h3>Payroll Preview</h3>
-          <span>Preview only</span>
+          <span>${bbcEscape(previewBadge)}</span>
         </div>
         <div class="budget-ledger-scroll">
           <table class="budget-ledger-table budget-route-table">
