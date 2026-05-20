@@ -287,7 +287,7 @@ function incClearForm() {
   document.getElementById('inc-photo-filename').textContent = 'No file selected';
   document.getElementById('inc-video-filename').textContent = 'No file selected';
   document.getElementById('inc-status-msg').textContent = '';
-  document.getElementById('inc-status-msg').className = 'payroll-status-line';
+  document.getElementById('inc-status-msg').className = 'inc-status-msg';
   document.getElementById('inc-edit-notice').textContent = 'New incident — ID will be auto-generated on save.';
 
   // Default to today
@@ -351,7 +351,7 @@ function incValidate(data) {
 function incShowStatus(msg, type = '') {
   const el = document.getElementById('inc-status-msg');
   el.textContent = msg;
-  el.className = 'payroll-status-line' + (type ? ` ${type}` : '');
+  el.className = 'inc-status-msg' + (type ? ` ${type}` : '');
 }
 
 // ─── Save / Update ────────────────────────────────────────────────────────────
@@ -422,7 +422,7 @@ function incOpenEdit(incidentId) {
     btn.classList.toggle('active', btn.dataset.incTab === 'log');
     btn.setAttribute('aria-selected', btn.dataset.incTab === 'log');
   });
-  document.querySelectorAll('.payroll-tab-panel').forEach(panel => {
+  document.querySelectorAll('.inc-tab-panel').forEach(panel => {
     panel.classList.toggle('active', panel.id === 'inc-tab-log');
   });
 
@@ -595,7 +595,7 @@ function incBindTabs() {
         b.classList.toggle('active', b === btn);
         b.setAttribute('aria-selected', b === btn);
       });
-      document.querySelectorAll('.payroll-tab-panel').forEach(panel => {
+      document.querySelectorAll('.inc-tab-panel').forEach(panel => {
         panel.classList.toggle('active', panel.id === `inc-tab-${target}`);
       });
 
