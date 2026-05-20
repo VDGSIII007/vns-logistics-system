@@ -2989,14 +2989,14 @@ body.payroll-page{
   gap:8px;
   margin:0;
 }
-.budget-preview-card div{
+.budget-preview-card dl > div{
   display:flex;
   justify-content:space-between;
   gap:10px;
   border-bottom:1px dashed #edf0f5;
   padding-bottom:7px;
 }
-.budget-preview-card div:last-child{
+.budget-preview-card dl > div:last-child{
   border-bottom:0;
   padding-bottom:0;
 }
@@ -3017,6 +3017,59 @@ body.payroll-page{
 .budget-empty.compact{
   padding:12px;
   font-size:.84rem;
+}
+.budget-subsection{
+  margin-top:12px;
+}
+.budget-subsection h5{
+  margin:0 0 8px;
+  color:#374151;
+  font-size:.78rem;
+  font-weight:900;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.budget-mini-table{
+  min-width:560px;
+}
+.budget-mini-table th,
+.budget-mini-table td{
+  font-size:.74rem;
+  padding:9px 10px;
+}
+.budget-route-breakdown{
+  display:grid;
+  gap:7px;
+}
+.budget-route-breakdown div{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  align-items:center;
+  gap:8px;
+  border:1px solid #edf0f5;
+  border-radius:8px;
+  background:#fbfcfe;
+  padding:8px 10px;
+}
+.budget-route-breakdown span{
+  color:#111827;
+  font-size:.8rem;
+  font-weight:850;
+  overflow-wrap:anywhere;
+}
+.budget-route-breakdown strong,
+.budget-route-breakdown em{
+  color:#374151;
+  font-size:.78rem;
+  font-style:normal;
+  font-weight:900;
+  white-space:nowrap;
+}
+.budget-route-breakdown p{
+  margin:0;
+  color:#6b7280;
+  font-size:.8rem;
+  font-weight:800;
 }
 .budget-status-chip{
   display:inline-flex;
@@ -3792,7 +3845,7 @@ body.payroll-page{
   .budget-preview-grid{
     grid-template-columns:1fr;
   }
-  .budget-preview-card div{
+  .budget-preview-card dl > div{
     display:grid;
     gap:4px;
   }
