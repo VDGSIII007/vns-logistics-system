@@ -417,6 +417,22 @@ function bbcBalanceFor(person, role) {
   return bbcState.balances.find(item => item.person.toLowerCase() === normalizedPerson && item.role.toLowerCase() === roleLower)?.currentBalance || 0;
 }
 
+function bbcIsClearedCashAdvance(record = {}) {
+  const status = `${record.status || ""} ${record.paymentStatus || ""} ${record.remarks || ""}`.toLowerCase();
+  return /(cleared|deducted|closed|settled|liquidated|cancelled|canceled|rejected)/.test(status);
+}
+
+function bbcCashAdvanceBalanceFallback(person, role) {
+  return bbcCashAdvanceRecords(person, role)
+    .filter(record => !bbcIsClearedCashAdvance(record))
+    .reduce((sum, record) => sum + bbcNumber(record.amount), 0);
+}
+
+function bbcDisplayCashAdvanceBalance(person, role) {
+  const balance = bbcBalanceFor(person, role);
+  return balance > 0 ? balance : bbcCashAdvanceBalanceFallback(person, role);
+}
+
 function bbcPayrollRecordsForPlate(plate) {
   const normalizedPlate = String(plate || "").trim().toUpperCase();
   return bbcState.payrollRecords.filter(record => record.plate === normalizedPlate);
@@ -560,10 +576,12 @@ function bbcRouteBreakdown(lines, mode) {
   const map = new Map();
   lines.forEach(line => {
     const route = bbcRouteLabel(line);
-    if (!map.has(route)) map.set(route, { route, count: 0, total: 0 });
+    if (!map.has(route)) map.set(route, { route, count: 0, total: 0, dates: [] });
     const item = map.get(route);
     item.count += 1;
     item.total += bbcNumber(line[salaryField]);
+    const date = bbcDate(line.tripDate);
+    if (date !== "-" && !item.dates.includes(date)) item.dates.push(date);
   });
   return [...map.values()].sort((a, b) => b.total - a.total || a.route.localeCompare(b.route));
 }
@@ -898,36 +916,6 @@ function bbcMiniCard(label, value) {
   return `<article class="budget-mini-card budget-detail-card"><span>${bbcEscape(label)}</span><strong>${bbcEscape(value)}</strong></article>`;
 }
 
-function bbcRouteLineRow(line, mode) {
-  if (mode === "truck") {
-    const routeText = String(line.route || "").trim();
-    const source = line.source || (line.rateMatchStatus === "Needs route" ? "Route needed" : !line.destination && routeText && !bbcIsPlaceholderRoute(routeText) ? routeText : "-");
-    const destination = line.destination || (line.rateMatchStatus === "Needs route" ? "Needs route" : "-");
-    return `
-      <tr>
-        <td>${bbcEscape(bbcDate(line.tripDate))}</td>
-        <td>${bbcEscape(source)}</td>
-        <td>${bbcEscape(destination)}</td>
-        <td>${bbcEscape(bbcText(line.type, "Payroll Trip"))}</td>
-        <td class="ops-amount">${bbcEscape(bbcMoney(line.driverSalary))}</td>
-        <td class="ops-amount">${bbcEscape(bbcMoney(line.helperSalary))}</td>
-        <td>${bbcEscape(bbcText(line.rateMatchStatus))}</td>
-      </tr>
-    `;
-  }
-  const salary = mode === "driver" ? line.driverSalary : line.helperSalary;
-  return `
-    <tr>
-      <td>${bbcEscape(bbcText(line.plate, "No Plate"))}</td>
-      <td>${bbcEscape(bbcDate(line.tripDate))}</td>
-      <td>${bbcRouteLabel(line)}</td>
-      <td class="ops-amount">${bbcEscape(bbcMoney(salary))}</td>
-      <td>${bbcEscape(bbcText(line.payrollId))}</td>
-      <td>${bbcEscape(bbcText(line.rateMatchStatus))}</td>
-    </tr>
-  `;
-}
-
 function bbcPreviewTotals(gross, currentBalance) {
   const deduction = currentBalance > 0 ? Math.round(Math.min(currentBalance, gross * 0.5)) : 0;
   return {
@@ -940,21 +928,35 @@ function bbcPreviewTotals(gross, currentBalance) {
 
 function bbcCashAdvanceHistoryTable(records) {
   return `
-    <div class="budget-subsection">
-      <h5>Cash Advance History</h5>
-      <div class="budget-ledger-scroll">
-        <table class="budget-ledger-table budget-mini-table">
-          <thead><tr><th>Date</th><th>Amount</th><th>Status</th></tr></thead>
-          <tbody>${records.length ? records.map(record => `
-            <tr>
-              <td>${bbcEscape(bbcDate(record.date))}</td>
-              <td class="ops-amount">${bbcEscape(bbcMoney(record.amount))}</td>
-              <td>${bbcStatusChip(bbcNormalizeStatus(record))}</td>
-            </tr>
-          `).join("") : `<tr><td colspan="3">No cash advance records since last payroll.</td></tr>`}</tbody>
-        </table>
-      </div>
+    <div class="budget-cash-history-list">
+      ${records.length ? records.map(record => `
+        <div>
+          <span>${bbcEscape(bbcDate(record.date))}</span>
+          <strong>${bbcEscape(bbcMoney(record.amount))}</strong>
+          <em>${bbcEscape(bbcText(record.paymentStatus || bbcNormalizeStatus(record)))}</em>
+        </div>
+      `).join("") : `<p>No cash advance records since last payroll.</p>`}
     </div>
+  `;
+}
+
+function bbcCashAdvanceHistorySection(driverName, helperName) {
+  const driverRecords = bbcCashAdvanceRecords(driverName, "Driver");
+  const helperRecords = bbcCashAdvanceRecords(helperName, "Helper");
+  return `
+    <section class="budget-cash-history-section">
+      <h3 class="budget-section-title">Cash Advance History</h3>
+      <div class="budget-cash-history-grid">
+        <article class="budget-cash-history-card">
+          <h4>Driver Cash Advance</h4>
+          ${bbcCashAdvanceHistoryTable(driverRecords)}
+        </article>
+        <article class="budget-cash-history-card">
+          <h4>Helper Cash Advance</h4>
+          ${bbcCashAdvanceHistoryTable(helperRecords)}
+        </article>
+      </div>
+    </section>
   `;
 }
 
@@ -967,7 +969,7 @@ function bbcRouteBreakdownTable(lines, mode) {
         ${rows.length ? rows.map(row => `
           <div>
             <span>${row.route}</span>
-            <em>${row.count} ${row.count === 1 ? "trip" : "trips"} - ${bbcEscape(bbcMoney(row.total))}</em>
+            <em>${bbcEscape(row.dates.join(", ") || "-")} | ${row.count} ${row.count === 1 ? "trip" : "trips"} | ${bbcEscape(bbcMoney(row.total))}</em>
           </div>
         `).join("") : `<p>No route earnings yet.</p>`}
       </div>
@@ -987,7 +989,6 @@ function bbcPreviewCard(title, name, totals, options = {}) {
         <div><dt>Deduct</dt><dd>${bbcEscape(bbcMoney(totals.deduction))}</dd></div>
         <div><dt>Take-home</dt><dd>${bbcEscape(bbcMoney(totals.takeHome))}</dd></div>
       </dl>
-      ${bbcCashAdvanceHistoryTable(options.cashAdvanceRecords || [])}
       ${bbcRouteBreakdownTable(options.routeLines || [], role.toLowerCase())}
     </article>
   `;
@@ -996,16 +997,10 @@ function bbcPreviewCard(title, name, totals, options = {}) {
 function bbcRenderRoutePreview(row, tab, role = "") {
   const cacheKey = bbcRoutePreviewKey(tab, row.key);
   const preview = bbcState.routePreviewCache[cacheKey];
-  const title = tab === "trucks" ? "Payroll Preview" : "Earnings Preview";
-  const helperText = "Preview only";
 
   if (!preview || preview.loading) {
     return `
       <section class="budget-route-preview">
-        <div class="budget-route-preview-head">
-          <h3>${bbcEscape(title)}</h3>
-          <span>${helperText}</span>
-        </div>
         <div class="budget-empty compact">Loading route preview...</div>
       </section>
     `;
@@ -1014,10 +1009,6 @@ function bbcRenderRoutePreview(row, tab, role = "") {
   if (preview.error) {
     return `
       <section class="budget-route-preview">
-        <div class="budget-route-preview-head">
-          <h3>${bbcEscape(title)}</h3>
-          <span>${helperText}</span>
-        </div>
         <div class="budget-empty compact">${bbcEscape(preview.error)}</div>
       </section>
     `;
@@ -1027,26 +1018,13 @@ function bbcRenderRoutePreview(row, tab, role = "") {
   if (tab === "trucks") {
     const driverGross = lines.reduce((sum, line) => sum + bbcNumber(line.driverSalary), 0);
     const helperGross = lines.reduce((sum, line) => sum + bbcNumber(line.helperSalary), 0);
-    const driverTotals = bbcPreviewTotals(driverGross, bbcBalanceFor(row.driver, "Driver"));
-    const helperTotals = bbcPreviewTotals(helperGross, bbcBalanceFor(row.helper, "Helper"));
-    const driverCashAdvances = bbcCashAdvanceRecords(row.driver, "Driver");
-    const helperCashAdvances = bbcCashAdvanceRecords(row.helper, "Helper");
-    const previewBadge = lines.find(line => line.sourceLabel)?.sourceLabel || "Preview only";
+    const driverTotals = bbcPreviewTotals(driverGross, bbcDisplayCashAdvanceBalance(row.driver, "Driver"));
+    const helperTotals = bbcPreviewTotals(helperGross, bbcDisplayCashAdvanceBalance(row.helper, "Helper"));
     return `
       <section class="budget-route-preview">
-        <div class="budget-route-preview-head">
-          <h3>Payroll Preview</h3>
-          <span>${bbcEscape(previewBadge)}</span>
-        </div>
-        <div class="budget-ledger-scroll">
-          <table class="budget-ledger-table budget-route-table">
-            <thead><tr><th>Date</th><th>Source</th><th>Destination</th><th>Type</th><th>Driver &#8369;</th><th>Helper &#8369;</th><th>Match</th></tr></thead>
-            <tbody>${lines.length ? lines.map(line => bbcRouteLineRow(line, "truck")).join("") : `<tr><td colspan="7">No planned route records found.</td></tr>`}</tbody>
-          </table>
-        </div>
         <div class="budget-preview-grid">
-          ${bbcPreviewCard("Driver Preview", row.driver, driverTotals, { cashAdvanceRecords: driverCashAdvances, routeLines: lines, previewSource: preview.previewSource })}
-          ${bbcPreviewCard("Helper Preview", row.helper, helperTotals, { cashAdvanceRecords: helperCashAdvances, routeLines: lines, previewSource: preview.previewSource })}
+          ${bbcPreviewCard("Driver Preview", row.driver, driverTotals, { routeLines: lines, previewSource: preview.previewSource })}
+          ${bbcPreviewCard("Helper Preview", row.helper, helperTotals, { routeLines: lines, previewSource: preview.previewSource })}
         </div>
       </section>
     `;
@@ -1054,19 +1032,9 @@ function bbcRenderRoutePreview(row, tab, role = "") {
 
   const mode = role.toLowerCase();
   const gross = lines.reduce((sum, line) => sum + bbcNumber(mode === "driver" ? line.driverSalary : line.helperSalary), 0);
-  const totals = bbcPreviewTotals(gross, row.currentBalance);
+  const totals = bbcPreviewTotals(gross, bbcDisplayCashAdvanceBalance(row.name, role));
   return `
     <section class="budget-route-preview">
-      <div class="budget-route-preview-head">
-        <h3>Earnings Preview</h3>
-        <span>Preview only</span>
-      </div>
-      <div class="budget-ledger-scroll">
-        <table class="budget-ledger-table budget-route-table">
-          <thead><tr><th>Plate</th><th>Date</th><th>Route</th><th>${bbcEscape(role)} Salary</th><th>Payroll ID</th><th>Rate Match</th></tr></thead>
-          <tbody>${lines.length ? lines.map(line => bbcRouteLineRow(line, mode)).join("") : `<tr><td colspan="6">No payroll route lines found.</td></tr>`}</tbody>
-        </table>
-      </div>
       <div class="budget-preview-grid single">
         ${bbcPreviewCard(`${role} Preview`, row.name, totals, {
           cashAdvanceRecords: bbcCashAdvanceRecords(row.name, role),
@@ -1110,7 +1078,7 @@ function bbcRenderTruckDetail(row) {
     <div class="budget-detail-panel">
       <div class="budget-detail-summary-grid">
         ${bbcMiniCard("Total Released", bbcMoney(bbcSum(records, record => bbcNormalizeStatus(record) === "Paid / Released")))}
-        ${bbcMiniCard("Not Yet Cleared", bbcMoney(bbcSum(records, bbcIsOpen)))}
+        ${bbcMiniCard("Still For Clearing", bbcMoney(bbcSum(records, bbcIsOpen)))}
       </div>
       <h3 class="budget-section-title">Money Ledger</h3>
       <div class="budget-ledger-scroll">
@@ -1119,6 +1087,7 @@ function bbcRenderTruckDetail(row) {
           <tbody>${records.length ? records.map(record => bbcLedgerRow(record, "truck")).join("") : `<tr><td colspan="5">No truck records found.</td></tr>`}</tbody>
         </table>
       </div>
+      ${bbcCashAdvanceHistorySection(row.driver, row.helper)}
       ${bbcRenderRoutePreview(row, "trucks")}
     </div>
   `;

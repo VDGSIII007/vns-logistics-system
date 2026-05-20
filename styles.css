@@ -2974,7 +2974,7 @@ body.payroll-page{
   display:grid;
   grid-template-columns:repeat(2,minmax(0,1fr));
   gap:10px;
-  margin-top:12px;
+  margin-top:10px;
 }
 .budget-preview-grid.single{
   grid-template-columns:1fr;
@@ -3059,14 +3059,66 @@ body.payroll-page{
   font-size:.74rem;
   padding:9px 10px;
 }
+.budget-cash-history-section{
+  margin-top:14px;
+}
+.budget-cash-history-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+}
+.budget-cash-history-card{
+  border:1px solid #e5e7eb;
+  border-radius:10px;
+  background:#fff;
+  padding:12px;
+}
+.budget-cash-history-card h4{
+  margin:0 0 8px;
+  color:#111827;
+  font-size:.88rem;
+}
+.budget-cash-history-list{
+  display:grid;
+  gap:7px;
+}
+.budget-cash-history-list div{
+  display:grid;
+  grid-template-columns:minmax(84px,1fr) auto auto;
+  align-items:center;
+  gap:8px;
+  border:1px solid #edf0f5;
+  border-radius:8px;
+  background:#fbfcfe;
+  padding:8px 10px;
+}
+.budget-cash-history-list span,
+.budget-cash-history-list em{
+  color:#6b7280;
+  font-size:.76rem;
+  font-style:normal;
+  font-weight:850;
+}
+.budget-cash-history-list strong{
+  color:#111827;
+  font-size:.8rem;
+  font-weight:900;
+  white-space:nowrap;
+}
+.budget-cash-history-list p{
+  margin:0;
+  color:#6b7280;
+  font-size:.8rem;
+  font-weight:800;
+}
 .budget-route-breakdown{
   display:grid;
   gap:7px;
 }
 .budget-route-breakdown div{
-  display:grid;
-  grid-template-columns:minmax(0,1fr) auto;
-  align-items:center;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
   gap:8px;
   border:1px solid #edf0f5;
   border-radius:8px;
@@ -3085,7 +3137,6 @@ body.payroll-page{
   font-size:.78rem;
   font-style:normal;
   font-weight:900;
-  white-space:nowrap;
 }
 .budget-route-breakdown p{
   margin:0;
@@ -3855,6 +3906,13 @@ body.payroll-page{
   }
   .budget-detail-summary-grid{
     grid-template-columns:1fr;
+  }
+  .budget-cash-history-grid{
+    grid-template-columns:1fr;
+  }
+  .budget-cash-history-list div{
+    grid-template-columns:1fr;
+    gap:4px;
   }
   .budget-route-preview-head{
     display:block;
