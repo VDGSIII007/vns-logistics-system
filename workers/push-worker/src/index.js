@@ -86,8 +86,11 @@ const TRUCK_API_PATHS = new Set([
 ]);
 const CORS_ALLOWED_ORIGINS = new Set([
   "https://portal.vns-logistics.com",
+  "https://vns-push-worker.santosvicenteiii.workers.dev",
   "http://localhost:5500",
-  "http://127.0.0.1:5500"
+  "http://127.0.0.1:5500",
+  "http://localhost:8000",
+  "http://127.0.0.1:8000"
 ]);
 
 function jsonResponse(body, status = 200) {
@@ -99,15 +102,18 @@ function jsonResponse(body, status = 200) {
 
 function getCorsHeaders(request) {
   const origin = request.headers.get("origin") || "";
-  const allowOrigin = CORS_ALLOWED_ORIGINS.has(origin) ? origin : "https://portal.vns-logistics.com";
-
-  return {
-    "Access-Control-Allow-Origin": allowOrigin,
+  const headers = {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-VNS-Sync-Key",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin"
   };
+
+  if (CORS_ALLOWED_ORIGINS.has(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin;
+  }
+
+  return headers;
 }
 
 function withCors(response, request) {
@@ -693,15 +699,14 @@ async function handleTruckList(url, env) {
 
 async function routeRequest(request, env) {
   const url = new URL(request.url);
+  if (request.method === "OPTIONS") return handleOptions(request);
   const isCashApiRoute = CASH_API_PATHS.has(url.pathname);
   const isRepairApiRoute = REPAIR_API_PATHS.has(url.pathname);
-  if (isCashApiRoute && request.method === "OPTIONS") return handleOptions(request);
   if (request.method === "POST" && url.pathname === "/api/cash/create") return withCors(await handleCashCreate(request, env), request);
   if (request.method === "GET" && url.pathname === "/api/cash/list") return withCors(await handleCashList(url, env), request);
   if (request.method === "POST" && url.pathname === "/api/cash/update-status") return withCors(await handleCashUpdateStatus(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/cash/backup-status") return withCors(await handleCashBackupStatus(request, env), request);
   if (isCashApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
-  if (isRepairApiRoute && request.method === "OPTIONS") return handleOptions(request);
   if (request.method === "POST" && url.pathname === "/api/repair/create") return withCors(await handleRepairCreate(request, env), request);
   if (request.method === "GET" && url.pathname === "/api/repair/list") return withCors(await handleRepairList(url, env), request);
   if (request.method === "POST" && url.pathname === "/api/repair/media/upload") return withCors(await handleRepairMediaUpload(request, env), request);
@@ -710,7 +715,6 @@ async function routeRequest(request, env) {
   if (request.method === "POST" && url.pathname === "/api/repair/backup-status") return withCors(await handleRepairBackupStatus(request, env), request);
   if (isRepairApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
   const isPayrollApiRoute = PAYROLL_API_PATHS.has(url.pathname);
-  if (isPayrollApiRoute && request.method === "OPTIONS") return handleOptions(request);
   if (request.method === "POST" && url.pathname === "/api/payroll/create") return withCors(await handlePayrollCreate(request, env), request);
   if (request.method === "GET" && url.pathname === "/api/payroll/list") return withCors(await handlePayrollList(url, env), request);
   if (request.method === "POST" && url.pathname === "/api/payroll/update-status") return withCors(await handlePayrollUpdateStatus(request, env), request);
@@ -723,25 +727,23 @@ async function routeRequest(request, env) {
   if (request.method === "POST" && url.pathname === "/api/payroll/trip-lines-bulk-upsert") return withCors(await handlePayrollTripLineUpsert(request, env), request);
   if (isPayrollApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
   const isBudgetBalanceApiRoute = BUDGET_BALANCE_API_PATHS.has(url.pathname);
-  if (isBudgetBalanceApiRoute && request.method === "OPTIONS") return handleOptions(request);
   if (request.method === "GET" && url.pathname === "/api/budget-balance/summary") return withCors(await handleBudgetBalanceSummary(url, env), request);
   if (request.method === "GET" && url.pathname === "/api/budget-balance/transactions") return withCors(await handleBudgetBalanceTransactions(url, env), request);
   if (isBudgetBalanceApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
   const isTruckApiRoute = TRUCK_API_PATHS.has(url.pathname);
-  if (isTruckApiRoute && request.method === "OPTIONS") return handleOptions(request);
   if (request.method === "GET" && url.pathname === "/api/trucks/list") return withCors(await handleTruckList(url, env), request);
   if (isTruckApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
-  if (request.method === "GET" && url.pathname === "/api/push/check") return handleCheck(env);
-  if (request.method === "GET" && url.pathname === "/api/push/debug-sources") return handleDebugSources(env);
-  if (request.method === "GET" && url.pathname === "/api/push/debug-payment-queue") return handleDebugPaymentQueue(env);
-  if (request.method === "POST" && url.pathname === "/api/push/subscribe") return handleSubscribe(request, env);
-  if (request.method === "POST" && url.pathname === "/api/push/unsubscribe") return handleUnsubscribe(request, env);
-  if (request.method === "POST" && url.pathname === "/api/push/test") return handleTest(request, env);
-  if (request.method === "POST" && url.pathname === "/api/push/run-check") return handleRunCheck(env);
-  if (request.method === "POST" && url.pathname === "/api/push/run-payment-check") return handleRunPaymentCheck(env);
-  if (request.method === "POST" && url.pathname === "/api/push/notify-paid") return handleNotifyPaid(request, env);
-  if (request.method === "POST" && url.pathname === "/api/push/acknowledge") return handleAcknowledge(request, env);
-  return jsonResponse({ ok: false, error: "Not found" }, 404);
+  if (request.method === "GET" && url.pathname === "/api/push/check") return withCors(await handleCheck(env), request);
+  if (request.method === "GET" && url.pathname === "/api/push/debug-sources") return withCors(await handleDebugSources(env), request);
+  if (request.method === "GET" && url.pathname === "/api/push/debug-payment-queue") return withCors(await handleDebugPaymentQueue(env), request);
+  if (request.method === "POST" && url.pathname === "/api/push/subscribe") return withCors(await handleSubscribe(request, env), request);
+  if (request.method === "POST" && url.pathname === "/api/push/unsubscribe") return withCors(await handleUnsubscribe(request, env), request);
+  if (request.method === "POST" && url.pathname === "/api/push/test") return withCors(await handleTest(request, env), request);
+  if (request.method === "POST" && url.pathname === "/api/push/run-check") return withCors(await handleRunCheck(env), request);
+  if (request.method === "POST" && url.pathname === "/api/push/run-payment-check") return withCors(await handleRunPaymentCheck(env), request);
+  if (request.method === "POST" && url.pathname === "/api/push/notify-paid") return withCors(await handleNotifyPaid(request, env), request);
+  if (request.method === "POST" && url.pathname === "/api/push/acknowledge") return withCors(await handleAcknowledge(request, env), request);
+  return withCors(jsonResponse({ ok: false, error: "Not found" }, 404), request);
 }
 
 export default {
