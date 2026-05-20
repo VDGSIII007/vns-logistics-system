@@ -2924,6 +2924,21 @@ body.payroll-page{
   gap:10px;
   margin-bottom:14px;
 }
+.budget-draft-actions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  margin:0 0 14px;
+}
+.budget-draft-actions .btn{
+  padding:10px 14px;
+}
+.budget-draft-actions span{
+  color:#15803d;
+  font-size:.82rem;
+  font-weight:850;
+}
 .budget-detail-card{
   min-height:76px;
   border-radius:10px;
@@ -3143,6 +3158,86 @@ body.payroll-page{
   color:#6b7280;
   font-size:.8rem;
   font-weight:800;
+}
+.budget-draft-modal{
+  position:fixed;
+  inset:0;
+  z-index:1400;
+  display:grid;
+  place-items:center;
+  background:rgba(17,24,39,.58);
+  padding:20px;
+}
+.budget-draft-modal[hidden]{
+  display:none;
+}
+.budget-draft-modal-card{
+  width:min(680px,96vw);
+  max-height:90vh;
+  overflow:auto;
+  border:1px solid #e5e7eb;
+  border-radius:18px;
+  background:#fff;
+  box-shadow:0 24px 80px rgba(0,0,0,.24);
+}
+.budget-draft-modal-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  padding:18px 20px;
+  border-bottom:1px solid #eef0f3;
+}
+.budget-draft-modal-head span{
+  display:block;
+  color:#6b7280;
+  font-size:.7rem;
+  font-weight:900;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.budget-draft-modal-head h3{
+  margin:4px 0 0;
+  color:#111827;
+  font-size:1.12rem;
+}
+.budget-draft-modal-body{
+  padding:18px 20px 8px;
+}
+.budget-draft-confirm-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+}
+.budget-draft-status{
+  min-height:22px;
+  padding:0 20px 12px;
+  color:#374151;
+  font-size:.84rem;
+  font-weight:850;
+}
+.budget-draft-status.success{
+  color:#15803d;
+}
+.budget-draft-status.warning{
+  color:#c2410c;
+}
+.budget-draft-status.info{
+  color:#2563eb;
+}
+.budget-draft-status a{
+  color:#d71920;
+  font-weight:900;
+}
+.budget-draft-status span{
+  color:#6b7280;
+  margin-left:8px;
+}
+.budget-draft-modal-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  padding:0 20px 20px;
 }
 .budget-status-chip{
   display:inline-flex;
@@ -3913,6 +4008,12 @@ body.payroll-page{
   .budget-cash-history-list div{
     grid-template-columns:1fr;
     gap:4px;
+  }
+  .budget-draft-confirm-grid{
+    grid-template-columns:1fr;
+  }
+  .budget-draft-modal-actions .btn{
+    flex:1 1 160px;
   }
   .budget-route-preview-head{
     display:block;

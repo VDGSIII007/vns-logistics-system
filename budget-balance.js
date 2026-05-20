@@ -121,6 +121,20 @@ async function bbcFetchJson(path) {
   return data;
 }
 
+async function bbcPostJson(path, payload) {
+  const url = `${BBC_WORKER_API_BASE}${path}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data?.ok) {
+    throw new Error(data?.error || data?.message || `HTTP ${response.status} ${response.statusText}`);
+  }
+  return data;
+}
+
 async function bbcFetchEndpoint(label, path) {
   try {
     return { ok: true, label, path, data: await bbcFetchJson(path) };
@@ -479,6 +493,15 @@ function bbcRouteLabel(line = {}) {
   return "No route data yet";
 }
 
+function bbcPlainRouteLabel(line = {}) {
+  const source = String(line.source || "").trim();
+  const destination = String(line.destination || "").trim();
+  if (source && destination) return `${source} -> ${destination}`;
+  const route = String(line.route || "").trim();
+  if (route && !bbcIsPlaceholderRoute(route)) return route;
+  return "No route data yet";
+}
+
 function bbcMoneyRouteDetails(record = {}) {
   const route = String(record.route || "").trim();
   if (record.type === "Diesel PO" && record.fuelStation) return bbcEscape(record.fuelStation);
@@ -575,7 +598,7 @@ function bbcRouteBreakdown(lines, mode) {
   const salaryField = mode === "driver" ? "driverSalary" : "helperSalary";
   const map = new Map();
   lines.forEach(line => {
-    const route = bbcRouteLabel(line);
+    const route = bbcPlainRouteLabel(line);
     if (!map.has(route)) map.set(route, { route, count: 0, total: 0, dates: [] });
     const item = map.get(route);
     item.count += 1;
@@ -684,6 +707,18 @@ async function bbcFetchRoutePreview(row, tab) {
   if (bbcState.drawer.open && bbcState.drawer.tab === tab && bbcState.drawer.key === row.key) {
     bbcRenderDrawer();
   }
+}
+
+async function bbcEnsureRoutePreview(row, tab) {
+  const cacheKey = bbcRoutePreviewKey(tab, row.key);
+  const cached = bbcState.routePreviewCache[cacheKey];
+  if (!cached?.loaded && !cached?.loading) await bbcFetchRoutePreview(row, tab);
+  let attempts = 0;
+  while (bbcState.routePreviewCache[cacheKey]?.loading && attempts < 80) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+    attempts += 1;
+  }
+  return bbcState.routePreviewCache[cacheKey] || {};
 }
 
 function bbcBuildTruckRows(records) {
@@ -968,7 +1003,7 @@ function bbcRouteBreakdownTable(lines, mode) {
       <div class="budget-route-breakdown">
         ${rows.length ? rows.map(row => `
           <div>
-            <span>${row.route}</span>
+            <span>${bbcEscape(row.route)}</span>
             <em>${bbcEscape(row.dates.join(", ") || "-")} | ${row.count} ${row.count === 1 ? "trip" : "trips"} | ${bbcEscape(bbcMoney(row.total))}</em>
           </div>
         `).join("") : `<p>No route earnings yet.</p>`}
@@ -992,6 +1027,124 @@ function bbcPreviewCard(title, name, totals, options = {}) {
       ${bbcRouteBreakdownTable(options.routeLines || [], role.toLowerCase())}
     </article>
   `;
+}
+
+function bbcTruckPreviewData(row) {
+  const cacheKey = bbcRoutePreviewKey("trucks", row.key);
+  const preview = bbcState.routePreviewCache[cacheKey] || {};
+  const lines = preview.lines || [];
+  const driverGross = lines.reduce((sum, line) => sum + bbcNumber(line.driverSalary), 0);
+  const helperGross = lines.reduce((sum, line) => sum + bbcNumber(line.helperSalary), 0);
+  const driverTotals = bbcPreviewTotals(driverGross, bbcDisplayCashAdvanceBalance(row.driver, "Driver"));
+  const helperTotals = bbcPreviewTotals(helperGross, bbcDisplayCashAdvanceBalance(row.helper, "Helper"));
+  const sortedRecords = [...(row.records || [])].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  return {
+    row,
+    lines,
+    previewSource: preview.previewSource || "planned",
+    driverGross,
+    helperGross,
+    driverTotals,
+    helperTotals,
+    driverCashAdvances: bbcCashAdvanceRecords(row.driver, "Driver"),
+    helperCashAdvances: bbcCashAdvanceRecords(row.helper, "Helper"),
+    driverRouteBreakdown: bbcRouteBreakdown(lines, "driver"),
+    helperRouteBreakdown: bbcRouteBreakdown(lines, "helper"),
+    moneyLedger: sortedRecords.map(record => ({
+      id: record.id,
+      date: record.date,
+      type: record.type,
+      poNumber: record.poNumber,
+      amount: record.amount,
+      status: bbcNormalizeStatus(record),
+      paymentStatus: record.paymentStatus,
+      source: record.source,
+      destination: record.destination,
+      route: record.route,
+      details: record.fuelStation || record.route || record.remarks || ""
+    }))
+  };
+}
+
+function bbcGeneratePayrollDraftId(row) {
+  const plate = String(row?.plate || "TRUCK").replace(/[^A-Z0-9]+/gi, "").toUpperCase() || "TRUCK";
+  return `PAY-DRAFT-BBC-${plate}-${Date.now()}`;
+}
+
+function bbcBuildPayrollDraftPayload(row) {
+  const preview = bbcTruckPreviewData(row);
+  const payrollId = bbcGeneratePayrollDraftId(row);
+  const today = new Date().toISOString().slice(0, 10);
+  const rawData = {
+    source: "Budget Balance",
+    preview_only: true,
+    period_start: bbcState.periodStart,
+    period_label: bbcState.periodLabel,
+    route_lines: preview.lines,
+    driver_route_breakdown: preview.driverRouteBreakdown,
+    helper_route_breakdown: preview.helperRouteBreakdown,
+    driver_cash_advance_history: preview.driverCashAdvances,
+    helper_cash_advance_history: preview.helperCashAdvances,
+    money_ledger: preview.moneyLedger,
+    warning: "Draft only. Deductions are not applied and balances are not updated."
+  };
+  return {
+    payroll_id: payrollId,
+    payroll_date: today,
+    cutoff_from: bbcState.periodStart || "",
+    cutoff_to: today,
+    plate_number: row.plate,
+    group_category: row.group,
+    driver_name: row.driver,
+    helper_name: row.helper,
+    driver_salary: preview.driverGross,
+    helper_salary: preview.helperGross,
+    total_expenses: row.totalSinceLastPayroll || 0,
+    driver_cash_advance: 0,
+    helper_cash_advance: 0,
+    driver_previous_balance: preview.driverTotals.currentBalance,
+    helper_previous_balance: preview.helperTotals.currentBalance,
+    driver_balance_preview: Math.max(0, preview.driverTotals.currentBalance - preview.driverTotals.deduction),
+    helper_balance_preview: Math.max(0, preview.helperTotals.currentBalance - preview.helperTotals.deduction),
+    driver_net_pay: preview.driverTotals.takeHome,
+    helper_net_pay: preview.helperTotals.takeHome,
+    status: "Draft",
+    approval_status: "Draft",
+    payment_status: "Unpaid",
+    source: "Budget Balance",
+    driver_gross: preview.driverGross,
+    helper_gross: preview.helperGross,
+    driver_cash_advance_balance: preview.driverTotals.currentBalance,
+    helper_cash_advance_balance: preview.helperTotals.currentBalance,
+    suggested_driver_deduction: preview.driverTotals.deduction,
+    suggested_helper_deduction: preview.helperTotals.deduction,
+    driver_take_home: preview.driverTotals.takeHome,
+    helper_take_home: preview.helperTotals.takeHome,
+    raw_data: rawData
+  };
+}
+
+function bbcBuildPayrollDraftLines(row, payrollId) {
+  const preview = bbcTruckPreviewData(row);
+  return preview.lines.map((line, index) => ({
+    line_id: `${payrollId}-LINE-${String(index + 1).padStart(2, "0")}`,
+    payroll_id: payrollId,
+    trip_date: line.tripDate,
+    plate_number: row.plate,
+    group_category: row.group,
+    driver_name: row.driver,
+    helper_name: row.helper,
+    source: line.source,
+    destination: line.destination,
+    reference_no: line.reference || line.payrollId || "",
+    po_number: line.type === "Diesel PO" ? line.reference : "",
+    driver_salary: line.driverSalary,
+    helper_salary: line.helperSalary,
+    rate_id: line.rateId,
+    rate_match_status: line.rateMatchStatus,
+    remarks: line.sourceLabel || "Budget Balance draft preview",
+    raw_data: line
+  }));
 }
 
 function bbcRenderRoutePreview(row, tab, role = "") {
@@ -1079,6 +1232,10 @@ function bbcRenderTruckDetail(row) {
       <div class="budget-detail-summary-grid">
         ${bbcMiniCard("Total Released", bbcMoney(bbcSum(records, record => bbcNormalizeStatus(record) === "Paid / Released")))}
         ${bbcMiniCard("Still For Clearing", bbcMoney(bbcSum(records, bbcIsOpen)))}
+      </div>
+      <div class="budget-draft-actions">
+        <button class="btn btn-primary" type="button" data-bbc-payroll-draft="${bbcEscape(row.key)}">Create Payroll Draft</button>
+        <span id="bbc-draft-status-${bbcEscape(row.key)}"></span>
       </div>
       <h3 class="budget-section-title">Money Ledger</h3>
       <div class="budget-ledger-scroll">
@@ -1222,6 +1379,131 @@ function bbcFindRow(tab = bbcState.drawer.tab, key = bbcState.drawer.key) {
   return (bbcState.rows[tab] || []).find(row => row.key === key) || null;
 }
 
+function bbcEnsurePayrollDraftModal() {
+  let modal = bbc$("bbc-payroll-draft-modal");
+  if (modal) return modal;
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = `
+    <div id="bbc-payroll-draft-modal" class="budget-draft-modal" hidden>
+      <div class="budget-draft-modal-card" role="dialog" aria-modal="true" aria-labelledby="bbc-draft-title">
+        <div class="budget-draft-modal-head">
+          <div>
+            <span>Preview</span>
+            <h3 id="bbc-draft-title">Create payroll draft?</h3>
+          </div>
+          <button id="bbc-draft-cancel-x" class="budget-detail-close" type="button" aria-label="Close">&times;</button>
+        </div>
+        <div id="bbc-draft-body" class="budget-draft-modal-body"></div>
+        <div id="bbc-draft-status" class="budget-draft-status"></div>
+        <div class="budget-draft-modal-actions">
+          <button id="bbc-draft-cancel" class="btn btn-outline" type="button">Cancel</button>
+          <button id="bbc-draft-confirm" class="btn btn-primary" type="button">Create Payroll Draft</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrapper.firstElementChild);
+  modal = bbc$("bbc-payroll-draft-modal");
+  bbc$("bbc-draft-cancel")?.addEventListener("click", bbcClosePayrollDraftModal);
+  bbc$("bbc-draft-cancel-x")?.addEventListener("click", bbcClosePayrollDraftModal);
+  modal?.addEventListener("click", event => {
+    if (event.target === modal) bbcClosePayrollDraftModal();
+  });
+  bbc$("bbc-draft-confirm")?.addEventListener("click", bbcConfirmPayrollDraft);
+  return modal;
+}
+
+function bbcClosePayrollDraftModal() {
+  const modal = bbc$("bbc-payroll-draft-modal");
+  if (!modal) return;
+  modal.hidden = true;
+  modal.dataset.rowKey = "";
+}
+
+async function bbcOpenPayrollDraftModal(rowKey) {
+  const row = bbcFindRow("trucks", rowKey);
+  if (!row) return;
+  await bbcEnsureRoutePreview(row, "trucks");
+  const modal = bbcEnsurePayrollDraftModal();
+  const body = bbc$("bbc-draft-body");
+  const status = bbc$("bbc-draft-status");
+  const confirm = bbc$("bbc-draft-confirm");
+  const title = bbc$("bbc-draft-title");
+  const preview = bbcTruckPreviewData(row);
+  modal.dataset.rowKey = row.key;
+  modal.hidden = false;
+  if (status) {
+    status.textContent = "";
+    status.className = "budget-draft-status";
+  }
+  if (confirm) {
+    confirm.disabled = false;
+    confirm.textContent = "Create Payroll Draft";
+  }
+  if (title) title.textContent = `Create payroll draft for ${row.plate}?`;
+  if (body) {
+    body.innerHTML = `
+      <div class="budget-draft-confirm-grid">
+        ${bbcMiniCard("Driver Gross", bbcMoney(preview.driverTotals.gross))}
+        ${bbcMiniCard("Helper Gross", bbcMoney(preview.helperTotals.gross))}
+        ${bbcMiniCard("Driver Deduct", bbcMoney(preview.driverTotals.deduction))}
+        ${bbcMiniCard("Helper Deduct", bbcMoney(preview.helperTotals.deduction))}
+        ${bbcMiniCard("Driver Take-home", bbcMoney(preview.driverTotals.takeHome))}
+        ${bbcMiniCard("Helper Take-home", bbcMoney(preview.helperTotals.takeHome))}
+      </div>
+    `;
+  }
+}
+
+async function bbcConfirmPayrollDraft() {
+  const modal = bbc$("bbc-payroll-draft-modal");
+  const row = bbcFindRow("trucks", modal?.dataset.rowKey || "");
+  const status = bbc$("bbc-draft-status");
+  const confirm = bbc$("bbc-draft-confirm");
+  if (!row) return;
+  if (confirm) {
+    confirm.disabled = true;
+    confirm.textContent = "Creating...";
+  }
+  if (status) {
+    status.textContent = "Creating payroll draft...";
+    status.className = "budget-draft-status info";
+  }
+  try {
+    await bbcEnsureRoutePreview(row, "trucks");
+    const payload = bbcBuildPayrollDraftPayload(row);
+    const result = await bbcPostJson("/api/payroll/create", payload);
+    const payrollId = result.payroll_id || result.record?.payroll_id || payload.payroll_id;
+    const lines = bbcBuildPayrollDraftLines(row, payrollId);
+    let lineMessage = "";
+    if (lines.length) {
+      try {
+        const lineResult = await bbcPostJson("/api/payroll/trip-lines-bulk-upsert", { lines });
+        lineMessage = ` ${lineResult.count || lines.length} route line${(lineResult.count || lines.length) === 1 ? "" : "s"} saved.`;
+      } catch (lineError) {
+        console.warn("Budget Balance draft trip lines save failed", lineError);
+        lineMessage = " Route lines were kept in draft raw data.";
+      }
+    }
+    if (status) {
+      status.className = "budget-draft-status success";
+      status.innerHTML = `Payroll draft created.${bbcEscape(lineMessage)} <a href="payroll.html?payroll_id=${encodeURIComponent(payrollId)}">Open Payroll</a> <span>${bbcEscape(payrollId)}</span>`;
+    }
+    if (confirm) confirm.textContent = "Created";
+    const drawerStatus = bbc$(`bbc-draft-status-${row.key}`);
+    if (drawerStatus) drawerStatus.textContent = "Payroll draft created.";
+  } catch (error) {
+    if (status) {
+      status.className = "budget-draft-status warning";
+      status.textContent = error?.message || "Payroll draft could not be created.";
+    }
+    if (confirm) {
+      confirm.disabled = false;
+      confirm.textContent = "Create Payroll Draft";
+    }
+  }
+}
+
 function bbcRenderDrawer() {
   const drawer = bbc$("bbc-detail-drawer");
   const backdrop = bbc$("bbc-drawer-backdrop");
@@ -1327,6 +1609,13 @@ function bbcBindEvents() {
     button.addEventListener("click", () => bbcSetActiveTab(button.dataset.bbcTab));
   });
   document.addEventListener("click", event => {
+    const draftButton = event.target?.closest?.("[data-bbc-payroll-draft]");
+    if (draftButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      bbcOpenPayrollDraftModal(draftButton.dataset.bbcPayrollDraft || "");
+      return;
+    }
     const target = event.target?.closest?.("[data-bbc-detail-key]");
     if (!target) return;
     bbcOpenDrawer(target.dataset.bbcDetailKey || "");
@@ -1338,7 +1627,10 @@ function bbcBindEvents() {
       bbcOpenDrawer(row.dataset.bbcDetailKey || "");
       return;
     }
-    if (event.key === "Escape") bbcCloseDrawer();
+    if (event.key === "Escape") {
+      bbcClosePayrollDraftModal();
+      bbcCloseDrawer();
+    }
   });
   bbc$("bbc-drawer-close")?.addEventListener("click", bbcCloseDrawer);
   bbc$("bbc-drawer-backdrop")?.addEventListener("click", bbcCloseDrawer);
