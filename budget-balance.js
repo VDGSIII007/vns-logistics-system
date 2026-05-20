@@ -1506,18 +1506,37 @@ async function bbcOpenPayrollDraftModal(rowKey) {
   if (title) title.textContent = `Create payroll draft for ${row.plate}?`;
   if (body) {
     const routeBreakdown = bbcCombinedRouteBreakdown(preview.lines);
+    const totalReleased = bbcSum(row.records, r => bbcNormalizeStatus(r) === "Paid / Released");
+    const stillClearing = bbcSum(row.records, bbcIsOpen);
     body.innerHTML = `
-      ${bbcDraftRouteBreakdownList(routeBreakdown)}
       <div class="budget-draft-confirm-grid">
-        ${bbcMiniCard("Driver Cash Advance", bbcMoney(preview.driverTotals.currentBalance))}
-        ${bbcMiniCard("Helper Cash Advance", bbcMoney(preview.helperTotals.currentBalance))}
-        ${bbcMiniCard("Driver Gross", bbcMoney(preview.driverTotals.gross))}
-        ${bbcMiniCard("Helper Gross", bbcMoney(preview.helperTotals.gross))}
-        ${bbcMiniCard("Suggested Driver Deduction", bbcMoney(preview.driverTotals.deduction))}
-        ${bbcMiniCard("Suggested Helper Deduction", bbcMoney(preview.helperTotals.deduction))}
-        ${bbcMiniCard("Driver Take-home", bbcMoney(preview.driverTotals.takeHome))}
-        ${bbcMiniCard("Helper Take-home", bbcMoney(preview.helperTotals.takeHome))}
+        ${bbcMiniCard("Total Trip Budget", bbcMoney(row.openTripBudget))}
+        ${bbcMiniCard("Total Diesel PO", bbcMoney(row.openDieselPo))}
+        ${bbcMiniCard("Total Released", bbcMoney(totalReleased))}
+        ${bbcMiniCard("Still For Clearing", bbcMoney(stillClearing))}
       </div>
+      ${bbcDraftRouteBreakdownList(routeBreakdown)}
+      <table class="budget-draft-crew-table">
+        <thead>
+          <tr><th></th><th>Gross</th><th>Cash Advance</th><th>Suggested Deduction</th><th>Take-home</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="budget-draft-crew-label">Driver</td>
+            <td>${bbcMoney(preview.driverTotals.gross)}</td>
+            <td>${bbcMoney(preview.driverTotals.currentBalance)}</td>
+            <td>${bbcMoney(preview.driverTotals.deduction)}</td>
+            <td>${bbcMoney(preview.driverTotals.takeHome)}</td>
+          </tr>
+          <tr>
+            <td class="budget-draft-crew-label">Helper</td>
+            <td>${bbcMoney(preview.helperTotals.gross)}</td>
+            <td>${bbcMoney(preview.helperTotals.currentBalance)}</td>
+            <td>${bbcMoney(preview.helperTotals.deduction)}</td>
+            <td>${bbcMoney(preview.helperTotals.takeHome)}</td>
+          </tr>
+        </tbody>
+      </table>
       <p class="budget-draft-note">Preview only - deductions are not applied until payroll is finalized.</p>
     `;
   }

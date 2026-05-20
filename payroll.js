@@ -1210,6 +1210,21 @@ function renderBudgetBalanceDraftComputation(title, rows) {
   `;
 }
 
+function renderBudgetBalanceDraftTruckMoney(raw = {}) {
+  const detail = getBudgetBalanceDraftDetail(raw);
+  const fmt = v => (v != null && v !== "") ? formatCurrency(parseNumber(v)) : "-";
+  const fields = [
+    { label: "Total Trip Budget", key: "open_trip_budget" },
+    { label: "Total Diesel PO", key: "open_diesel_po" },
+    { label: "Total Released", key: "total_released" },
+    { label: "Still For Clearing", key: "still_for_clearing" },
+  ];
+  return fields.map(f => {
+    const val = raw[f.key] ?? detail[f.key];
+    return `<div class="payroll-budget-truck-money-card"><span>${escapeHtml(f.label)}</span><strong>${fmt(val)}</strong></div>`;
+  }).join("");
+}
+
 function renderBudgetBalanceDraftCard(record = {}) {
   const raw = getBudgetBalanceDraftData(record) || {};
   const detail = getBudgetBalanceDraftDetail(raw);
@@ -1230,6 +1245,9 @@ function renderBudgetBalanceDraftCard(record = {}) {
             <button type="button" data-action="draft-finalize-placeholder" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}">Finalize Payroll</button>
           </div>
           ${renderDraftRouteBreakdown(raw)}
+          <div class="payroll-budget-truck-money-grid">
+            ${renderBudgetBalanceDraftTruckMoney(raw)}
+          </div>
           <div class="payroll-budget-computation-grid">
             ${renderBudgetBalanceDraftComputation("Driver Computation", [
               { label: "Gross", value: payrollDraftValue(record, raw, "driver_gross", "driver_gross") || record.totals?.totalDriverSalary },

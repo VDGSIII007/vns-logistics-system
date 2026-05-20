@@ -3250,6 +3250,37 @@ body.payroll-page{
   font-size:.8rem;
   font-weight:850;
 }
+.budget-draft-crew-table{
+  width:100%;
+  border-collapse:collapse;
+  margin:12px 0 0;
+  font-size:.84rem;
+}
+.budget-draft-crew-table th{
+  text-align:right;
+  padding:6px 10px;
+  font-size:.75rem;
+  font-weight:700;
+  color:#6b7280;
+  border-bottom:1px solid var(--line);
+}
+.budget-draft-crew-table th:first-child{
+  text-align:left;
+}
+.budget-draft-crew-table td{
+  text-align:right;
+  padding:7px 10px;
+  font-weight:600;
+  border-bottom:1px solid var(--line);
+}
+.budget-draft-crew-table tbody tr:last-child td{
+  border-bottom:none;
+}
+.budget-draft-crew-label{
+  text-align:left !important;
+  font-weight:700;
+  color:#374151;
+}
 .budget-draft-status{
   min-height:22px;
   padding:0 20px 12px;
@@ -3387,6 +3418,32 @@ body.payroll-page{
 .payroll-budget-computation-card strong{
   color:#111827;
   white-space:nowrap;
+}
+.payroll-budget-truck-money-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+  margin:0 0 12px;
+}
+.payroll-budget-truck-money-card{
+  display:grid;
+  gap:3px;
+  padding:10px 12px;
+  border:1px solid #edf0f5;
+  border-radius:12px;
+  background:#fff;
+}
+.payroll-budget-truck-money-card span{
+  color:#6b7280;
+  font-size:.72rem;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.payroll-budget-truck-money-card strong{
+  color:#111827;
+  font-size:.96rem;
+  font-weight:900;
 }
 .payroll-budget-draft-note{
   margin:12px 0 0;
