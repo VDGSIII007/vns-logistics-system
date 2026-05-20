@@ -1173,7 +1173,12 @@ function bbcBuildPayrollDraftPayload(row) {
 
 function bbcBuildPayrollDraftLines(row, payrollId) {
   const preview = bbcTruckPreviewData(row);
-  return preview.lines.map((line, index) => ({
+  const validLines = preview.lines.filter(line => {
+    if (!line.source || !line.destination) return false;
+    const hasSalary = bbcNumber(line.driverSalary) > 0 || bbcNumber(line.helperSalary) > 0;
+    return hasSalary || line.rateMatchStatus === "Matched";
+  });
+  return validLines.map((line, index) => ({
     line_id: `${payrollId}-LINE-${String(index + 1).padStart(2, "0")}`,
     payroll_id: payrollId,
     trip_date: line.tripDate,
@@ -1183,14 +1188,14 @@ function bbcBuildPayrollDraftLines(row, payrollId) {
     helper_name: row.helper,
     source: line.source,
     destination: line.destination,
-    reference_no: line.reference || line.payrollId || "",
-    po_number: line.type === "Diesel PO" ? line.reference : "",
+    reference_no: "",
+    po_number: line.type === "Diesel PO" && line.reference && line.reference !== "-" ? line.reference : "",
     driver_salary: line.driverSalary,
     helper_salary: line.helperSalary,
     rate_id: line.rateId,
     rate_match_status: line.rateMatchStatus,
     remarks: line.sourceLabel || "Budget Balance draft preview",
-    raw_data: line
+    raw_data: { ...line, source_type: line.type }
   }));
 }
 
@@ -1508,10 +1513,12 @@ async function bbcOpenPayrollDraftModal(rowKey) {
     const routeBreakdown = bbcCombinedRouteBreakdown(preview.lines);
     const totalReleased = bbcSum(row.records, r => bbcNormalizeStatus(r) === "Paid / Released");
     const stillClearing = bbcSum(row.records, bbcIsOpen);
+    const totalBaliCA = preview.driverTotals.currentBalance + preview.helperTotals.currentBalance;
     body.innerHTML = `
       <div class="budget-draft-confirm-grid">
         ${bbcMiniCard("Total Trip Budget", bbcMoney(row.openTripBudget))}
         ${bbcMiniCard("Total Diesel PO", bbcMoney(row.openDieselPo))}
+        ${bbcMiniCard("Total Bali / Cash Advance", bbcMoney(totalBaliCA))}
         ${bbcMiniCard("Total Released", bbcMoney(totalReleased))}
         ${bbcMiniCard("Still For Clearing", bbcMoney(stillClearing))}
       </div>

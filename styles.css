@@ -3241,7 +3241,7 @@ body.payroll-page{
 }
 .budget-draft-confirm-grid{
   display:grid;
-  grid-template-columns:repeat(2,minmax(0,1fr));
+  grid-template-columns:repeat(3,minmax(0,1fr));
   gap:10px;
 }
 .budget-draft-note{
@@ -3349,7 +3349,15 @@ body.payroll-page{
   font-size:.82rem;
   font-weight:800;
 }
-.payroll-budget-draft-head button{
+.payroll-budget-draft-head-actions{
+  display:flex;
+  gap:8px;
+  align-items:flex-start;
+  flex-shrink:0;
+}
+.payroll-budget-draft-head button,
+.payroll-draft-show-btn,
+.payroll-draft-hide-btn{
   border:1px solid #d1d5db;
   border-radius:999px;
   background:#f3f4f6;
@@ -3359,6 +3367,16 @@ body.payroll-page{
   font-size:.74rem;
   font-weight:900;
   cursor:pointer;
+}
+.payroll-draft-show-btn{
+  border-color:#d1fae5;
+  background:#ecfdf5;
+  color:#065f46;
+}
+.payroll-draft-hide-btn{
+  border-color:#fee2e2;
+  background:#fff5f5;
+  color:#991b1b;
 }
 .payroll-budget-draft-section h4,
 .payroll-budget-computation-card h4{
@@ -3421,7 +3439,7 @@ body.payroll-page{
 }
 .payroll-budget-truck-money-grid{
   display:grid;
-  grid-template-columns:repeat(4,minmax(0,1fr));
+  grid-template-columns:repeat(5,minmax(0,1fr));
   gap:8px;
   margin:0 0 12px;
 }
@@ -4098,11 +4116,19 @@ body.payroll-page{
   .payroll-budget-draft-head{
     display:grid;
   }
-  .payroll-budget-draft-head button{
+  .payroll-budget-draft-head button,
+  .payroll-draft-hide-btn{
+    width:100%;
+  }
+  .payroll-budget-draft-head-actions{
+    flex-direction:column;
     width:100%;
   }
   .budget-draft-confirm-grid{
     grid-template-columns:1fr;
+  }
+  .payroll-budget-truck-money-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
   }
 }
 .approval-modal-actions{
