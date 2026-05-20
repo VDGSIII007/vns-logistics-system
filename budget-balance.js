@@ -23,6 +23,12 @@ const bbcState = {
   }
 };
 
+const BBC_ENDPOINTS = {
+  cash: "/api/cash/list?limit=500",
+  balances: "/api/payroll/balances",
+  payroll: "/api/payroll/list?limit=100"
+};
+
 function bbc$(id) {
   return document.getElementById(id);
 }
@@ -95,10 +101,27 @@ function bbcArrayFromPayload(payload, keys) {
 }
 
 async function bbcFetchJson(path) {
-  const response = await fetch(`${BBC_WORKER_API_BASE}${path}`);
+  const url = `${BBC_WORKER_API_BASE}${path}`;
+  const response = await fetch(url);
   const data = await response.json().catch(() => null);
-  if (!response.ok || !data?.ok) throw new Error(data?.error || `Budget Balance load failed (${response.status})`);
+  if (!response.ok || !data?.ok) {
+    throw new Error(data?.error || data?.message || `HTTP ${response.status} ${response.statusText}`);
+  }
   return data;
+}
+
+async function bbcFetchEndpoint(label, path) {
+  try {
+    return { ok: true, label, path, data: await bbcFetchJson(path) };
+  } catch (error) {
+    console.warn("Budget Balance endpoint failed", path, error);
+    return {
+      ok: false,
+      label,
+      path,
+      error: error?.message || String(error || "Unknown error")
+    };
+  }
 }
 
 function bbcIsDeleted(record = {}) {
@@ -163,7 +186,7 @@ function bbcNormalizeCashRecord(record = {}) {
     role: String(role || "").trim(),
     driver: String(driver || "").trim(),
     helper: String(helper || "").trim(),
-    amount: Number(record.Amount || record.amount || 0),
+    amount: Number(record.Amount || record.amount || record.budgetAmount || record.Budget_Amount || record.Diesel_Amount || record.dieselAmount || 0),
     status: record.Review_Status || record.status || record.approval_status || "",
     paymentStatus: record.paymentStatus || record.Payment_Status || record.payment_status || "",
     date: bbcIsoDate(record.Date || record.date || record.request_date || record.createdAt || record.Created_At || ""),
@@ -413,30 +436,49 @@ function bbcBuildRows() {
 async function bbcLoadData() {
   bbcReadFilters();
   bbcSetMessage("Loading Budget Balance Center data...");
-  try {
-    const [cashPayload, balancesPayload, payrollPayload] = await Promise.all([
-      bbcFetchJson("/api/cash/list?limit=500"),
-      bbcFetchJson("/api/payroll/balances"),
-      bbcFetchJson("/api/payroll/list?limit=100")
-    ]);
-    bbcState.cashRecords = bbcArrayFromPayload(cashPayload, ["records", "entries", "data", "items"])
+
+  const results = await Promise.all([
+    bbcFetchEndpoint("cash", BBC_ENDPOINTS.cash),
+    bbcFetchEndpoint("balances", BBC_ENDPOINTS.balances),
+    bbcFetchEndpoint("payroll", BBC_ENDPOINTS.payroll)
+  ]);
+  const resultByLabel = Object.fromEntries(results.map(result => [result.label, result]));
+  const failures = results.filter(result => !result.ok);
+  const successCount = results.length - failures.length;
+
+  if (resultByLabel.cash?.ok) {
+    bbcState.cashRecords = bbcArrayFromPayload(resultByLabel.cash.data, ["records", "entries", "data", "items"])
       .filter(record => !bbcIsDeleted(record))
       .map(bbcNormalizeCashRecord)
       .filter(record => ["Trip Budget", "Diesel PO", "Bali / Cash Advance"].includes(record.type));
-    bbcState.balances = bbcArrayFromPayload(balancesPayload, ["balances", "records", "data", "items"]).map(bbcNormalizeBalance);
-    bbcState.payrollRecords = bbcArrayFromPayload(payrollPayload, ["records", "payroll", "data", "items"]).map(bbcNormalizePayroll);
-    console.log("Budget Balance cash records loaded", bbcState.cashRecords.length);
-    console.log("Budget Balance balances loaded", bbcState.balances.length);
-    bbcDeterminePeriod();
-    bbcBuildRows();
-    bbcSetMessage("Budget Balance data loaded.", "success");
-  } catch (error) {
-    console.warn("Budget Balance load failed", error);
+  } else {
     bbcState.cashRecords = [];
+  }
+
+  if (resultByLabel.balances?.ok) {
+    bbcState.balances = bbcArrayFromPayload(resultByLabel.balances.data, ["balances", "records", "data", "items"]).map(bbcNormalizeBalance);
+  } else {
     bbcState.balances = [];
+  }
+
+  if (resultByLabel.payroll?.ok) {
+    bbcState.payrollRecords = bbcArrayFromPayload(resultByLabel.payroll.data, ["records", "payroll", "data", "items"]).map(bbcNormalizePayroll);
+  } else {
     bbcState.payrollRecords = [];
-    bbcBuildRows();
-    bbcSetMessage("Budget Balance data could not be loaded from the worker.", "warning");
+  }
+
+  console.log("Budget Balance cash records loaded", bbcState.cashRecords.length);
+  console.log("Budget Balance balances loaded", bbcState.balances.length);
+  failures.forEach(result => console.warn(`Budget Balance failed endpoint: ${result.path}`, result.error));
+
+  bbcDeterminePeriod();
+  bbcBuildRows();
+  if (successCount === 0) {
+    bbcSetMessage("All Budget Balance endpoints failed. Showing empty tabs.", "warning");
+  } else if (failures.length) {
+    bbcSetMessage(`Loaded available Budget Balance data. Warning: ${failures.map(result => result.path).join(", ")} failed.`, "warning");
+  } else {
+    bbcSetMessage("Budget Balance data loaded.", "success");
   }
   bbcRender();
 }
@@ -588,7 +630,7 @@ function bbcRenderTruckRows(rows) {
 
 function bbcRenderPersonRows(rows, role) {
   const nameLabel = role === "Driver" ? "Driver Name" : "Helper Name";
-  if (!rows.length) return `<div class="budget-empty">No ${bbcEscape(role.toLowerCase())} balance records found.</div>`;
+  if (!rows.length) return `<div class="budget-empty">No ${bbcEscape(role.toLowerCase())} bali records found.</div>`;
   return `
     <div class="budget-desktop-table">
       <table class="budget-main-table">
