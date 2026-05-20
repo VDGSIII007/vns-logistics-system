@@ -81,6 +81,9 @@ const BUDGET_BALANCE_API_PATHS = new Set([
   "/api/budget-balance/summary",
   "/api/budget-balance/transactions"
 ]);
+const TRUCK_API_PATHS = new Set([
+  "/api/trucks/list"
+]);
 const CORS_ALLOWED_ORIGINS = new Set([
   "https://portal.vns-logistics.com",
   "http://localhost:5500",
@@ -592,6 +595,102 @@ async function handleBudgetBalanceTransactions(url, env) {
   return jsonResponse(result);
 }
 
+function truckSupabaseConfig(env) {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    return { error: "Supabase truck master API is not configured" };
+  }
+  return {
+    url: String(env.SUPABASE_URL).replace(/\/+$/, ""),
+    key: env.SUPABASE_SERVICE_ROLE_KEY
+  };
+}
+
+async function truckSupabaseFetch(env, path) {
+  const config = truckSupabaseConfig(env);
+  if (config.error) return { error: config.error, status: 500 };
+  const response = await fetch(`${config.url}/rest/v1/${path}`, {
+    method: "GET",
+    headers: {
+      apikey: config.key,
+      Authorization: `Bearer ${config.key}`,
+      "content-type": "application/json"
+    }
+  });
+  const text = await response.text();
+  const body = text ? (() => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { message: text };
+    }
+  })() : null;
+  if (!response.ok) {
+    return { error: body?.message || "Truck master data service is unavailable", details: body, status: response.status };
+  }
+  return { body, status: response.status };
+}
+
+function formatTruckMasterRecord(record = {}) {
+  const active = record.active === undefined || record.active === null
+    ? String(record.status || "").trim().toLowerCase() !== "inactive"
+    : record.active !== false;
+  return {
+    truck_id: record.truck_id || "",
+    truckId: record.truck_id || "",
+    plate_number: record.plate_number || "",
+    plateNumber: record.plate_number || "",
+    Plate_Number: record.plate_number || "",
+    group_category: record.group_category || "",
+    groupCategory: record.group_category || "",
+    Group_Category: record.group_category || "",
+    driver_name: record.driver_name || record.current_driver_name || "",
+    driverName: record.driver_name || record.current_driver_name || "",
+    Current_Driver_Name: record.current_driver_name || record.driver_name || "",
+    Current_Driver: record.current_driver_name || record.driver_name || "",
+    helper_name: record.helper_name || record.current_helper_name || "",
+    helperName: record.helper_name || record.current_helper_name || "",
+    Current_Helper_Name: record.current_helper_name || record.helper_name || "",
+    Current_Helper: record.current_helper_name || record.helper_name || "",
+    active,
+    status: record.status || "",
+    Status: record.status || "",
+    remarks: record.remarks || "",
+    Remarks: record.remarks || "",
+    created_at: record.created_at || "",
+    createdAt: record.created_at || "",
+    updated_at: record.updated_at || "",
+    updatedAt: record.updated_at || "",
+    raw_data: record.raw_data || {}
+  };
+}
+
+async function handleTruckList(url, env) {
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 1000), 1), 5000);
+  const activeOnly = String(url.searchParams.get("active") || "true").toLowerCase() !== "false";
+  const filters = new URLSearchParams({
+    select: "*",
+    order: "plate_number.asc",
+    limit: String(limit)
+  });
+  if (activeOnly) filters.set("active", "eq.true");
+  if (url.searchParams.get("group_category")) filters.set("group_category", `eq.${url.searchParams.get("group_category")}`);
+
+  const result = await truckSupabaseFetch(env, `trucks?${filters.toString()}`);
+  if (result.error) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "Truck master list failed"
+    }, result.status || 500);
+  }
+  const trucks = Array.isArray(result.body) ? result.body : [];
+  return jsonResponse({
+    ok: true,
+    source: "supabase",
+    trucks: trucks.map(formatTruckMasterRecord),
+    count: trucks.length
+  });
+}
+
 async function routeRequest(request, env) {
   const url = new URL(request.url);
   const isCashApiRoute = CASH_API_PATHS.has(url.pathname);
@@ -628,6 +727,10 @@ async function routeRequest(request, env) {
   if (request.method === "GET" && url.pathname === "/api/budget-balance/summary") return withCors(await handleBudgetBalanceSummary(url, env), request);
   if (request.method === "GET" && url.pathname === "/api/budget-balance/transactions") return withCors(await handleBudgetBalanceTransactions(url, env), request);
   if (isBudgetBalanceApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
+  const isTruckApiRoute = TRUCK_API_PATHS.has(url.pathname);
+  if (isTruckApiRoute && request.method === "OPTIONS") return handleOptions(request);
+  if (request.method === "GET" && url.pathname === "/api/trucks/list") return withCors(await handleTruckList(url, env), request);
+  if (isTruckApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
   if (request.method === "GET" && url.pathname === "/api/push/check") return handleCheck(env);
   if (request.method === "GET" && url.pathname === "/api/push/debug-sources") return handleDebugSources(env);
   if (request.method === "GET" && url.pathname === "/api/push/debug-payment-queue") return handleDebugPaymentQueue(env);

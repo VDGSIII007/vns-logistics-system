@@ -7,6 +7,7 @@ const bbcState = {
   cashRecords: [],
   balances: [],
   payrollRecords: [],
+  truckMaster: [],
   rows: {
     trucks: [],
     drivers: [],
@@ -26,7 +27,8 @@ const bbcState = {
 const BBC_ENDPOINTS = {
   cash: "/api/cash/list?limit=500",
   balances: "/api/payroll/balances",
-  payroll: "/api/payroll/list?limit=100"
+  payroll: "/api/payroll/list?limit=100",
+  trucks: "/api/trucks/list?active=true&limit=1000"
 };
 
 function bbc$(id) {
@@ -212,6 +214,34 @@ function bbcNormalizeBalance(record = {}) {
   };
 }
 
+function bbcIsActiveTruck(record = {}) {
+  const active = record.active ?? record.Active;
+  const status = String(record.status || record.Status || "").trim().toLowerCase();
+  if (active === false || String(active).toLowerCase() === "false") return false;
+  return !["inactive", "deleted", "retired"].includes(status);
+}
+
+function bbcNormalizeTruckMaster(record = {}) {
+  return {
+    plate: String(record.Plate_Number || record.plateNumber || record.plate_number || record.plate || "").trim().toUpperCase(),
+    group: bbcNormalizeGroup(record.Group_Category || record.groupCategory || record.group_category || ""),
+    driver: String(record.Current_Driver_Name || record.Current_Driver || record.driverName || record.driver_name || record.Driver || "").trim(),
+    helper: String(record.Current_Helper_Name || record.Current_Helper || record.helperName || record.helper_name || record.Helper || "").trim(),
+    active: bbcIsActiveTruck(record),
+    remarks: record.Remarks || record.remarks || "",
+    updatedAt: bbcIsoDate(record.updated_at || record.updatedAt || record.Updated_At || "")
+  };
+}
+
+function bbcReadLocalTruckMaster() {
+  try {
+    const trucks = JSON.parse(localStorage.getItem("vnsTruckMaster") || "[]");
+    return Array.isArray(trucks) ? trucks.map(bbcNormalizeTruckMaster).filter(truck => truck.plate && truck.active) : [];
+  } catch {
+    return [];
+  }
+}
+
 function bbcNormalizePayroll(record = {}) {
   const cutoffTo = bbcIsoDate(record.cutoff_to || record.cutoffTo || record.cutoffEnd || "");
   const payrollDate = bbcIsoDate(record.payroll_date || record.payrollDate || record.date || record.createdAt || "");
@@ -330,6 +360,19 @@ function bbcLatestPayrollFor(person, role) {
 
 function bbcBuildTruckRows(records) {
   const map = new Map();
+  bbcState.truckMaster.forEach(truck => {
+    if (!truck.plate) return;
+    map.set(truck.plate, {
+      key: truck.plate,
+      plate: truck.plate,
+      group: truck.group,
+      driver: truck.driver,
+      helper: truck.helper,
+      fromTruckMaster: true,
+      records: []
+    });
+  });
+
   records.filter(record => ["Trip Budget", "Diesel PO"].includes(record.type)).forEach(record => {
     if (!record.plate) return;
     if (!map.has(record.plate)) {
@@ -355,7 +398,7 @@ function bbcBuildTruckRows(records) {
     openDieselPo: bbcSum(row.records, record => record.type === "Diesel PO" && bbcIsOpen(record)),
     totalSinceLastPayroll: bbcSum(row.records),
     latestActivity: bbcLatest(row.records),
-    status: bbcStatusForRecords(row.records)
+    status: row.records.length ? bbcStatusForRecords(row.records) : "No open records"
   })).sort((a, b) => a.plate.localeCompare(b.plate));
 }
 
@@ -402,13 +445,34 @@ function bbcBuildPersonRows(records, role) {
       }
     });
 
+  bbcState.truckMaster.forEach(truck => {
+    const person = roleLower === "driver" ? truck.driver : truck.helper;
+    if (!person) return;
+    const key = person.toLowerCase();
+    if (!map.has(key)) {
+      const balance = bbcState.balances.find(item => item.person.toLowerCase() === key && item.role.toLowerCase() === roleLower);
+      map.set(key, {
+        key,
+        name: person,
+        assignedTruck: truck.plate || balance?.plate || "",
+        group: truck.group || balance?.group || "",
+        currentBalance: balance?.currentBalance || 0,
+        records: []
+      });
+    } else {
+      const row = map.get(key);
+      row.assignedTruck = row.assignedTruck || truck.plate;
+      row.group = row.group || truck.group;
+    }
+  });
+
   return [...map.values()].map(row => ({
     ...row,
     baliSinceLastPayroll: bbcSum(row.records),
     payrollDeducted: bbcPayrollDeductionsFor(row.name, role),
     latestBaliDate: bbcLatest(row.records),
     latestPayrollDate: bbcLatestPayrollFor(row.name, role),
-    status: row.records.some(bbcIsOpen) || row.currentBalance > 0 ? "Open" : "Clear"
+    status: row.records.some(bbcIsOpen) || row.currentBalance > 0 ? "Open" : "No open records"
   })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -440,7 +504,8 @@ async function bbcLoadData() {
   const results = await Promise.all([
     bbcFetchEndpoint("cash", BBC_ENDPOINTS.cash),
     bbcFetchEndpoint("balances", BBC_ENDPOINTS.balances),
-    bbcFetchEndpoint("payroll", BBC_ENDPOINTS.payroll)
+    bbcFetchEndpoint("payroll", BBC_ENDPOINTS.payroll),
+    bbcFetchEndpoint("trucks", BBC_ENDPOINTS.trucks)
   ]);
   const resultByLabel = Object.fromEntries(results.map(result => [result.label, result]));
   const failures = results.filter(result => !result.ok);
@@ -465,6 +530,14 @@ async function bbcLoadData() {
     bbcState.payrollRecords = bbcArrayFromPayload(resultByLabel.payroll.data, ["records", "payroll", "data", "items"]).map(bbcNormalizePayroll);
   } else {
     bbcState.payrollRecords = [];
+  }
+
+  if (resultByLabel.trucks?.ok) {
+    bbcState.truckMaster = bbcArrayFromPayload(resultByLabel.trucks.data, ["trucks", "Truck_Master", "records", "data", "items"])
+      .map(bbcNormalizeTruckMaster)
+      .filter(truck => truck.plate && truck.active);
+  } else {
+    bbcState.truckMaster = bbcReadLocalTruckMaster();
   }
 
   console.log("Budget Balance cash records loaded", bbcState.cashRecords.length);
@@ -498,7 +571,7 @@ function bbcStatusChip(status) {
   let cls = "budget-status-chip neutral";
   if (normalized === "open" || normalized === "for approval") cls = "budget-status-chip open";
   else if (normalized === "approved") cls = "budget-status-chip approved";
-  else if (normalized === "paid / released" || normalized === "clear") cls = "budget-status-chip clear";
+  else if (normalized === "paid / released" || normalized === "clear" || normalized === "no open records") cls = "budget-status-chip clear";
   else if (normalized === "cancelled") cls = "budget-status-chip issue";
   return `<span class="${cls}">${bbcEscape(label)}</span>`;
 }
