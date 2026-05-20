@@ -1102,6 +1102,9 @@ function bbcBuildPayrollDraftPayload(row) {
     status: record.status,
     payment_status: record.paymentStatus
   }));
+  const totalReleased = bbcSum(row.records, r => bbcNormalizeStatus(r) === "Paid / Released");
+  const stillClearing = bbcSum(row.records, bbcIsOpen);
+  const totalBaliCA = preview.driverTotals.currentBalance + preview.helperTotals.currentBalance;
   const rawData = {
     source: "Budget Balance",
     preview_only: true,
@@ -1127,6 +1130,13 @@ function bbcBuildPayrollDraftPayload(row) {
     suggested_helper_deduction: preview.helperTotals.deduction,
     driver_take_home: preview.driverTotals.takeHome,
     helper_take_home: preview.helperTotals.takeHome,
+    open_trip_budget: row.openTripBudget || 0,
+    open_diesel_po: row.openDieselPo || 0,
+    total_trip_budget: row.openTripBudget || 0,
+    total_diesel_po: row.openDieselPo || 0,
+    total_bali_cash_advance: totalBaliCA,
+    total_released: totalReleased,
+    still_for_clearing: stillClearing,
     preview_warning: "Draft only. Deductions are not applied until payroll is finalized.",
     warning: "Draft only. Deductions are not applied and balances are not updated."
   };

@@ -267,6 +267,7 @@ function newPayroll() {
   renderWarnings();
   renderCalculationSummary();
   updateLockState();
+  updatePayrollDraftSummary(null);
   switchPayrollTab("encode-payroll-tab");
   setStatus("New payroll ready.", "info");
   renderPayrollTruckPlateOptions();
@@ -1175,7 +1176,13 @@ function getDraftRouteBreakdown(raw = {}) {
 }
 
 function renderDraftRouteBreakdown(raw = {}) {
-  const rows = getDraftRouteBreakdown(raw);
+  const allRows = getDraftRouteBreakdown(raw);
+  const rows = allRows.filter(r => {
+    const label = (r.route || "").trim();
+    if (!label || label === "No route data yet" || label.toLowerCase().includes("route needed")) return false;
+    if (parseNumber(r.driverTotal) === 0 && parseNumber(r.helperTotal) === 0) return false;
+    return true;
+  });
   return `
     <section class="payroll-budget-draft-section">
       <h4>Route Breakdown</h4>
@@ -1213,20 +1220,50 @@ function renderBudgetBalanceDraftComputation(title, rows) {
 function renderBudgetBalanceDraftTruckMoney(raw = {}) {
   const detail = getBudgetBalanceDraftDetail(raw);
   const fmt = v => (v != null && v !== "") ? formatCurrency(parseNumber(v)) : "-";
+  const pick = (...keys) => { for (const k of keys) { const v = raw[k] ?? detail[k]; if (v != null) return v; } return null; };
   const driverCA = parseNumber(raw.driver_cash_advance_balance ?? detail.driver_cash_advance_balance);
   const helperCA = parseNumber(raw.helper_cash_advance_balance ?? detail.helper_cash_advance_balance);
-  const hasCA = (raw.driver_cash_advance_balance ?? detail.driver_cash_advance_balance) != null
-    || (raw.helper_cash_advance_balance ?? detail.helper_cash_advance_balance) != null;
+  const baliCA = pick("total_bali_cash_advance") ??
+    ((raw.driver_cash_advance_balance ?? detail.driver_cash_advance_balance) != null ? driverCA + helperCA : null);
   const fields = [
-    { label: "Total Trip Budget", value: raw.open_trip_budget ?? detail.open_trip_budget },
-    { label: "Total Diesel PO", value: raw.open_diesel_po ?? detail.open_diesel_po },
-    { label: "Total Bali / Cash Advance", value: hasCA ? (driverCA + helperCA) : null },
-    { label: "Total Released", value: raw.total_released ?? detail.total_released },
-    { label: "Still For Clearing", value: raw.still_for_clearing ?? detail.still_for_clearing },
+    { label: "Total Trip Budget", value: pick("total_trip_budget", "open_trip_budget") },
+    { label: "Total Diesel PO", value: pick("total_diesel_po", "open_diesel_po") },
+    { label: "Total Bali / Cash Advance", value: baliCA },
+    { label: "Total Released", value: pick("total_released") },
+    { label: "Still For Clearing", value: pick("still_for_clearing") },
   ];
   return fields.map(f =>
     `<div class="payroll-budget-truck-money-card"><span>${escapeHtml(f.label)}</span><strong>${fmt(f.value)}</strong></div>`
   ).join("");
+}
+
+function updatePayrollDraftSummary(record = null) {
+  const el = $("payroll-draft-money-summary");
+  if (!el) return;
+  if (!record || !isBudgetBalanceDraft(record)) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  const raw = getBudgetBalanceDraftData(record) || {};
+  const detail = getBudgetBalanceDraftDetail(raw);
+  const pick = (...keys) => { for (const k of keys) { const v = raw[k] ?? detail[k]; if (v != null) return v; } return null; };
+  const fmt = v => (v != null && v !== "") ? formatCurrency(parseNumber(v)) : "-";
+  const driverCA = parseNumber(raw.driver_cash_advance_balance ?? detail.driver_cash_advance_balance);
+  const helperCA = parseNumber(raw.helper_cash_advance_balance ?? detail.helper_cash_advance_balance);
+  const baliCA = pick("total_bali_cash_advance") ??
+    ((raw.driver_cash_advance_balance ?? detail.driver_cash_advance_balance) != null ? driverCA + helperCA : null);
+  const cards = [
+    { label: "Trip Budget", value: pick("total_trip_budget", "open_trip_budget") },
+    { label: "Diesel PO", value: pick("total_diesel_po", "open_diesel_po") },
+    { label: "Bali / CA", value: baliCA },
+    { label: "Driver Take-home", value: pick("driver_take_home") },
+    { label: "Helper Take-home", value: pick("helper_take_home") },
+  ];
+  el.innerHTML = `<span class="payroll-draft-summary-label">Budget Balance Draft</span>${
+    cards.map(c => `<div class="payroll-draft-summary-card"><span>${escapeHtml(c.label)}</span><strong>${fmt(c.value)}</strong></div>`).join("")
+  }`;
+  el.hidden = false;
 }
 
 function renderBudgetBalanceDraftCard(record = {}) {
@@ -1678,6 +1715,7 @@ async function editPayrollRecord(id) {
   calculatePayroll();
   generateViberMessage();
   updateLockState();
+  updatePayrollDraftSummary(record);
   switchPayrollTab("encode-payroll-tab");
   window.scrollTo({ top: 0, behavior: "smooth" });
   return record;
