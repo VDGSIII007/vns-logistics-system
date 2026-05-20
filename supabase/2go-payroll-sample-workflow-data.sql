@@ -405,16 +405,17 @@ insert into payroll_trip_lines (
   allowance_driver,
   allowance_helper,
   row_total,
+  rate_id,
   rate_match_status,
   remarks,
   raw_data,
   is_deleted,
   updated_at
 ) values
-  ('PTL-SAMPLE-2GO-CCB8126-001', 'PAY-SAMPLE-2GO-CCB8126', '2026-05-20', 'CCB8126', '2GO', 'Sunny Albador', 'Reinante Nakunat', 'VNS Yard', '2GO Route CCB8126', 'SAMPLE-2GO-CCB8126', '2GO-CCB8126-PO', 18104, 1200, 800, 150, 100, 21254, 'SAMPLE', 'SAMPLE real 2GO payroll trip line', '{"SAMPLE":true}'::jsonb, false, now()),
-  ('PTL-SAMPLE-2GO-CDB2822-001', 'PAY-SAMPLE-2GO-CDB2822', '2026-05-20', 'CDB2822', '2GO', 'Benhar Loresco', 'Joseph Estranova', 'VNS Yard', '2GO Route CDB2822', 'SAMPLE-2GO-CDB2822', '2GO-CDB2822-PO', 18104, 1200, 800, 150, 100, 21254, 'SAMPLE', 'SAMPLE real 2GO payroll trip line', '{"SAMPLE":true}'::jsonb, false, now()),
-  ('PTL-SAMPLE-2GO-CDB8651-001', 'PAY-SAMPLE-2GO-CDB8651', '2026-05-20', 'CDB8651', '2GO', 'Melvin Figueroa', 'Steven Figueroa', 'VNS Yard', '2GO Route CDB8651', 'SAMPLE-2GO-CDB8651', '2GO-CDB8651-PO', 18104, 1200, 800, 150, 100, 21254, 'SAMPLE', 'SAMPLE real 2GO payroll trip line', '{"SAMPLE":true}'::jsonb, false, now()),
-  ('PTL-SAMPLE-2GO-NLC4170-001', 'PAY-SAMPLE-2GO-NLC4170', '2026-05-20', 'NLC4170', '2GO', 'James Bayona', 'Unassigned Helper', 'VNS Yard', '2GO Route NLC4170', 'SAMPLE-2GO-NLC4170', '2GO-NLC4170-PO', 18104, 1200, 800, 150, 100, 21254, 'SAMPLE', 'SAMPLE real 2GO payroll trip line', '{"SAMPLE":true}'::jsonb, false, now())
+  ('PTL-SAMPLE-2GO-CCB8126-001', 'PAY-SAMPLE-2GO-CCB8126', '2026-05-20', 'CCB8126', '2GO', 'Sunny Albador', 'Reinante Nakunat', 'CALACA', 'PIER16', 'SAMPLE-2GO-CCB8126', '2GO-CCB8126-PO', 18104, 2400, 1200, 150, 100, 21954, 'RATE-2GO-CALACA-PIER16', 'Matched', 'SAMPLE real 2GO payroll trip line - matched CALACA to PIER16', '{"SAMPLE":true,"rate_id":"RATE-2GO-CALACA-PIER16","rate_match_status":"Matched"}'::jsonb, false, now()),
+  ('PTL-SAMPLE-2GO-CDB2822-001', 'PAY-SAMPLE-2GO-CDB2822', '2026-05-20', 'CDB2822', '2GO', 'Benhar Loresco', 'Joseph Estranova', 'BAUAN', 'PIER16', 'SAMPLE-2GO-CDB2822', '2GO-CDB2822-PO', 18104, 2400, 1200, 150, 100, 21954, 'RATE-2GO-BAUAN-PIER16', 'Matched', 'SAMPLE real 2GO payroll trip line - matched BAUAN to PIER16', '{"SAMPLE":true,"rate_id":"RATE-2GO-BAUAN-PIER16","rate_match_status":"Matched"}'::jsonb, false, now()),
+  ('PTL-SAMPLE-2GO-CDB8651-001', 'PAY-SAMPLE-2GO-CDB8651', '2026-05-20', 'CDB8651', '2GO', 'Melvin Figueroa', 'Steven Figueroa', 'CALAMBA', 'PIER16', 'SAMPLE-2GO-CDB8651', '2GO-CDB8651-PO', 18104, 1400, 700, 150, 100, 20454, 'RATE-2GO-CALAMBA-PIER16', 'Matched', 'SAMPLE real 2GO payroll trip line - matched CALAMBA to PIER16', '{"SAMPLE":true,"rate_id":"RATE-2GO-CALAMBA-PIER16","rate_match_status":"Matched"}'::jsonb, false, now()),
+  ('PTL-SAMPLE-2GO-NLC4170-001', 'PAY-SAMPLE-2GO-NLC4170', '2026-05-20', 'NLC4170', '2GO', 'James Bayona', 'Unassigned Helper', 'BATAAN', 'PIER16', 'SAMPLE-2GO-NLC4170', '2GO-NLC4170-PO', 18104, 3000, 1500, 150, 100, 22854, 'RATE-2GO-BATAAN-PIER16', 'Matched', 'SAMPLE real 2GO payroll trip line - matched BATAAN to PIER16', '{"SAMPLE":true,"rate_id":"RATE-2GO-BATAAN-PIER16","rate_match_status":"Matched"}'::jsonb, false, now())
 on conflict (line_id) do update set
   payroll_id = excluded.payroll_id,
   trip_date = excluded.trip_date,
@@ -432,6 +433,7 @@ on conflict (line_id) do update set
   allowance_driver = excluded.allowance_driver,
   allowance_helper = excluded.allowance_helper,
   row_total = excluded.row_total,
+  rate_id = excluded.rate_id,
   rate_match_status = excluded.rate_match_status,
   remarks = excluded.remarks,
   raw_data = excluded.raw_data,

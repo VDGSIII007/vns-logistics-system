@@ -750,10 +750,11 @@ export async function listPayrollTripLinesByPlateFromSupabase(env, searchParams)
     .map(record => textOrNull(record.payroll_id))
     .filter(Boolean);
 
+  const fetchLimit = Math.max(limit * 10, 50);
   const lineFilters = new URLSearchParams({
     select: "payroll_id,source,destination,driver_salary,helper_salary,trip_date,rate_id,rate_match_status,plate_number,driver_name,helper_name",
     order: "trip_date.desc,created_at.desc",
-    limit: String(limit)
+    limit: String(fetchLimit)
   });
   lineFilters.set("or", "(is_deleted.is.false,is_deleted.is.null)");
 
@@ -768,7 +769,13 @@ export async function listPayrollTripLinesByPlateFromSupabase(env, searchParams)
 
   const lines = (Array.isArray(linesResult.body) ? linesResult.body : [])
     .filter(line => !line.plate_number || String(line.plate_number).trim().toUpperCase() === plateNumber.toUpperCase())
-    .sort((a, b) => String(b.trip_date || "").localeCompare(String(a.trip_date || "")))
+    .sort((a, b) => {
+      const dateSort = String(b.trip_date || "").localeCompare(String(a.trip_date || ""));
+      if (dateSort) return dateSort;
+      const aMatched = String(a.rate_match_status || "").toLowerCase() === "matched" && textOrNull(a.rate_id) ? 1 : 0;
+      const bMatched = String(b.rate_match_status || "").toLowerCase() === "matched" && textOrNull(b.rate_id) ? 1 : 0;
+      return bMatched - aMatched;
+    })
     .slice(0, limit);
 
   return {
