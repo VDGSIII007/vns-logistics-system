@@ -991,6 +991,25 @@ function applyRateMatrixToLine(line = {}, options = {}) {
   return true;
 }
 
+function updateMatchedLineCells(line) {
+  const matchFields = [
+    "driverSalary", "helperSalary", "tollFee", "passway", "parking",
+    "lagayLoaded", "lagayEmpty", "mano", "driverAllowance", "helperAllowance",
+    "otherExpenses", "rateMatchStatus", "rowTotal"
+  ];
+  matchFields.forEach(field => {
+    const el = document.querySelector(`[data-id="${line.id}"][data-field="${field}"]`);
+    if (!el) return;
+    const v = field === "rateMatchStatus"
+      ? normalizePayrollRateMatchStatus(line[field])
+      : (isLineBlank(line) && el.type === "number" ? "" : (line[field] ?? ""));
+    if (String(el.value) !== String(v)) el.value = v;
+  });
+  const anyEl = document.querySelector(`[data-id="${line.id}"]`);
+  const issuesCell = anyEl?.closest("tr")?.querySelector(".payroll-line-issues");
+  if (issuesCell) issuesCell.innerHTML = renderPayrollLineIssues(line);
+}
+
 function applyRateMatrixToAllLines() {
   payrollState.lines.forEach(line => applyRateMatrixToLine(line));
   renderLinesTable(false);
@@ -2253,14 +2272,9 @@ function renderLinesTable(keepFocus = true) {
     input.addEventListener("change", () => {
       const line = payrollState.lines.find(item => item.id === input.dataset.id);
       if (line && ["source", "destination"].includes(input.dataset.field)) {
-        console.log("Payroll lane input changed", {
-          field: input.dataset.field,
-          source: line.source,
-          destination: line.destination,
-          group: $("group-category")?.value || ""
-        });
         line.rateMatchStatus = "";
         applyRateMatrixToLine(line, { force: true });
+        updateMatchedLineCells(line);
         renderPayrollLaneDatalists(line.source);
       }
       calculatePayroll();
@@ -2329,14 +2343,14 @@ function renderPayrollLineIssues(line) {
   return issues.map(issue => `<span class="payroll-issue-chip">${escapeHtml(issue)}</span>`).join("");
 }
 
-function getUniquePayrollSources() {
-  const sources = [...new Set(payrollState.rateMatrix
+function getUniquePayrollSources(group = $("group-category")?.value || "") {
+  const normalizedGroup = normalizeRateKey(group);
+  return [...new Set(payrollState.rateMatrix
     .filter(rate => rate.active !== false)
+    .filter(rate => !normalizedGroup || !rate.groupCategory || normalizeRateKey(rate.groupCategory) === normalizedGroup)
     .map(rate => String(rate.source || "").trim())
     .filter(Boolean))]
     .sort((a, b) => a.localeCompare(b));
-  console.log("Payroll source suggestions", sources);
-  return sources;
 }
 
 function getDestinationSuggestionsForSource(source = "", group = $("group-category")?.value || "") {
@@ -2669,18 +2683,34 @@ function focusSpreadsheetCell(row, col, extend = false) {
 function applyMatchingRulesToLines() {
   if (isLockedStatus($("payroll-status").value)) return;
   syncLinesFromTable();
+  let matched = 0;
+  let needsReview = 0;
   payrollState.lines.forEach(line => {
     if (isLineBlank(line)) return;
+    line.rateMatchStatus = "";
+    const rateApplied = applyRateMatrixToLine(line, { force: true });
+    if (rateApplied) { matched++; return; }
     const rule = matchSalaryRule(line);
-    if (!rule) return;
-    line.driverSalary = parseNumber(rule.driverSalary);
-    line.helperSalary = parseNumber(rule.helperSalary);
-    line.driverAllowance = parseNumber(rule.driverAllowance);
-    line.helperAllowance = parseNumber(rule.helperAllowance);
+    if (rule) {
+      line.driverSalary = parseNumber(rule.driverSalary);
+      line.helperSalary = parseNumber(rule.helperSalary);
+      line.driverAllowance = parseNumber(rule.driverAllowance);
+      line.helperAllowance = parseNumber(rule.helperAllowance);
+      line.rateMatchStatus = "Matched";
+      line.rowTotal = getLineRowTotal(line);
+      matched++;
+    } else if (line.source && line.destination) {
+      needsReview++;
+    }
   });
   renderLinesTable();
   calculatePayroll();
-  setStatus("Matching salary rules applied where available.", "success");
+  if (matched + needsReview === 0) {
+    setStatus("No rows to match.", "info");
+  } else {
+    const reviewMsg = needsReview > 0 ? `, ${needsReview} row${needsReview !== 1 ? "s" : ""} need review` : "";
+    setStatus(`Matching rule applied. ${matched} row${matched !== 1 ? "s" : ""} matched${reviewMsg}.`, needsReview > 0 ? "warning" : "success");
+  }
 }
 
 function renderRulesTable() {
