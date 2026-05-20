@@ -6,7 +6,7 @@
   <title>Budget &amp; Balance Center - VNS Logistics</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body class="queue-page budget-balance-page">
+<body class="queue-page budget-center-page">
   <header class="site-header" id="top">
     <nav class="nav-shell" aria-label="Primary navigation">
       <a href="index.html" class="brand" aria-label="VNS Logistics home">
@@ -39,8 +39,8 @@
     </div>
     <div class="ops-status-line" id="bbc-status-message" aria-live="polite"></div>
 
-    <section class="ops-card budget-filter-card" aria-label="Budget balance filters">
-      <div class="ops-toolbar budget-filter-grid">
+    <section class="budget-filter-bar" aria-label="Budget balance filters">
+      <div class="budget-filter-grid">
         <label>
           <span>Group</span>
           <select id="bbc-group" class="ops-select">
@@ -53,14 +53,8 @@
           </select>
         </label>
         <label>
-          <span>Plate</span>
-          <input id="bbc-plate" class="ops-input" type="search" list="bbc-plate-options" placeholder="Search plate" autocomplete="off" />
-          <datalist id="bbc-plate-options"></datalist>
-        </label>
-        <label>
-          <span>Driver / Helper</span>
-          <input id="bbc-person" class="ops-input" type="search" list="bbc-person-options" placeholder="Search name" autocomplete="off" />
-          <datalist id="bbc-person-options"></datalist>
+          <span>Search</span>
+          <input id="bbc-search" class="ops-input" type="search" placeholder="Plate, person, route, PO no." autocomplete="off" />
         </label>
         <label>
           <span>Date From</span>
@@ -86,40 +80,17 @@
       </div>
     </section>
 
-    <section class="ops-summary-grid budget-summary-grid" id="bbc-summary" aria-label="Budget balance summary"></section>
-
-    <section class="ops-card">
-      <div class="ops-view-note" id="bbc-table-note">View-only ledger for truck cash requests and payroll balance events.</div>
-      <div class="ops-table-wrap">
-        <table class="ops-table budget-balance-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Plate</th>
-              <th>Person</th>
-              <th>Role</th>
-              <th>Type</th>
-              <th>Details</th>
-              <th>Amount</th>
-              <th>Source</th>
-              <th>Status</th>
-              <th>Payroll ID / Cutoff</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="bbc-body"></tbody>
-        </table>
+    <section class="budget-list-card">
+      <div class="budget-tabs" role="tablist" aria-label="Budget balance drill-down">
+        <button class="budget-tab-button active" type="button" data-bbc-tab="trucks" aria-selected="true">Trucks</button>
+        <button class="budget-tab-button" type="button" data-bbc-tab="drivers" aria-selected="false">Drivers</button>
+        <button class="budget-tab-button" type="button" data-bbc-tab="helpers" aria-selected="false">Helpers</button>
       </div>
-      <div id="bbc-mobile-list" class="ops-mobile-list"></div>
+      <div class="budget-period-note" id="bbc-period-note">Loading payroll cutoff...</div>
+      <div id="bbc-tab-summary" class="budget-chip-row" aria-label="Tab summary"></div>
+      <div id="bbc-tab-content"></div>
     </section>
   </main>
-
-  <div class="ops-modal" id="bbc-modal" hidden>
-    <div class="ops-modal-card" role="dialog" aria-modal="true" aria-labelledby="bbc-modal-title">
-      <button class="ops-modal-close" id="bbc-close" type="button" aria-label="Close details">Close</button>
-      <div id="bbc-detail"></div>
-    </div>
-  </div>
 
   <footer class="footer">
     <div class="container footer-grid">
