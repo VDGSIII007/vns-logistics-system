@@ -90,16 +90,20 @@ async function saveCashRecordToGoogleSheets(record, action = 'saveEntry') {
   return result;
 }
 
-function backupCashRecordToGoogleSheets(record, statusId, action = 'saveEntry') {
+function withCashNotice(message, notice = '') {
+  return notice ? `${message} ${notice}` : message;
+}
+
+function backupCashRecordToGoogleSheets(record, statusId, action = 'saveEntry', notice = '') {
   saveCashRecordToGoogleSheets(record, action)
     .then(async () => {
       await updateCashBackupStatus(record, 'synced');
-      setStatus(statusId, 'Saved to Supabase and backed up.', 'success');
+      setStatus(statusId, withCashNotice('Saved to Supabase and backed up.', notice), 'success');
     })
     .catch(async error => {
       console.warn('Cash Google Sheets backup failed', error);
       await updateCashBackupStatus(record, 'failed', error?.message || 'Google Sheets backup failed');
-      setStatus(statusId, 'Saved to Supabase. Google Sheets backup failed.', 'warning');
+      setStatus(statusId, withCashNotice('Saved to Supabase. Google Sheets backup failed.', notice), 'warning');
     });
 }
 
@@ -136,12 +140,14 @@ function removeDraftCashStatusOptions() {
 const DIESEL_KEY = "vnsDieselPOEntries";
 const BUDGET_KEY = "vnsTripBudgets";
 const BALI_KEY = "vnsBaliCashAdvances";
+const PEOPLE_CANDIDATES_KEY = "vnsPeopleMasterCandidates";
 let truckMasterCache = [];
 let savedCashRecordsCache = [];
 let savedCashRecordsSource = "local";
 let savedCashRecordsStatus = "";
 let savedCashRecordsStatusKind = "info";
 let activeCashEditRecord = null;
+const payrollRateCache = new Map();
 const CASH_ROLE_OPTIONS = ["Driver", "Helper", "Mechanic", "Tireman", "Dispatcher", "Shop / Supplier", "Office", "Other"];
 
 function $(id) { return document.getElementById(id); }
@@ -216,6 +222,68 @@ function getTruckDriver(truck) {
 
 function getTruckHelper(truck) {
   return String(truck?.Helper || truck?.Current_Helper_Name || truck?.Current_Helper || truck?.helperName || truck?.helper_name || truck?.current_helper_name || "").trim();
+}
+
+function normalizePersonName(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function getKnownPeopleNames() {
+  const names = new Set();
+  truckMasterCache.forEach(truck => {
+    [getTruckDriver(truck), getTruckHelper(truck)].forEach(name => {
+      const normalized = normalizePersonName(name);
+      if (normalized) names.add(normalized);
+    });
+  });
+  readJson(PEOPLE_CANDIDATES_KEY, []).forEach(candidate => {
+    const normalized = normalizePersonName(candidate?.name);
+    if (normalized) names.add(normalized);
+  });
+  ["vnsPeopleMaster", "vnsDriverMaster", "vnsHelperMaster"].forEach(key => {
+    readJson(key, []).forEach(person => {
+      ["name", "Name", "personName", "Person_Name", "Driver_Name", "Helper_Name"].forEach(field => {
+        const normalized = normalizePersonName(person?.[field]);
+        if (normalized) names.add(normalized);
+      });
+    });
+  });
+  return names;
+}
+
+function savePeopleMasterCandidates(record = {}) {
+  const existing = readJson(PEOPLE_CANDIDATES_KEY, []);
+  const known = getKnownPeopleNames();
+  const existingKeys = new Set(existing.map(candidate => `${normalizePersonName(candidate?.name)}|${String(candidate?.role || "").trim().toLowerCase()}`));
+  const next = [...existing];
+  let created = 0;
+
+  [
+    { name: record.driverName, role: "Driver" },
+    { name: record.helperName, role: "Helper" },
+    { name: /^driver$/i.test(record.personType || "") ? record.personName : "", role: "Driver" },
+    { name: /^helper$/i.test(record.personType || "") ? record.personName : "", role: "Helper" }
+  ].forEach(person => {
+    const normalized = normalizePersonName(person.name);
+    if (!normalized) return;
+    const key = `${normalized}|${person.role.toLowerCase()}`;
+    if (known.has(normalized) || existingKeys.has(key)) return;
+    next.push({
+      id: createId("person_candidate"),
+      name: String(person.name || "").trim().replace(/\s+/g, " "),
+      role: person.role,
+      source: "Cash / PO / Bali",
+      plateNumber: record.plateNumber || "",
+      groupCategory: record.groupCategory || "",
+      firstSeenAt: new Date().toISOString(),
+      status: "Needs Review"
+    });
+    existingKeys.add(key);
+    created += 1;
+  });
+
+  if (created) writeJson(PEOPLE_CANDIDATES_KEY, next);
+  return created;
 }
 
 function findTruckByPlate(plate) {
@@ -305,6 +373,100 @@ function setTruckMasterCache(rows, options = {}) {
   refreshVisiblePlateGroups();
 }
 
+function normalizeRouteValue(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
+}
+
+function getRateValue(rate, keys) {
+  for (const key of keys) {
+    const value = rate?.[key];
+    if (String(value ?? "").trim()) return value;
+  }
+  return "";
+}
+
+function normalizePayrollRate(rate = {}) {
+  return {
+    ...rate,
+    groupCategory: normalizeGroup(getRateValue(rate, ["group_category", "groupCategory", "Group_Category", "group"])),
+    source: normalizeRouteValue(getRateValue(rate, ["source", "Source", "origin", "Origin"])),
+    destination: normalizeRouteValue(getRateValue(rate, ["destination", "Destination", "dest", "Dest"])),
+    driverSalary: Number(getRateValue(rate, ["driver_salary", "driverSalary", "Driver_Salary", "driver_rate", "Driver_Rate"])) || 0,
+    helperSalary: Number(getRateValue(rate, ["helper_salary", "helperSalary", "Helper_Salary", "helper_rate", "Helper_Rate"])) || 0
+  };
+}
+
+function loadPayrollRatesForGroup(group) {
+  const normalizedGroup = normalizeGroup(group);
+  if (!normalizedGroup || normalizedGroup === "Needs Update / Unknown" || normalizedGroup === "General / No Plate") return Promise.resolve([]);
+  if (payrollRateCache.has(normalizedGroup)) return Promise.resolve(payrollRateCache.get(normalizedGroup));
+  const params = new URLSearchParams({ group_category: normalizedGroup });
+  const url = `${VNS_CASH_WORKER_API_BASE}/api/payroll/rates?${params.toString()}`;
+  return fetch(url)
+    .then(response => {
+      if (!response.ok) throw new Error(`Payroll rates failed (${response.status})`);
+      return response.json();
+    })
+    .then(result => {
+      const rows = Array.isArray(result) ? result : (result?.rates || result?.records || result?.data || []);
+      const rates = (Array.isArray(rows) ? rows : []).map(normalizePayrollRate).filter(rate => rate.source || rate.destination);
+      payrollRateCache.set(normalizedGroup, rates);
+      return rates;
+    })
+    .catch(error => {
+      console.warn("Cash payroll rates load failed", url, error);
+      payrollRateCache.set(normalizedGroup, []);
+      return [];
+    });
+}
+
+function buildDatalistOptions(values) {
+  return [...new Set(values.filter(Boolean))].sort().map(value => `<option value="${escapeHtml(value)}"></option>`).join("");
+}
+
+function populateRouteDatalists(prefix, rates = []) {
+  const sourceList = $(`${prefix}-source-suggestions`);
+  const destinationList = $(`${prefix}-destination-suggestions`);
+  if (!sourceList || !destinationList) return;
+  const selectedSource = normalizeRouteValue($(`${prefix}-source`)?.value || "");
+  const destinationsForSource = rates.filter(rate => !selectedSource || rate.source === selectedSource).map(rate => rate.destination);
+  const otherDestinations = rates.filter(rate => selectedSource && rate.source !== selectedSource).map(rate => rate.destination);
+  sourceList.innerHTML = buildDatalistOptions(rates.map(rate => rate.source).concat(rates.map(rate => rate.destination)));
+  destinationList.innerHTML = buildDatalistOptions(destinationsForSource.concat(otherDestinations));
+}
+
+function findMatchedPayrollRate(prefix, rates = []) {
+  const source = normalizeRouteValue($(`${prefix}-source`)?.value || "");
+  const destination = normalizeRouteValue($(`${prefix}-destination`)?.value || "");
+  if (!source || !destination) return null;
+  return rates.find(rate => rate.source === source && rate.destination === destination) || null;
+}
+
+function renderRatePreview(prefix, rates = []) {
+  const preview = $(`${prefix}-rate-preview`);
+  if (!preview) return;
+  const source = normalizeRouteValue($(`${prefix}-source`)?.value || "");
+  const destination = normalizeRouteValue($(`${prefix}-destination`)?.value || "");
+  const match = findMatchedPayrollRate(prefix, rates);
+  preview.classList.remove("matched", "warning");
+  if (match) {
+    preview.textContent = `Matched rate: Driver ${formatPeso(match.driverSalary)} | Helper ${formatPeso(match.helperSalary)}`;
+    preview.classList.add("matched");
+  } else if (source || destination) {
+    preview.textContent = "No rate match yet";
+    preview.classList.add("warning");
+  } else {
+    preview.textContent = "No rate match yet";
+  }
+}
+
+async function refreshRouteSuggestions(prefix) {
+  const group = $(`${prefix}-group-category`)?.value || "";
+  const rates = await loadPayrollRatesForGroup(group);
+  populateRouteDatalists(prefix, rates);
+  renderRatePreview(prefix, rates);
+}
+
 function fetchBackendTruckMaster() {
   const url = `${VNS_CASH_WORKER_API_BASE}/api/trucks/list?active=true&limit=1000`;
   return fetch(url)
@@ -377,6 +539,8 @@ function applyNoPlateToForm(prefix) {
   if (plateInput && prefix === "bali") plateInput.value = "No Plate / Not Available";
   if (plateInput && prefix !== "bali") plateInput.value = "";
   setGroupSelectValue(`${prefix}-group-category`, "General / No Plate");
+  const helper = $(`${prefix}-plate-helper`);
+  if (helper) helper.textContent = "";
   renderTruckPlateDatalistForPrefix(prefix);
 }
 
@@ -393,7 +557,8 @@ function applyGroupToPlateOptions(prefix) {
   const plate = normalizePlate(plateInput.value);
   if (!plate) return;
   const truck = findTruckByPlate(plate);
-  if (!truck || getTruckGroup(truck) !== selectedGroup) plateInput.value = "";
+  if (!truck) return;
+  if (getTruckGroup(truck) !== selectedGroup) plateInput.value = "";
 }
 
 function applyTruckToForm(prefix) {
@@ -406,8 +571,10 @@ function applyTruckToForm(prefix) {
   }
   plateInput.value = normalizePlate(plateInput.value);
   const truck = findTruckByPlate(plateInput?.value);
+  const helper = $(`${prefix}-plate-helper`);
   if (!truck) {
     setGroupSelectValue(`${prefix}-group-category`, "Needs Update / Unknown");
+    if (helper) helper.textContent = "Plate not found in Truck Master - record will still be saved manually.";
     renderTruckPlateDatalistForPrefix(prefix);
     return;
   }
@@ -417,7 +584,9 @@ function applyTruckToForm(prefix) {
   if (groupEl) setGroupSelectValue(groupEl.id, getTruckGroup(truck));
   if (driverEl && getTruckDriver(truck)) driverEl.value = getTruckDriver(truck);
   if (helperEl && getTruckHelper(truck)) helperEl.value = getTruckHelper(truck);
+  if (helper) helper.textContent = "";
   renderTruckPlateDatalistForPrefix(prefix);
+  if (prefix === "diesel" || prefix === "budget") refreshRouteSuggestions(prefix);
 }
 
 function setGroupSelectValue(id, value) {
@@ -533,7 +702,7 @@ function persistLocalCashRecord(storageKey, record) {
   writeJson(storageKey, [record].concat(records.filter(item => item.id !== record.id)));
 }
 
-async function saveCashSupabaseFirst(record, storageKey, statusId, action = 'saveEntry') {
+async function saveCashSupabaseFirst(record, storageKey, statusId, action = 'saveEntry', notice = '') {
   setStatus(statusId, 'Saving to Supabase...', 'info');
   try {
     const result = await saveCashRequestToSupabase(record);
@@ -548,18 +717,18 @@ async function saveCashSupabaseFirst(record, storageKey, statusId, action = 'sav
     savedCashRecordsCache = [normalizeSavedCashRecord(savedRecord, 0, "cloud")]
       .concat(savedCashRecordsCache.filter(item => item.id !== savedRecord.id));
     refreshAllCashData();
-    setStatus(statusId, 'Saved to Supabase. Backing up to Google Sheets...', 'success');
-    backupCashRecordToGoogleSheets(savedRecord, statusId, action);
+    setStatus(statusId, withCashNotice('Saved to Supabase. Backing up to Google Sheets...', notice), 'success');
+    backupCashRecordToGoogleSheets(savedRecord, statusId, action, notice);
     return savedRecord;
   } catch (supabaseError) {
     console.warn('Cash Supabase save failed; falling back to Google Sheets', supabaseError);
     persistLocalCashRecord(storageKey, record);
     savedCashRecordsSource = "local";
     refreshAllCashData();
-    setStatus(statusId, 'Supabase unavailable. Saving to Google Sheets...', 'warning');
+    setStatus(statusId, withCashNotice('Supabase unavailable. Saving to Google Sheets...', notice), 'warning');
     try {
       await saveCashRecordToGoogleSheets(record, action);
-      setStatus(statusId, 'Saved to Google Sheets fallback.', 'success');
+      setStatus(statusId, withCashNotice('Saved to Google Sheets fallback.', notice), 'success');
     } catch (sheetsError) {
       console.error('Cash Supabase and Google Sheets save failed', sheetsError);
       setStatus(statusId, 'Save failed. Please try again.', 'warning');
@@ -570,7 +739,6 @@ async function saveCashSupabaseFirst(record, storageKey, statusId, action = 'sav
 
 async function saveDieselPO() {
   const isEditing = Boolean($("diesel-form").dataset.recordId);
-  applyTruckToForm("diesel");
   const data = normalizeCashSubmitStatus(getDieselPOFormData());
   const error = validateDieselPO(data);
   if (error) {
@@ -590,9 +758,11 @@ async function saveDieselPO() {
     if (data.depositNeeded === "Yes" && !data.depositNumber) markCashError("diesel-deposit-number");
     return setStatus("diesel-status", error, "warning");
   }
+  const candidateCount = savePeopleMasterCandidates(data);
+  const notice = candidateCount ? "New person detected - saved as Needs Review." : "";
   $("diesel-form").dataset.recordId = data.id;
   $("diesel-form").dataset.createdAt = data.createdAt;
-  await saveCashSupabaseFirst(data, DIESEL_KEY, "diesel-status", isEditing ? "updateEntry" : "saveEntry");
+  await saveCashSupabaseFirst(data, DIESEL_KEY, "diesel-status", isEditing ? "updateEntry" : "saveEntry", notice);
 }
 
 function clearDieselPOForm() {
@@ -601,6 +771,7 @@ function clearDieselPOForm() {
   delete $("diesel-form").dataset.createdAt;
   $("diesel-message").value = "";
   setStatus("diesel-status", "");
+  renderRatePreview("diesel", []);
   renderTruckPlateDatalistForPrefix("diesel");
   applyDieselDepositState();
 }
@@ -631,6 +802,7 @@ function loadDieselPOToForm(record) {
   $("diesel-remarks").value = record.remarks || "";
   if (!record.groupCategory) applyTruckToForm("diesel");
   renderTruckPlateDatalistForPrefix("diesel");
+  refreshRouteSuggestions("diesel");
   applyDieselDepositState();
 }
 
@@ -728,7 +900,6 @@ function validateBudget(data) {
 
 async function saveBudget() {
   const isEditing = Boolean($("budget-form").dataset.recordId);
-  applyTruckToForm("budget");
   const data = getBudgetFormData();
   const error = validateBudget(data);
   if (error) {
@@ -747,9 +918,11 @@ async function saveBudget() {
   }
   const dataToSave = normalizeCashSubmitStatus({ ...data });
   delete dataToSave.depositNeeded;
+  const candidateCount = savePeopleMasterCandidates(dataToSave);
+  const notice = candidateCount ? "New person detected - saved as Needs Review." : "";
   $("budget-form").dataset.recordId = data.id;
   $("budget-form").dataset.createdAt = data.createdAt;
-  await saveCashSupabaseFirst(dataToSave, BUDGET_KEY, "budget-status", isEditing ? "updateEntry" : "saveEntry");
+  await saveCashSupabaseFirst(dataToSave, BUDGET_KEY, "budget-status", isEditing ? "updateEntry" : "saveEntry", notice);
 }
 
 function clearBudgetForm() {
@@ -758,6 +931,7 @@ function clearBudgetForm() {
   delete $("budget-form").dataset.createdAt;
   $("budget-message").value = "";
   setStatus("budget-status", "");
+  renderRatePreview("budget", []);
   renderTruckPlateDatalistForPrefix("budget");
   applyDepositState("budget");
 }
@@ -779,6 +953,7 @@ function loadBudgetToForm(record) {
   if ($("budget-status-field").value === "Draft" || !$("budget-status-field").value) $("budget-status-field").value = "For Approval";
   if (!record.groupCategory) applyTruckToForm("budget");
   renderTruckPlateDatalistForPrefix("budget");
+  refreshRouteSuggestions("budget");
   applyDepositState("budget");
 }
 
@@ -851,7 +1026,6 @@ function validateBali(data) {
 
 async function saveBali() {
   const isEditing = Boolean($("bali-form").dataset.recordId);
-  applyTruckToForm("bali");
   const data = getBaliFormData();
   const error = validateBali(data);
   if (error) {
@@ -869,9 +1043,11 @@ async function saveBali() {
   }
   const dataToSave = normalizeCashSubmitStatus({ ...data });
   delete dataToSave.depositNeeded;
+  const candidateCount = savePeopleMasterCandidates(dataToSave);
+  const notice = candidateCount ? "New person detected - saved as Needs Review." : "";
   $("bali-form").dataset.recordId = data.id;
   $("bali-form").dataset.createdAt = data.createdAt;
-  await saveCashSupabaseFirst(dataToSave, BALI_KEY, "bali-status", isEditing ? "updateEntry" : "saveEntry");
+  await saveCashSupabaseFirst(dataToSave, BALI_KEY, "bali-status", isEditing ? "updateEntry" : "saveEntry", notice);
 }
 
 function clearBaliForm() {
@@ -1570,11 +1746,23 @@ function wireEvents() {
   ["diesel", "budget", "bali"].forEach(prefix => {
     const plateInput = $(`${prefix}-plate-number`);
     const groupInput = $(`${prefix}-group-category`);
-    if (groupInput) groupInput.addEventListener("change", () => applyGroupToPlateOptions(prefix));
+    if (groupInput) groupInput.addEventListener("change", () => {
+      applyGroupToPlateOptions(prefix);
+      if (prefix === "diesel" || prefix === "budget") refreshRouteSuggestions(prefix);
+    });
     if (plateInput) {
       plateInput.addEventListener("change", () => applyTruckToForm(prefix));
       plateInput.addEventListener("blur", () => applyTruckToForm(prefix));
     }
+  });
+  ["diesel", "budget"].forEach(prefix => {
+    [`${prefix}-source`, `${prefix}-destination`].forEach(id => {
+      const input = $(id);
+      if (!input) return;
+      input.addEventListener("input", () => refreshRouteSuggestions(prefix));
+      input.addEventListener("change", () => refreshRouteSuggestions(prefix));
+    });
+    refreshRouteSuggestions(prefix);
   });
   ["diesel-form", "budget-form", "bali-form"].forEach(formId => {
     $(formId)?.querySelectorAll("input, select, textarea").forEach(el => {
