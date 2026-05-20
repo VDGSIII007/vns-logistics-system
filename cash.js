@@ -197,6 +197,7 @@ function normalizeGroup(value) {
   if (key === "sugar") return "Sugar";
   if (key === "preform" || key === "resin" || key === "preform / resin" || compactKey === "preformresin") return "Preform / Resin";
   if (key === "caps" || key === "crown" || key === "crowns" || key === "caps / crown" || key === "caps / crowns" || compactKey === "capscrown" || compactKey === "capscrowns") return "Caps / Crown";
+  if (key === "2go" || key === "2 go" || compactKey === "2go") return "2GO";
   if (key.includes("unknown") || key.includes("update")) return "Needs Update / Unknown";
   return raw;
 }
@@ -1206,7 +1207,7 @@ function cashEditSection(title, fields) {
 function buildCashEditForm(record) {
   const type = detectCashRecordType(record);
   const status = cashRecordStatus(record) || "Draft";
-  const groupOptions = ["Bottle", "Sugar", "Preform / Resin", "Caps / Crown", "General / No Plate", "Needs Update / Unknown"];
+  const groupOptions = ["Bottle", "Sugar", "Preform / Resin", "Caps / Crown", "2GO", "General / No Plate", "Needs Update / Unknown"];
   const statusOptions = ["Draft", "For Approval", "Pending", "Pending Approval", "Submitted", "For Review", "Approved", "Returned", "Rejected", "Deposited", "Used", "Paid"];
   const commonTruck = [
     cashEditInput("cash-edit-date", "Date", record.date || firstCashValue(record, ["Date", "Message_Date", "Encoded_At"]), "date"),
