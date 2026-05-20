@@ -744,6 +744,8 @@
             <form id="for-repair-local-form" class="garage-form" hidden>
               <label><span class="required-label">Group</span><select data-for-repair-field="plateGroup" data-plate-group-select="forRepair"></select></label>
               <label><span class="required-label">Plate Number</span><select data-for-repair-field="plateNumber" data-plate-select="forRepair"></select></label>
+              <label><span>Driver</span><input type="text" data-for-repair-field="driver"></label>
+              <label><span>Helper</span><input type="text" data-for-repair-field="helper"></label>
               <label>
                 <span>Garage Location</span>
                 <select data-for-repair-field="garageLocation">
@@ -783,6 +785,7 @@
                   <option value="Sugar">Sugar</option>
                   <option value="Preform / Resin">Preform / Resin</option>
                   <option value="Caps / Crown">Caps / Crown</option>
+                  <option value="2GO">2GO</option>
                   <option value="Other">Other</option>
                 </select>
               </label>
@@ -954,6 +957,7 @@
                   </select>
                 </label>
                 <label><span>Driver</span><input type="text" data-parts-field="driver"></label>
+                <label><span>Helper</span><input type="text" data-parts-field="helper"></label>
                 <label><span>Mechanic / Worker</span><input type="text" data-parts-field="mechanic"></label>
                 <label>
                   <span>Priority</span>
@@ -1048,6 +1052,7 @@
                   </select>
                 </label>
                 <label><span>Driver</span><input type="text" data-labor-field="driver"></label>
+                <label><span>Helper</span><input type="text" data-labor-field="helper"></label>
                 <label><span>Mechanic / Worker</span><input type="text" data-labor-field="mechanic"></label>
                 <label><span>Priority</span><select data-labor-field="priority"><option value="Medium">Medium</option><option value="Critical">Critical</option><option value="High">High</option><option value="Low">Low</option></select></label>
                 <label class="wide-field"><span class="required-label">Work Done / Repair Issue</span><textarea rows="4" data-labor-field="workDone"></textarea></label>
@@ -1087,6 +1092,7 @@
                   </select>
                 </label>
                 <label><span>Driver</span><input type="text" data-completed-field="driver"></label>
+                <label><span>Helper</span><input type="text" data-completed-field="helper"></label>
                 <label><span>Mechanic / Worker</span><input type="text" data-completed-field="mechanic"></label>
                 <label><span>Shop Name</span><input type="text" data-completed-field="shopName"></label>
                 <label class="wide-field"><span>Work Done / Repair Issue</span><textarea rows="4" data-completed-field="workDone"></textarea></label>
@@ -1127,6 +1133,7 @@
                   </select>
                 </label>
                 <label><span>Driver</span><input type="text" data-monitoring-field="driver"></label>
+                <label><span>Helper</span><input type="text" data-monitoring-field="helper"></label>
                 <label><span>Priority</span><select data-monitoring-field="priority"><option value="Medium">Medium</option><option value="Critical">Critical</option><option value="High">High</option><option value="Low">Low</option></select></label>
                 <label><span>Current Status</span><select data-monitoring-field="repairStatus"><option value="For inspection">For inspection</option><option value="Waiting for approval">Waiting for approval</option><option value="Approved">Approved</option><option value="In progress">In progress</option><option value="Waiting for parts">Waiting for parts</option><option value="For testing">For testing</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option></select></label>
                 <label class="wide-field"><span class="required-label">Work Done / Repair Issue</span><textarea rows="4" data-monitoring-field="workDone"></textarea></label>

@@ -154,6 +154,7 @@ const REPAIR_PLATE_GROUPS = [
   { value: 'Sugar', label: 'Sugar' },
   { value: 'Preform / Resin', label: 'Preform / Resin' },
   { value: 'Caps / Crown', label: 'Caps / Crown' },
+  { value: '2GO', label: '2GO' },
   { value: 'Unknown / Needs Update', label: 'Needs Update / Unknown' }
 ];
 
@@ -1493,6 +1494,8 @@ function syncForRepairTruck(record) {
         Plate_Number: record.plateNumber || '',
         Group_Category: record.groupCategory || '',
         Truck_Type: record.truckType || '',
+        Driver: record.driver || '',
+        Helper: record.helper || '',
         Garage_Location: record.garageLocation || '',
         Repair_Issue: record.repairIssue || '',
         Start_Date: record.startDate || '',
@@ -3307,12 +3310,14 @@ function normalizePlateNumber(plateNumber = '') {
 
 function normalizeTruckGroup(value = '') {
   const text = String(value || '').trim().replace(/\s+/g, ' ');
-  const compact = text.toLowerCase().replace(/[^a-z]/g, '');
+  const compact = text.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (!compact) return 'Unknown / Needs Update';
   if (compact === 'bottle' || compact === 'bottles') return 'Bottle';
   if (compact === 'sugar') return 'Sugar';
   if (compact === 'preform' || compact === 'resin' || compact === 'preformresin') return 'Preform / Resin';
   if (compact === 'caps' || compact === 'crown' || compact === 'crowns' || compact === 'capscrown' || compact === 'capscrowns') return 'Caps / Crown';
+  if (compact === '2go') return '2GO';
+  if (compact === 'general' || compact === 'generalnoplate') return 'General / No Plate';
   if (compact.includes('unknown') || compact.includes('needsupdate')) return 'Unknown / Needs Update';
   return text;
 }
@@ -3350,7 +3355,9 @@ function getTruckMasterfileRecords() {
       ...truck,
       plateNumber,
       truckType: getTruckMasterValue(truck, ['Truck_Type', 'truckType', 'truck_type', 'Truck Type', 'Body_Type', 'bodyType']),
-      groupCategory: normalizeTruckGroup(getTruckMasterValue(truck, ['Group_Category', 'groupCategory', 'group', 'Group', 'Group Category']))
+      groupCategory: normalizeTruckGroup(getTruckMasterValue(truck, ['Group_Category', 'groupCategory', 'group_category', 'group', 'Group', 'Group Category'])),
+      driverName: getTruckMasterValue(truck, ['Current_Driver_Name', 'Current_Driver', 'Driver', 'driverName', 'driver_name', 'current_driver_name']),
+      helperName: getTruckMasterValue(truck, ['Current_Helper_Name', 'Current_Helper', 'Helper', 'helperName', 'helper_name', 'current_helper_name'])
     };
     if (!byPlate.has(plateNumber)) byPlate.set(plateNumber, normalized);
   });
@@ -3364,6 +3371,87 @@ function getTruckInfoByPlate(plateNumber) {
   return getTruckMasterfileRecords().find(truck => (
     normalizePlateNumber(truck?.plateNumber) === normalizedPlate
   )) || null;
+}
+
+function normalizeTruckMasterPayload(result) {
+  const rows = Array.isArray(result)
+    ? result
+    : (result?.trucks || result?.records || result?.data || result?.Truck_Master || []);
+  return Array.isArray(rows) ? rows : [];
+}
+
+function normalizeTruckMasterRecord(truck = {}) {
+  const plateNumber = normalizePlateNumber(getTruckMasterValue(truck, ['Plate_Number', 'plateNumber', 'plate_number', 'plate', 'Plate Number']));
+  return {
+    ...truck,
+    Truck_ID: getTruckMasterValue(truck, ['Truck_ID', 'truck_id', 'id']) || (plateNumber ? `TRK-BACKEND-${plateNumber}` : ''),
+    Plate_Number: plateNumber,
+    Group_Category: normalizeTruckGroup(getTruckMasterValue(truck, ['Group_Category', 'groupCategory', 'group_category', 'group', 'Group', 'Group Category'])),
+    Current_Driver: getTruckMasterValue(truck, ['Current_Driver', 'Current_Driver_Name', 'Driver', 'driverName', 'driver_name', 'current_driver_name']),
+    Current_Driver_Name: getTruckMasterValue(truck, ['Current_Driver_Name', 'Current_Driver', 'Driver', 'driverName', 'driver_name', 'current_driver_name']),
+    Current_Helper: getTruckMasterValue(truck, ['Current_Helper', 'Current_Helper_Name', 'Helper', 'helperName', 'helper_name', 'current_helper_name']),
+    Current_Helper_Name: getTruckMasterValue(truck, ['Current_Helper_Name', 'Current_Helper', 'Helper', 'helperName', 'helper_name', 'current_helper_name']),
+    Truck_Type: getTruckMasterValue(truck, ['Truck_Type', 'truckType', 'truck_type', 'Truck Type', 'Body_Type', 'bodyType']),
+    Status: getTruckMasterValue(truck, ['Status', 'status']) || (truck.active === false ? 'Inactive' : 'Active'),
+    Remarks: getTruckMasterValue(truck, ['Remarks', 'remarks']),
+    Updated_At: getTruckMasterValue(truck, ['Updated_At', 'updatedAt', 'updated_at'])
+  };
+}
+
+function mergeRepairTruckMasterRows(existingRows, incomingRows, options = {}) {
+  const preferIncoming = Boolean(options.preferIncoming);
+  const byPlate = new Map();
+  const order = [];
+  const unkeyed = [];
+
+  function remember(row, incoming = false) {
+    const normalized = normalizeTruckMasterRecord(row);
+    const plate = normalized.Plate_Number;
+    if (!plate) {
+      if (!incoming) unkeyed.push(normalized);
+      return;
+    }
+    if (!byPlate.has(plate)) {
+      byPlate.set(plate, normalized);
+      order.push(plate);
+      return;
+    }
+    const current = byPlate.get(plate);
+    const next = { ...current };
+    Object.keys(normalized).forEach(key => {
+      const value = normalized[key];
+      if (!String(value || '').trim()) return;
+      if (incoming && preferIncoming && ['Group_Category', 'Current_Driver', 'Current_Driver_Name', 'Current_Helper', 'Current_Helper_Name', 'Truck_Type', 'Status', 'Remarks', 'Updated_At'].includes(key)) {
+        next[key] = value;
+        return;
+      }
+      if (!String(next[key] || '').trim()) next[key] = value;
+    });
+    byPlate.set(plate, next);
+  }
+
+  (Array.isArray(existingRows) ? existingRows : []).forEach(row => remember(row, false));
+  (Array.isArray(incomingRows) ? incomingRows : []).forEach(row => remember(row, true));
+  return unkeyed.concat(order.map(plate => byPlate.get(plate)));
+}
+
+async function loadBackendRepairTruckMaster() {
+  const url = `${VNS_WORKER_API_BASE}/api/trucks/list?active=true&limit=1000`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Truck master failed (${response.status})`);
+    const result = await response.json();
+    const backendRows = normalizeTruckMasterPayload(result);
+    if (!backendRows.length) return [];
+    const mergedRows = mergeRepairTruckMasterRows(readTruckMasterStorage(TRUCK_MASTER_KEY), backendRows, { preferIncoming: true });
+    localStorage.setItem(TRUCK_MASTER_KEY, JSON.stringify(mergedRows));
+    initRepairPlateDropdowns();
+    console.log('Repair truck master loaded', backendRows.length);
+    return backendRows;
+  } catch (error) {
+    console.warn('Repair truck master failed', url, error);
+    return [];
+  }
 }
 
 function getRepairPlateGroupField(prefix) {
@@ -3441,6 +3529,7 @@ function initRepairPlateDropdowns() {
       groupField.addEventListener('change', () => {
         populateRepairPlateSelect(prefix);
         setTruckTypeFromMasterfile(prefix);
+        setDriverHelperFromMasterfile(prefix);
         if (prefix === 'records') renderSavedRecords();
       });
     }
@@ -3451,6 +3540,7 @@ function initRepairPlateDropdowns() {
         handleManualPlateOption(prefix);
         setGroupFromSelectedPlate(prefix);
         setTruckTypeFromMasterfile(prefix);
+        setDriverHelperFromMasterfile(prefix);
         if (prefix === 'records') renderSavedRecords();
       });
     }
@@ -3467,6 +3557,22 @@ function setGroupFromSelectedPlate(prefix) {
   populateRepairPlateSelect(prefix);
   const refreshedPlateField = getRepairPlateField(prefix);
   if (refreshedPlateField) refreshedPlateField.value = truckInfo.plateNumber;
+}
+
+function setDriverHelperFromMasterfile(prefix) {
+  const plateField = getRepairPlateField(prefix);
+  const truckInfo = getTruckInfoByPlate(plateField?.value);
+  if (!truckInfo) return;
+
+  const driverField = prefix === 'forRepair'
+    ? forRepairLocalForm?.querySelector('[data-for-repair-field="driver"]')
+    : getSimpleManualField(prefix, 'driver');
+  const helperField = prefix === 'forRepair'
+    ? forRepairLocalForm?.querySelector('[data-for-repair-field="helper"]')
+    : getSimpleManualField(prefix, 'helper');
+
+  if (driverField && truckInfo.driverName) driverField.value = truckInfo.driverName;
+  if (helperField && truckInfo.helperName) helperField.value = truckInfo.helperName;
 }
 
 function setTruckTypeFromMasterfile(prefix) {
@@ -3517,6 +3623,7 @@ function openCompletedRepairFromRecord(recordIndex) {
   setSimpleManualValue('completed', 'plateNumber', plateNumber);
   setSimpleManualValue('completed', 'truckType', truckInfo?.truckType || getRecordValue(record, 'Truck_Type'));
   setSimpleManualValue('completed', 'driver', getRecordValue(record, 'Driver'));
+  setSimpleManualValue('completed', 'helper', getRecordValue(record, 'Helper'));
   setSimpleManualValue('completed', 'mechanic', getRecordValue(record, 'Mechanic'));
   setSimpleManualValue('completed', 'shopName', getRecordValue(record, 'Shop_Name'));
   setSimpleManualValue('completed', 'workDone', getRecordValue(record, 'Work_Done'));
@@ -3806,6 +3913,7 @@ function collectManualEntryRow() {
       plateNumber: getSimpleManualValue('labor', 'plateNumber'),
       truckType: getSimpleManualValue('labor', 'truckType'),
       driver: getSimpleManualValue('labor', 'driver'),
+      helper: getSimpleManualValue('labor', 'helper'),
       category: 'Labor',
       workDone: getSimpleManualValue('labor', 'workDone'),
       item: getSimpleManualValue('labor', 'item'),
@@ -3832,6 +3940,7 @@ function collectManualEntryRow() {
       plateNumber: getSimpleManualValue('completed', 'plateNumber'),
       truckType: getSimpleManualValue('completed', 'truckType'),
       driver: getSimpleManualValue('completed', 'driver'),
+      helper: getSimpleManualValue('completed', 'helper'),
       category: 'Repair',
       workDone: getSimpleManualValue('completed', 'workDone'),
       item: getSimpleManualValue('completed', 'item'),
@@ -3857,6 +3966,7 @@ function collectManualEntryRow() {
       plateNumber: getSimpleManualValue('monitoring', 'plateNumber'),
       truckType: getSimpleManualValue('monitoring', 'truckType'),
       driver: getSimpleManualValue('monitoring', 'driver'),
+      helper: getSimpleManualValue('monitoring', 'helper'),
       priority: getSimpleManualValue('monitoring', 'priority'),
       category: 'Repair',
       workDone: getSimpleManualValue('monitoring', 'workDone'),
@@ -3883,6 +3993,7 @@ function collectManualEntryRow() {
     plateNumber: getSimpleManualValue('parts', 'plateNumber'),
     truckType: getSimpleManualValue('parts', 'truckType'),
     driver: getSimpleManualValue('parts', 'driver'),
+    helper: getSimpleManualValue('parts', 'helper'),
     odometer: getSimpleManualValue('parts', 'odometer'),
     priority: getSimpleManualValue('parts', 'priority'),
     category: 'Repair Parts',
@@ -4528,6 +4639,8 @@ if (forRepairLocalForm) {
       plateNumber: normalizePlate(getForRepairLocalValue('plateNumber')) || getForRepairLocalValue('plateNumber'),
       groupCategory: getForRepairLocalValue('plateGroup'),
       truckType: getTruckInfoByPlate(getForRepairLocalValue('plateNumber'))?.truckType || '',
+      driver: getForRepairLocalValue('driver'),
+      helper: getForRepairLocalValue('helper'),
       garageLocation: getForRepairLocalValue('garageLocation'),
       repairIssue: getForRepairLocalValue('repairIssue'),
       startDate: getForRepairLocalValue('startDate'),
@@ -4955,4 +5068,8 @@ if (majadaGarageBody || valenzuelaGarageBody) {
 
 if (forRepairLocalBody) {
   loadLocalForRepairTrucks();
+}
+
+if (document.querySelector('[data-plate-select]')) {
+  loadBackendRepairTruckMaster();
 }
