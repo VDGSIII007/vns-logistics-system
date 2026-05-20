@@ -5,6 +5,7 @@ const HELPER_KEY = "vnsHelperMaster";
 const MASTER_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbySWpFu-ZwtsC4uGK4uNgZSRlHUzS4bAMX4X0vAQjt-iuF7pbgT3loFGU2fU2YL4rq6pQ/exec";
 const MASTER_SYNC_KEY       = "vns-truck-sync-2026-Jay";
 const TRUCK_MASTER_LAST_SYNC_KEY = "vnsTruckMasterLastGoogleSync";
+const TRUCK_WORKER_API_BASE = "https://vns-push-worker.santosvicenteiii.workers.dev";
 
 const BOTTLE_TRUCK_DEFAULTS = [
   { Plate_Number: "NII3082", Trailer_Plate: "NUB6094", Truck_Type: "", Body_Type: "FLAT BED 36PALLETS" },
@@ -70,11 +71,15 @@ function normalizePlate(value) { return String(value || "").trim().toUpperCase()
 
 function normalizeGroup(value) {
   const n = norm(value).replace(/\s+/g," ");
+  const compact = n.replace(/[^a-z0-9]/g, "");
   if (!n) return "";
   if (n === "bottle" || n === "bottles") return "Bottle";
   if (n === "sugar") return "Sugar";
   if (n === "preform" || n === "resin" || n === "preform / resin") return "Preform / Resin";
   if (n === "caps" || n === "crown" || n === "crowns" || n === "caps / crown" || n === "caps / crowns") return "Caps / Crown";
+  if (n === "2go" || n === "2 go" || compact === "2go") return "2GO";
+  if (n === "general" || n === "general / no plate" || compact === "generalnoplate") return "General / No Plate";
+  if (n.includes("unknown") || n.includes("update")) return "Unknown / Needs Update";
   return String(value || "").trim();
 }
 
@@ -217,8 +222,12 @@ function getTruckGroup(record) {
 }
 
 function getGroupCounts(records) {
-  const counts = { total: records.length, Bottle: 0, Sugar: 0, "Preform / Resin": 0, "Caps / Crown": 0, "Unknown / Needs Update": 0 };
-  records.forEach(r => { const g = getTruckGroup(r); counts[g] = (counts[g] || 0) + 1; });
+  const counts = { total: records.length, Bottle: 0, Sugar: 0, "Preform / Resin": 0, "Caps / Crown": 0, "2GO": 0, "General / No Plate": 0, "Unknown / Needs Update": 0 };
+  records.forEach(r => {
+    if (norm(r.Status) && norm(r.Status) !== "active") return;
+    const g = getTruckGroup(r);
+    counts[g] = (counts[g] || 0) + 1;
+  });
   return counts;
 }
 
@@ -226,7 +235,7 @@ function renderGroupSummaryCards(records) {
   const counts = getGroupCounts(records);
   const cards = [
     ["Total Trucks", counts.total], ["Bottle", counts.Bottle], ["Sugar", counts.Sugar],
-    ["Preform / Resin", counts["Preform / Resin"]], ["Caps / Crown", counts["Caps / Crown"]],
+    ["Preform / Resin", counts["Preform / Resin"]], ["Caps / Crown", counts["Caps / Crown"]], ["2GO", counts["2GO"]],
     ["Needs Update / Unknown", counts["Unknown / Needs Update"]]
   ];
   $("truck-summary-cards").innerHTML = cards.map(([label, value]) =>
@@ -249,7 +258,7 @@ function truckTypeOpts(selected) {
 }
 
 function groupOpts(selected) {
-  const opts = ['', 'Bottle', 'Sugar', 'Preform / Resin', 'Caps / Crown'];
+  const opts = ['', 'Bottle', 'Sugar', 'Preform / Resin', 'Caps / Crown', '2GO', 'General / No Plate', 'Unknown / Needs Update'];
   return opts.map(v => `<option value="${esc(v)}"${v===selected?' selected':''}>${v || '— Select —'}</option>`).join('');
 }
 
@@ -357,35 +366,42 @@ function bindTruckTableEvents() {
 }
 
 function createTruckSkeleton(source = {}) {
-  const ts = source.Updated_At || nowIso();
+  const ts = source.Updated_At || source.updatedAt || source.updated_at || nowIso();
+  const active = source.active ?? source.Active ?? source.is_active ?? source.Is_Active;
+  const status = String(source.Status || source.status || "").trim() || (active === false ? "Inactive" : "Active");
   return {
-    Truck_ID: source.Truck_ID || makeId("TRK"),
-    Plate_Number: normalizePlate(source.Plate_Number),
-    IMEI: source.IMEI || "",
-    Truck_Type: source.Truck_Type || "",
-    Truck_Make: source.Truck_Make || "",
-    Body_Type: source.Body_Type || "",
-    Trailer_Plate: normalizePlate(source.Trailer_Plate),
-    Group_Category: normalizeGroup(source.Group_Category),
-    Current_Driver_ID: source.Current_Driver_ID || "",
-    Current_Helper_ID: source.Current_Helper_ID || "",
-    Current_Driver: source.Current_Driver || source.Current_Driver_Name || "",
-    Current_Helper: source.Current_Helper || source.Current_Helper_Name || "",
-    Current_Driver_Name: source.Current_Driver_Name || source.Current_Driver || "",
-    Current_Helper_Name: source.Current_Helper_Name || source.Current_Helper || "",
-    Dispatcher: source.Dispatcher || "",
-    Status: source.Status || "Active",
-    Remarks: source.Remarks || "",
-    Created_At: source.Created_At || ts,
+    Truck_ID: source.Truck_ID || source.truck_id || source.id || makeId("TRK"),
+    Plate_Number: normalizePlate(source.Plate_Number || source.plateNumber || source.plate_number || source.plate),
+    IMEI: source.IMEI || source.imei || "",
+    Truck_Type: source.Truck_Type || source.truckType || source.truck_type || "",
+    Truck_Make: source.Truck_Make || source.truckMake || source.truck_make || "",
+    Body_Type: source.Body_Type || source.bodyType || source.body_type || "",
+    Trailer_Plate: normalizePlate(source.Trailer_Plate || source.trailerPlate || source.trailer_plate),
+    Group_Category: normalizeGroup(source.Group_Category || source.groupCategory || source.group_category),
+    Current_Driver_ID: source.Current_Driver_ID || source.current_driver_id || "",
+    Current_Helper_ID: source.Current_Helper_ID || source.current_helper_id || "",
+    Current_Driver: source.Current_Driver || source.Current_Driver_Name || source.driverName || source.driver_name || "",
+    Current_Helper: source.Current_Helper || source.Current_Helper_Name || source.helperName || source.helper_name || "",
+    Current_Driver_Name: source.Current_Driver_Name || source.Current_Driver || source.driverName || source.driver_name || "",
+    Current_Helper_Name: source.Current_Helper_Name || source.Current_Helper || source.helperName || source.helper_name || "",
+    Dispatcher: source.Dispatcher || source.dispatcher || "",
+    Status: status,
+    Remarks: source.Remarks || source.remarks || "",
+    Created_At: source.Created_At || source.createdAt || source.created_at || ts,
     Updated_At: ts
   };
 }
 
-function mergeTruckRecord(existing, incoming) {
+function mergeTruckRecord(existing, incoming, preferIncoming = false) {
   const merged = { ...existing };
   Object.keys(incoming).forEach(key => {
     const next = incoming[key];
-    if (!String(merged[key] || "").trim() && String(next || "").trim()) merged[key] = next;
+    if (!String(next || "").trim()) return;
+    if (preferIncoming && ["Group_Category", "Current_Driver", "Current_Helper", "Current_Driver_Name", "Current_Helper_Name", "Status", "Remarks", "Updated_At"].includes(key)) {
+      merged[key] = next;
+      return;
+    }
+    if (!String(merged[key] || "").trim()) merged[key] = next;
   });
   merged.Plate_Number    = normalizePlate(existing.Plate_Number || incoming.Plate_Number);
   merged.Group_Category  = normalizeGroup(merged.Group_Category || incoming.Group_Category);
@@ -401,7 +417,8 @@ function truckIdentityKey(record) {
   return plate ? `plate:${plate}` : "";
 }
 
-function mergeTruckRowsSafely(localRows, cloudRows) {
+function mergeTruckRowsSafely(localRows, cloudRows, options = {}) {
+  const preferIncoming = Boolean(options.preferIncoming);
   const byKey = new Map();
   const order = [];
 
@@ -409,6 +426,8 @@ function mergeTruckRowsSafely(localRows, cloudRows) {
     const key = truckIdentityKey(row);
     if (!key || byKey.has(key)) return;
     byKey.set(key, row);
+    const plate = normalizePlate(row.Plate_Number);
+    if (plate && key !== `plate:${plate}` && !byKey.has(`plate:${plate}`)) byKey.set(`plate:${plate}`, row);
     order.push(key);
   }
 
@@ -419,8 +438,14 @@ function mergeTruckRowsSafely(localRows, cloudRows) {
     const plateKey = cloud.Plate_Number ? `plate:${cloud.Plate_Number}` : "";
     const existingKey = (idKey && byKey.has(idKey)) ? idKey : ((plateKey && byKey.has(plateKey)) ? plateKey : "");
     if (existingKey) {
-      byKey.set(existingKey, mergeTruckRecord(byKey.get(existingKey), cloud));
-      if (idKey && existingKey !== idKey && !byKey.has(idKey)) byKey.set(idKey, byKey.get(existingKey));
+      const merged = mergeTruckRecord(byKey.get(existingKey), cloud, preferIncoming);
+      byKey.set(existingKey, merged);
+      if (idKey) byKey.set(idKey, merged);
+      if (plateKey) byKey.set(plateKey, merged);
+      order.forEach(key => {
+        const row = byKey.get(key);
+        if (row && normalizePlate(row.Plate_Number) === cloud.Plate_Number) byKey.set(key, merged);
+      });
       return;
     }
     const newKey = idKey || plateKey;
@@ -438,6 +463,35 @@ function mergeTruckRowsSafely(localRows, cloudRows) {
       if (seenPlates.has(plate)) return false;
       seenPlates.add(plate);
       return true;
+    });
+}
+
+function normalizeTruckListPayload(result) {
+  const rows = Array.isArray(result)
+    ? result
+    : (result?.trucks || result?.records || result?.data || result?.Truck_Master || []);
+  return Array.isArray(rows) ? rows : [];
+}
+
+function loadBackendTrucks() {
+  const url = `${TRUCK_WORKER_API_BASE}/api/trucks/list?active=true&limit=1000`;
+  return fetch(url)
+    .then(response => {
+      if (!response.ok) throw new Error(`Backend trucks failed (${response.status})`);
+      return response.json();
+    })
+    .then(result => {
+      const rows = normalizeTruckListPayload(result);
+      if (!rows.length) return [];
+      writeJson(TRUCK_KEY, mergeTruckRowsSafely(getTrucks(), rows, { preferIncoming: true }));
+      renderTrucks();
+      setStatus("truck-status-line", "Backend trucks loaded.", "success");
+      console.log("Truck Master backend trucks loaded", rows.length);
+      return rows;
+    })
+    .catch(error => {
+      console.warn("Truck Master backend trucks failed", url, error);
+      return [];
     });
 }
 
@@ -557,7 +611,7 @@ function renderTrucks() {
   const rows    = truckFilterRows(allRows);
   renderGroupSummaryCards(allRows);
   const selectedGroup  = $("truck-filter-group").value;
-  const orderedGroups  = ["Bottle","Sugar","Preform / Resin","Caps / Crown","Unknown / Needs Update"];
+  const orderedGroups  = ["Bottle","Sugar","Preform / Resin","Caps / Crown","2GO","General / No Plate","Unknown / Needs Update"];
   const sortedRows     = [...rows].sort((a, b) => {
     if (!selectedGroup) {
       const gd = orderedGroups.indexOf(getTruckGroup(a)) - orderedGroups.indexOf(getTruckGroup(b));
@@ -1159,6 +1213,7 @@ function init() {
   initTopScrollbar('driver-top-scroll', 'driver-table-wrap');
   initTopScrollbar('helper-top-scroll', 'helper-table-wrap');
 
+  loadBackendTrucks();
   loadFromSheets();
 }
 

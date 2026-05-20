@@ -203,19 +203,19 @@ function normalizeGroup(value) {
 }
 
 function getTruckPlate(truck) {
-  return normalizePlate(truck?.Plate_Number || truck?.plateNumber || truck?.plate || "");
+  return normalizePlate(truck?.Plate_Number || truck?.plateNumber || truck?.plate_number || truck?.plate || "");
 }
 
 function getTruckGroup(truck) {
-  return normalizeGroup(truck?.Group_Category || truck?.groupCategory || "");
+  return normalizeGroup(truck?.Group_Category || truck?.groupCategory || truck?.group_category || "");
 }
 
 function getTruckDriver(truck) {
-  return String(truck?.Driver || truck?.Current_Driver_Name || truck?.Current_Driver || truck?.driverName || "").trim();
+  return String(truck?.Driver || truck?.Current_Driver_Name || truck?.Current_Driver || truck?.driverName || truck?.driver_name || truck?.current_driver_name || "").trim();
 }
 
 function getTruckHelper(truck) {
-  return String(truck?.Helper || truck?.Current_Helper_Name || truck?.Current_Helper || truck?.helperName || "").trim();
+  return String(truck?.Helper || truck?.Current_Helper_Name || truck?.Current_Helper || truck?.helperName || truck?.helper_name || truck?.current_helper_name || "").trim();
 }
 
 function findTruckByPlate(plate) {
@@ -237,17 +237,105 @@ function loadLocalTruckMaster() {
   refreshVisiblePlateGroups();
 }
 
+function normalizeTruckMasterRows(result) {
+  const rows = Array.isArray(result)
+    ? result
+    : (result?.trucks || result?.records || result?.data || result?.Truck_Master || []);
+  return Array.isArray(rows) ? rows : [];
+}
+
+function normalizeTruckForCache(truck = {}) {
+  const plate = getTruckPlate(truck);
+  return {
+    ...truck,
+    Truck_ID: truck.Truck_ID || truck.truck_id || truck.id || (plate ? `TRK-BACKEND-${plate}` : ""),
+    Plate_Number: plate,
+    Group_Category: getTruckGroup(truck),
+    Current_Driver: getTruckDriver(truck),
+    Current_Driver_Name: getTruckDriver(truck),
+    Current_Helper: getTruckHelper(truck),
+    Current_Helper_Name: getTruckHelper(truck),
+    Status: truck.Status || truck.status || (truck.active === false ? "Inactive" : "Active"),
+    Remarks: truck.Remarks || truck.remarks || "",
+    Updated_At: truck.Updated_At || truck.updatedAt || truck.updated_at || ""
+  };
+}
+
+function mergeTruckMasterCache(existingRows, incomingRows, options = {}) {
+  const preferIncoming = Boolean(options.preferIncoming);
+  const byPlate = new Map();
+  const order = [];
+  const unkeyed = [];
+
+  function remember(row, incoming = false) {
+    const normalized = normalizeTruckForCache(row);
+    const plate = normalized.Plate_Number;
+    if (!plate) {
+      if (!incoming) unkeyed.push(normalized);
+      return;
+    }
+    if (!byPlate.has(plate)) {
+      byPlate.set(plate, normalized);
+      order.push(plate);
+      return;
+    }
+    const current = byPlate.get(plate);
+    const next = { ...current };
+    Object.keys(normalized).forEach(key => {
+      const value = normalized[key];
+      if (!String(value || "").trim()) return;
+      if (incoming && preferIncoming && ["Group_Category", "Current_Driver", "Current_Driver_Name", "Current_Helper", "Current_Helper_Name", "Status", "Remarks", "Updated_At"].includes(key)) {
+        next[key] = value;
+        return;
+      }
+      if (!String(next[key] || "").trim()) next[key] = value;
+    });
+    byPlate.set(plate, next);
+  }
+
+  (Array.isArray(existingRows) ? existingRows : []).forEach(row => remember(row, false));
+  (Array.isArray(incomingRows) ? incomingRows : []).forEach(row => remember(row, true));
+  return unkeyed.concat(order.map(plate => byPlate.get(plate)));
+}
+
+function setTruckMasterCache(rows, options = {}) {
+  truckMasterCache = mergeTruckMasterCache(truckMasterCache, rows, options);
+  writeJson("vnsTruckMaster", truckMasterCache);
+  renderTruckPlateDatalists();
+  refreshVisiblePlateGroups();
+}
+
+function fetchBackendTruckMaster() {
+  const url = `${VNS_CASH_WORKER_API_BASE}/api/trucks/list?active=true&limit=1000`;
+  return fetch(url)
+    .then(response => {
+      if (!response.ok) throw new Error(`Truck master failed (${response.status})`);
+      return response.json();
+    })
+    .then(result => {
+      const trucks = normalizeTruckMasterRows(result);
+      if (trucks.length) {
+        setTruckMasterCache(trucks, { preferIncoming: true });
+        console.log("Cash / PO / Bali truck master loaded", trucks.length);
+      }
+      return trucks;
+    })
+    .catch(error => {
+      console.warn("Cash / PO / Bali truck master failed", url, error);
+      return [];
+    });
+}
+
 function fetchTruckMaster() {
   loadLocalTruckMaster();
+  fetchBackendTruckMaster();
   const url = `${MASTER_APP_SCRIPT_URL}?action=getAllMasterData&syncKey=${encodeURIComponent(MASTER_SYNC_KEY)}`;
   fetch(url)
     .then(response => response.json())
     .then(result => {
       const trucks = result?.trucks || result?.Truck_Master || [];
       if (result && result.ok && Array.isArray(trucks) && trucks.length) {
-        truckMasterCache = trucks;
-        renderTruckPlateDatalists();
-        refreshVisiblePlateGroups();
+        setTruckMasterCache(trucks);
       }
     })
     .catch(loadLocalTruckMaster);
