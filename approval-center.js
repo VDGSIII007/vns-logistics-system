@@ -218,13 +218,34 @@ function getRepairFriendlyRequestNo(record = {}) {
 function getItemRequestNo(item = {}) {
   if (item.type === "repair") return getRepairFriendlyRequestNo(item.raw || {});
   if (item.type === "cash") return acText(item.raw?.Request_No || item.raw?.Reference_ID || item.id);
+  if (item.type === "payroll") return getPayrollApprovalReference(item.raw || {}, item.id);
   return acText(item.raw?.Liquidation_Number || item.raw?.payrollNumber || item.raw?.Payroll_Number || item.id);
 }
 
 function getItemSystemReference(item = {}) {
   const record = item.raw || {};
   if (item.type === "repair") return acText(record.Request_ID || record.id || record.Record_ID || record.forRepairId || item.id, "");
+  if (item.type === "payroll") return acText(record.id || record.uuid || item.id, "");
   return acText(record.id || record.Reference_ID || record.Liquidation_ID || item.id, "");
+}
+
+function getPayrollApprovalReference(record = {}, fallback = "") {
+  return acText(
+    record.payroll_id ||
+    record.payrollNumber ||
+    record.payrollId ||
+    record.Payroll_ID ||
+    record.Payroll_Number ||
+    record.request_no ||
+    record.requestNo ||
+    record.Request_No ||
+    record.reference_id ||
+    record.referenceId ||
+    record.Reference_ID ||
+    record.Liquidation_Number ||
+    record.id ||
+    fallback
+  );
 }
 
 function repairCategoryClass(category) {
@@ -808,11 +829,14 @@ function needsApproval(type, record) {
 }
 
 function makeApprovalItem(type, module, record, fallbackId) {
+  const itemId = type === "payroll"
+    ? getPayrollApprovalReference(record, fallbackId)
+    : acText(record.id || record.Record_ID || record.Cash_ID || record.cashId || record.recordId || record.Request_ID || record.For_Repair_ID || record.forRepairId || record.Liquidation_ID || record.referenceId || record.Reference_ID || record.poNumber || record.PO_Number || fallbackId);
   const base = {
     type,
     module,
     raw: record,
-    id: acText(record.id || record.Record_ID || record.Cash_ID || record.cashId || record.recordId || record.Request_ID || record.For_Repair_ID || record.forRepairId || record.Liquidation_ID || record.referenceId || record.Reference_ID || record.poNumber || record.PO_Number || fallbackId),
+    id: itemId,
     plate: acText(record.plateNumber || record.Plate_Number || record.plate || record.truckPlate, "No Plate"),
     group: acGroup(record.groupCategory || record.Group_Category || record.Truck_Group || record.plateGroup || record.group),
     status: acText(acStatusValue(record, ["approvalStatus", "Approval_Status", "Workflow_Status", "Review_Status", "status", "Status", "Payment_Status", "paymentStatus"]), "Pending Approval"),
@@ -997,7 +1021,7 @@ function approvalRow(item, index) {
   if (item.type === "repair") return repairApprovalRow(item, index);
   if (item.type === "cash") return cashApprovalRow(item, index);
   return `
-    <tr>
+    <tr class="ops-clickable-row approval-payroll-row" data-row-detail="${index}" tabindex="0" role="button" aria-label="Open payroll ${acEscape(item.id)}">
       <td><span class="ops-pill">${acEscape(item.module)}</span></td>
       <td class="ops-mono">${acEscape(item.id)}</td>
       <td>${acEscape(acDate(item.date))}</td>
@@ -1006,7 +1030,7 @@ function approvalRow(item, index) {
       <td>${acEscape(item.payee)}</td>
       <td class="ops-amount">${acEscape(acMoney(item.amount))}</td>
       <td>${acEscape(item.status)}</td>
-      <td>${approvalActions(index)}</td>
+      <td class="ops-muted-action">Click row</td>
     </tr>
   `;
 }
@@ -1175,23 +1199,7 @@ function approvalCard(item, index) {
   if (acState.view === "history") return approvalHistoryCard(item, index);
   if (item.type === "repair") return repairApprovalCard(item, index);
   if (item.type === "cash") return cashApprovalCard(item, index);
-  return `
-    <article class="ops-mobile-card">
-      <div class="ops-mobile-card-head">
-        <span class="ops-pill">${acEscape(item.module)}</span>
-        <strong>${acEscape(acMoney(item.amount))}</strong>
-      </div>
-      <dl>
-        <div><dt>Request No.</dt><dd>${acEscape(item.requestNo || item.id)}</dd></div>
-        <div><dt>Date</dt><dd>${acEscape(acDate(item.date))}</dd></div>
-        <div><dt>Plate / No Plate</dt><dd>${acEscape(item.plate)}</dd></div>
-        <div><dt>Group</dt><dd>${acEscape(item.group)}</dd></div>
-        <div><dt>Payee / Driver / Person</dt><dd>${acEscape(item.payee)}</dd></div>
-        <div><dt>Approval Status</dt><dd>${acEscape(item.status)}</dd></div>
-      </dl>
-      ${approvalActions(index)}
-    </article>
-  `;
+  return payrollApprovalCard(item, index);
 }
 
 function approvalHistoryCard(item, index) {
@@ -1253,6 +1261,24 @@ function repairApprovalCard(item, index) {
   `;
 }
 
+function payrollApprovalCard(item, index) {
+  return `
+    <article class="ops-mobile-card ops-clickable-row approval-payroll-row" data-row-detail="${index}" tabindex="0" role="button" aria-label="Open payroll ${acEscape(item.id)}">
+      <div class="ops-mobile-card-head">
+        <span class="ops-pill">${acEscape(item.module)}</span>
+        <strong>${acEscape(acMoney(item.amount))}</strong>
+      </div>
+      <dl>
+        <div><dt>Payroll ID</dt><dd>${acEscape(item.id)}</dd></div>
+        <div><dt>Date</dt><dd>${acEscape(acDate(item.date))}</dd></div>
+        <div><dt>Plate</dt><dd>${acEscape(item.plate)}</dd></div>
+        <div><dt>Driver / Helper</dt><dd>${acEscape(item.payee)}</dd></div>
+        <div><dt>Status</dt><dd>${acEscape(friendlyApprovalStatus(item.status))}</dd></div>
+      </dl>
+    </article>
+  `;
+}
+
 function renderApprovalList() {
   const body = ac$("ac-body");
   const mobile = ac$("ac-mobile-list");
@@ -1287,13 +1313,16 @@ function openApprovalDetail(index) {
   acState.activeItem = item;
 
   detail.innerHTML = buildApprovalDetailHtml(item);
-  bindModalApprovalButtons();
+  modal.classList.toggle("payroll-details-modal", item.type === "payroll");
+  if (item.type === "payroll") bindPayrollApprovalModal(detail, item);
+  else bindModalApprovalButtons();
   modal.hidden = false;
 }
 
 function closeApprovalDetail() {
   const modal = ac$("ac-modal");
   if (modal) modal.hidden = true;
+  if (modal) modal.classList.remove("payroll-details-modal");
   acState.activeItem = null;
 }
 
@@ -1301,9 +1330,230 @@ function detailField(label, value) {
   return `<div><span>${acEscape(label)}</span><strong>${acDisplay(value)}</strong></div>`;
 }
 
+function getPayrollApprovalTotals(record = {}, item = {}) {
+  const totals = record.totals || {};
+  const totalExpenses = acNumber(record.total_expenses || record.totalExpenses || record.Total_Expenses || totals.totalExpenses || item.amount);
+  const driverNetPay = acNumber(record.driver_net_pay || record.driverNetPay || record.Driver_Net_Pay || totals.driverNetPay);
+  const helperNetPay = acNumber(record.helper_net_pay || record.helperNetPay || record.Helper_Net_Pay || totals.helperNetPay);
+  const driverBali = acNumber(
+    record.driver_bali ||
+    record.driverBali ||
+    record.driver_balance ||
+    record.driver_cash_advance ||
+    record.driver_total_deductions ||
+    totals.driverDeduction
+  );
+  const helperBali = acNumber(
+    record.helper_bali ||
+    record.helperBali ||
+    record.helper_balance ||
+    record.helper_cash_advance ||
+    record.helper_total_deductions ||
+    totals.helperDeduction
+  );
+  const totalBali = acNumber(record.total_bali || record.totalBali || record.Total_Bali) || driverBali + helperBali;
+  const totalPayable = acNumber(record.total_payable || record.totalPayable || record.Total_Payable) || driverNetPay + helperNetPay;
+  const totalBudgetReleased = acNumber(
+    record.total_budget_released ||
+    record.totalBudgetReleased ||
+    record.budget_released ||
+    record.Total_Budget_Released ||
+    totals.totalBudgetReleased
+  ) || totalExpenses + driverNetPay + helperNetPay;
+  return { totalExpenses, driverNetPay, helperNetPay, driverBali, helperBali, totalBali, totalBudgetReleased, totalPayable };
+}
+
+function payrollDetailItem(label, value) {
+  return `<div class="approval-detail-item"><span>${acEscape(label)}</span><strong>${acDisplay(value)}</strong></div>`;
+}
+
+function payrollMoney(value) {
+  return acMoney(acNumber(value));
+}
+
+function payrollLineValue(line = {}, ...keys) {
+  for (const key of keys) {
+    const value = line[key];
+    if (value !== undefined && value !== null && String(value).trim() !== "") return value;
+  }
+  return "";
+}
+
+function payrollLineNumber(line = {}, ...keys) {
+  return acNumber(payrollLineValue(line, ...keys));
+}
+
+function payrollRouteBreakdown(lines = []) {
+  const groups = new Map();
+  lines.filter(line => line && Object.values(line).some(value => String(value ?? "").trim())).forEach(line => {
+    const source = acText(payrollLineValue(line, "source", "Source"), "No Source");
+    const destination = acText(payrollLineValue(line, "destination", "Destination"), "No Destination");
+    const tripType = payrollLineValue(line, "tripType", "trip_type", "Trip_Type");
+    const key = [source, destination, tripType].filter(Boolean).join("|");
+    if (!groups.has(key)) {
+      groups.set(key, {
+        route: `${source} → ${destination}${tripType ? ` (${tripType})` : ""}`,
+        count: 0,
+        driverSalary: 0,
+        helperSalary: 0,
+        driverAllowance: 0,
+        helperAllowance: 0,
+        diesel: 0,
+        toll: 0,
+        otherExpenses: 0,
+        totalRouteExpenses: 0
+      });
+    }
+    const group = groups.get(key);
+    const driverSalary = payrollLineNumber(line, "driverSalary", "driver_salary", "bayadSaDriver", "bayad_sa_driver", "Driver_Salary");
+    const helperSalary = payrollLineNumber(line, "helperSalary", "helper_salary", "bayadSaHelper", "bayad_sa_helper", "Helper_Salary");
+    const driverAllowance = payrollLineNumber(line, "driverAllowance", "driver_allowance", "allowanceDriver", "allowance_driver");
+    const helperAllowance = payrollLineNumber(line, "helperAllowance", "helper_allowance", "allowanceHelper", "allowance_helper");
+    const diesel = payrollLineNumber(line, "diesel", "Diesel");
+    const toll = payrollLineNumber(line, "toll", "toll_fee", "tollFee", "Toll_Fee");
+    const otherExpenses = payrollLineNumber(line, "otherExpenses", "other_expenses", "Other_Expenses");
+    const passway = payrollLineNumber(line, "passway", "pass_way", "passWay");
+    const parking = payrollLineNumber(line, "parking");
+    const lagayLoaded = payrollLineNumber(line, "lagayLoaded", "lagay_loaded");
+    const lagayEmpty = payrollLineNumber(line, "lagayEmpty", "lagay_empty");
+    const mano = payrollLineNumber(line, "mano");
+    const timbang = payrollLineNumber(line, "timbang");
+    const luna = payrollLineNumber(line, "luna");
+    const vulcanize = payrollLineNumber(line, "vulcanize");
+    const hugasTruck = payrollLineNumber(line, "hugasTruck", "hugas_truck", "truckWash", "truck_wash");
+    const checkpoint = payrollLineNumber(line, "checkpoint");
+    group.count += 1;
+    group.driverSalary += driverSalary;
+    group.helperSalary += helperSalary;
+    group.driverAllowance += driverAllowance;
+    group.helperAllowance += helperAllowance;
+    group.diesel += diesel;
+    group.toll += toll;
+    group.otherExpenses += otherExpenses;
+    group.totalRouteExpenses += driverSalary + helperSalary + driverAllowance + helperAllowance + diesel + toll + otherExpenses + passway + parking + lagayLoaded + lagayEmpty + mano + timbang + luna + vulcanize + hugasTruck + checkpoint;
+  });
+  return [...groups.values()];
+}
+
+function renderPayrollRouteBreakdownTable(lines = []) {
+  const rows = payrollRouteBreakdown(lines);
+  if (!rows.length) return `<div class="payroll-route-review-wrap"><p class="ops-empty">No route breakdown available.</p></div>`;
+  return `
+    <div class="payroll-route-review-wrap">
+      <table class="payroll-route-review-table">
+        <thead>
+          <tr><th>Route</th><th>Trips</th><th>Driver Salary</th><th>Helper Salary</th><th>Driver Allowance</th><th>Helper Allowance</th><th>Diesel</th><th>Toll</th><th>Other Expenses</th><th>Total Route Expenses</th></tr>
+        </thead>
+        <tbody>
+          ${rows.map(row => `
+            <tr>
+              <td>${acEscape(row.route)}</td>
+              <td>${acEscape(row.count)}</td>
+              <td>${acEscape(payrollMoney(row.driverSalary))}</td>
+              <td>${acEscape(payrollMoney(row.helperSalary))}</td>
+              <td>${acEscape(payrollMoney(row.driverAllowance))}</td>
+              <td>${acEscape(payrollMoney(row.helperAllowance))}</td>
+              <td>${acEscape(payrollMoney(row.diesel))}</td>
+              <td>${acEscape(payrollMoney(row.toll))}</td>
+              <td>${acEscape(payrollMoney(row.otherExpenses))}</td>
+              <td>${acEscape(payrollMoney(row.totalRouteExpenses))}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderPayrollTripLineDetailsTable(lines = []) {
+  const visibleLines = lines.filter(line => line && Object.values(line).some(value => String(value ?? "").trim()));
+  if (!visibleLines.length) {
+    return `<div class="payroll-details-table-wrap"><table class="payroll-table payroll-record-details-table"><tbody><tr><td class="ops-empty">No trip lines available.</td></tr></tbody></table></div>`;
+  }
+  const columns = [
+    ["Date", line => payrollLineValue(line, "tripDate", "trip_date", "date", "Trip_Date")],
+    ["Source", line => payrollLineValue(line, "source", "Source")],
+    ["Destination", line => payrollLineValue(line, "destination", "Destination")],
+    ["Reference No.", line => payrollLineValue(line, "referenceNo", "reference_no", "Reference_No")],
+    ["PO Number", line => payrollLineValue(line, "poNumber", "po_number", "PO_Number")],
+    ["Shipment Number", line => payrollLineValue(line, "shipmentNumber", "shipment_number", "Shipment_Number")],
+    ["Container Number", line => payrollLineValue(line, "containerNumber", "container_number", "Container_Number")],
+    ["Trip Type", line => payrollLineValue(line, "tripType", "trip_type", "Trip_Type")],
+    ["Diesel", line => payrollMoney(payrollLineNumber(line, "diesel", "Diesel"))],
+    ["Per Liter", line => payrollMoney(payrollLineNumber(line, "perLiter", "per_liter", "costPerLiter", "cost_per_liter"))],
+    ["Driver Salary", line => payrollMoney(payrollLineNumber(line, "driverSalary", "driver_salary", "bayad_sa_driver"))],
+    ["Helper Salary", line => payrollMoney(payrollLineNumber(line, "helperSalary", "helper_salary", "bayad_sa_helper"))],
+    ["Toll Fee", line => payrollMoney(payrollLineNumber(line, "toll", "tollFee", "toll_fee"))],
+    ["Passway", line => payrollMoney(payrollLineNumber(line, "passway", "passWay", "pass_way"))],
+    ["Parking", line => payrollMoney(payrollLineNumber(line, "parking"))],
+    ["Lagay Loaded", line => payrollMoney(payrollLineNumber(line, "lagayLoaded", "lagay_loaded"))],
+    ["Lagay Empty", line => payrollMoney(payrollLineNumber(line, "lagayEmpty", "lagay_empty"))],
+    ["Mano", line => payrollMoney(payrollLineNumber(line, "mano"))],
+    ["Timbang", line => payrollMoney(payrollLineNumber(line, "timbang"))],
+    ["Luna", line => payrollMoney(payrollLineNumber(line, "luna"))],
+    ["Vulcanize", line => payrollMoney(payrollLineNumber(line, "vulcanize"))],
+    ["Driver Allowance", line => payrollMoney(payrollLineNumber(line, "driverAllowance", "driver_allowance", "allowance_driver"))],
+    ["Helper Allowance", line => payrollMoney(payrollLineNumber(line, "helperAllowance", "helper_allowance", "allowance_helper"))],
+    ["Hugas Truck", line => payrollMoney(payrollLineNumber(line, "hugasTruck", "hugas_truck", "truck_wash"))],
+    ["Checkpoint", line => payrollMoney(payrollLineNumber(line, "checkpoint"))],
+    ["Other Expenses", line => payrollMoney(payrollLineNumber(line, "otherExpenses", "other_expenses"))],
+    ["Remarks", line => payrollLineValue(line, "remarks", "Remarks")]
+  ];
+  return `
+    <div class="payroll-details-table-wrap">
+      <table class="payroll-table payroll-record-details-table">
+        <thead><tr>${columns.map(([label]) => `<th>${acEscape(label)}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${visibleLines.map(line => `<tr>${columns.map(([, getter]) => `<td>${acEscape(getter(line))}</td>`).join("")}</tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderPayrollSalarySummaryForApproval(record = {}, totals = {}) {
+  const driverName = record.driverName || record.Driver_Name || "-";
+  const helperName = record.helperName || record.Helper_Name || "-";
+  const driverGross = acNumber(record.driver_salary || record.driverSalary || record.Driver_Salary || record.totals?.totalDriverSalary) + acNumber(record.driver_allowance || record.driverAllowance || record.Driver_Allowance || record.totals?.totalDriverAllowance);
+  const helperGross = acNumber(record.helper_salary || record.helperSalary || record.Helper_Salary || record.totals?.totalHelperSalary) + acNumber(record.helper_allowance || record.helperAllowance || record.Helper_Allowance || record.totals?.totalHelperAllowance);
+  const section = (title, rows) => `
+    <article class="payroll-salary-summary-table">
+      <h3>${acEscape(title)}</h3>
+      <table><tbody>${rows.map(([label, value]) => `<tr><th>${acEscape(label)}</th><td>${acEscape(value)}</td></tr>`).join("")}</tbody></table>
+    </article>
+  `;
+  return `
+    <div class="payroll-salary-summary-grid">
+      ${section("Driver Salary", [
+        ["Name", driverName],
+        ["Gross Salary", payrollMoney(driverGross)],
+        ["Allowance", payrollMoney(record.driver_allowance || record.driverAllowance || record.totals?.totalDriverAllowance)],
+        ["Bali / Deduction", payrollMoney(totals.driverBali)],
+        ["Net Pay", payrollMoney(totals.driverNetPay)]
+      ])}
+      ${section("Helper Salary", [
+        ["Name", helperName],
+        ["Gross Salary", payrollMoney(helperGross)],
+        ["Allowance", payrollMoney(record.helper_allowance || record.helperAllowance || record.totals?.totalHelperAllowance)],
+        ["Bali / Deduction", payrollMoney(totals.helperBali)],
+        ["Net Pay", payrollMoney(totals.helperNetPay)]
+      ])}
+      ${section("Combined Payment Summary", [
+        ["Driver Net Pay", payrollMoney(totals.driverNetPay)],
+        ["Helper Net Pay", payrollMoney(totals.helperNetPay)],
+        ["Total Bali", payrollMoney(totals.totalBali)],
+        ["Total Budget Released", payrollMoney(totals.totalBudgetReleased)],
+        ["Total Payable", payrollMoney(totals.totalPayable)],
+        ["Payment Status", record.payment_status || record.paymentStatus || record.Payment_Status || "Unpaid"]
+      ]).replace("payroll-salary-summary-table", "payroll-salary-summary-table wide")}
+    </div>
+  `;
+}
+
 function buildApprovalDetailHtml(item) {
   if (item.type === "repair") return buildRepairModalHtml(item);
   if (item.type === "cash") return buildCashModalHtml(item);
+  if (item.type === "payroll") return buildPayrollDetailHtml(item);
   const body = item.type === "payroll"
     ? buildPayrollDetailHtml(item)
     : buildRepairDetailHtml(item);
@@ -1368,44 +1618,65 @@ function buildRepairModalHtml(item) {
 
 function buildPayrollDetailHtml(item) {
   const record = item.raw || {};
-  const totals = record.totals || {};
+  const approvalTotals = getPayrollApprovalTotals(record, item);
   const lines = Array.isArray(record.lines) ? record.lines : [];
+  const payrollReference = getPayrollApprovalReference(record, item.id);
   return `
-    <section class="approval-detail-section">
-      <h3>Payroll Details</h3>
-      <div class="ops-detail-grid">
-        ${detailField("Payroll Number", record.payrollNumber || record.Payroll_Number || record.Liquidation_Number || item.id)}
-        ${detailField("Plate Number", record.plateNumber || record.Plate_Number || item.plate)}
-        ${detailField("Group", record.groupCategory || record.Group_Category || item.group)}
-        ${detailField("Driver", record.driverName || record.Driver_Name)}
-        ${detailField("Helper", record.helperName || record.Helper_Name)}
-        ${detailField("Payroll Date", acDate(record.payrollDate || record.Liquidation_Date || item.date))}
-        ${detailField("Cutoff Start", acDate(record.cutoffStart || record.Period_Start))}
-        ${detailField("Cutoff End", acDate(record.cutoffEnd || record.Period_End))}
-        ${detailField("Encoder", record.encoderName || record.Encoded_By || record.createdBy)}
-        ${detailField("Remarks", record.remarks || record.Remarks)}
-        ${detailField("Total Diesel", acMoney(totals.totalDiesel || record.Total_Diesel))}
-        ${detailField("Total Driver Salary", acMoney(totals.totalDriverSalary || record.Total_Driver_Salary))}
-        ${detailField("Total Helper Salary", acMoney(totals.totalHelperSalary || record.Total_Helper_Salary))}
-        ${detailField("Total Expenses", acMoney(totals.totalExpenses || record.Total_Expenses || item.amount))}
+    <div class="record-details-header">
+      <h2 id="ac-modal-title">Payroll Details</h2>
+      <span class="ops-mono">${acEscape(payrollReference)}</span>
+    </div>
+    <div class="record-details-content">
+      <div class="detail-block approval-detail-grid payroll-details-summary-grid">
+        ${payrollDetailItem("Payroll ID", payrollReference)}
+        ${payrollDetailItem("Plate Number", record.plateNumber || record.Plate_Number || item.plate)}
+        ${payrollDetailItem("Driver", record.driverName || record.Driver_Name)}
+        ${payrollDetailItem("Helper", record.helperName || record.Helper_Name)}
+        ${payrollDetailItem("Group", record.groupCategory || record.Group_Category || item.group)}
+        ${payrollDetailItem("Payroll Date", acDate(record.payrollDate || record.Liquidation_Date || item.date))}
+        ${payrollDetailItem("Coverage", payrollCoverageLabel(record, item))}
+        ${payrollDetailItem("Status", record.status || record.Status || item.status)}
+        ${payrollDetailItem("Approval Status", record.approval_status || record.approvalStatus || record.Approval_Status || item.status)}
+        ${payrollDetailItem("Payment Status", record.payment_status || record.paymentStatus || record.Payment_Status || "Unpaid")}
+        ${payrollDetailItem("Total Expenses", payrollMoney(approvalTotals.totalExpenses))}
+        ${payrollDetailItem("Driver Net Pay", payrollMoney(approvalTotals.driverNetPay))}
+        ${payrollDetailItem("Helper Net Pay", payrollMoney(approvalTotals.helperNetPay))}
+        ${payrollDetailItem("Driver Bali", payrollMoney(approvalTotals.driverBali))}
+        ${payrollDetailItem("Helper Bali", payrollMoney(approvalTotals.helperBali))}
+        ${payrollDetailItem("Total Bali", payrollMoney(approvalTotals.totalBali))}
+        ${payrollDetailItem("Total Budget Released", payrollMoney(approvalTotals.totalBudgetReleased))}
+        ${payrollDetailItem("Total Payable", payrollMoney(approvalTotals.totalPayable))}
       </div>
-    </section>
-    <section class="approval-detail-section">
-      <h3>Trip Lines</h3>
-      <div class="approval-lines-scroll">
-        <table class="approval-detail-table">
-          <thead>
-            <tr><th>Trip Date</th><th>Source</th><th>Destination</th><th>PO No.</th><th>Shipment / DR No.</th><th>Driver Salary</th><th>Helper Salary</th><th>Diesel</th><th>Remarks</th></tr>
-          </thead>
-          <tbody>${renderPayrollTripLines(lines)}</tbody>
-        </table>
+      <div class="payroll-detail-tabs" role="tablist" aria-label="Payroll approval review sections">
+        <button type="button" class="payroll-detail-tab-button active" data-payroll-approval-tab="trip-lines" role="tab" aria-selected="true">Trip Lines / Budget</button>
+        <button type="button" class="payroll-detail-tab-button" data-payroll-approval-tab="salary-summary" role="tab" aria-selected="false">Salary Summary</button>
       </div>
-    </section>
-    <label class="approval-notes-field">
-      <span>Review Notes</span>
-      <textarea id="ac-review-notes" rows="3" placeholder="Optional approval notes"></textarea>
-    </label>
+      <section class="payroll-detail-tab-panel active" data-payroll-approval-panel="trip-lines" role="tabpanel">
+        ${renderPayrollRouteBreakdownTable(lines)}
+        ${renderPayrollTripLineDetailsTable(lines)}
+      </section>
+      <section class="payroll-detail-tab-panel" data-payroll-approval-panel="salary-summary" role="tabpanel" hidden>
+        ${renderPayrollSalarySummaryForApproval(record, approvalTotals)}
+      </section>
+      <label class="approval-notes-field payroll-approval-notes-field">
+        <span>Review Notes</span>
+        <textarea id="ac-review-notes" rows="2" placeholder="Optional approval, revision, or rejection notes"></textarea>
+      </label>
+    </div>
+    <div class="payroll-details-footer">
+      <button type="button" data-payroll-approval-action="approve">Approve</button>
+      <button type="button" data-payroll-approval-action="revise">Ask to Revise</button>
+      <button type="button" class="danger-outline" data-payroll-approval-action="reject">Reject</button>
+      <button type="button" data-payroll-approval-action="close">Close</button>
+    </div>
   `;
+}
+
+function payrollCoverageLabel(record = {}, item = {}) {
+  const start = record.cutoffStart || record.Period_Start || record.cutoff_from || record.cutoffFrom;
+  const end = record.cutoffEnd || record.Period_End || record.cutoff_to || record.cutoffTo;
+  if (start && end) return `${acDate(start)} to ${acDate(end)}`;
+  return acDate(record.payrollDate || record.Liquidation_Date || item.date);
 }
 
 function renderPayrollTripLines(lines) {
@@ -1642,6 +1913,94 @@ function bindModalApprovalButtons() {
       if (action === "reject") rejectPayrollFromModal();
     });
   });
+}
+
+function bindPayrollApprovalModal(detail, item) {
+  detail.querySelectorAll("[data-payroll-approval-tab]").forEach(button => {
+    button.addEventListener("click", () => {
+      const tab = button.dataset.payrollApprovalTab;
+      detail.querySelectorAll("[data-payroll-approval-tab]").forEach(tabButton => {
+        const active = tabButton === button;
+        tabButton.classList.toggle("active", active);
+        tabButton.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      detail.querySelectorAll("[data-payroll-approval-panel]").forEach(panel => {
+        const active = panel.dataset.payrollApprovalPanel === tab;
+        panel.hidden = !active;
+        panel.classList.toggle("active", active);
+      });
+    });
+  });
+  detail.querySelectorAll("[data-payroll-approval-action]").forEach(button => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.payrollApprovalAction;
+      if (action === "close") {
+        closeApprovalDetail();
+      } else if (action === "approve") {
+        updatePayrollApprovalFromModal(item, "Approved");
+      } else if (action === "revise") {
+        updatePayrollApprovalFromModal(item, "Returned");
+      } else if (action === "reject") {
+        updatePayrollApprovalFromModal(item, "Rejected");
+      }
+    });
+  });
+}
+
+async function payrollSupabaseStatusPost(payrollId, statusData = {}) {
+  const payload = { payroll_id: payrollId, ...statusData };
+  console.log("Payroll approval update-status payload", payload);
+  const response = await fetch(`${VNS_WORKER_API_BASE}/api/payroll/update-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json().catch(() => null);
+  console.log("Payroll approval update-status response", result);
+  if (!response.ok || !result?.ok) {
+    throw new Error(result?.error || `Payroll status update failed (${response.status})`);
+  }
+  return result;
+}
+
+async function updatePayrollApprovalFromModal(item, status) {
+  if (!item || item.type !== "payroll") return;
+  const payrollId = getPayrollApprovalReference(item.raw || {}, item.id);
+  if (!payrollId) return;
+  const notes = ac$("ac-review-notes")?.value?.trim() || "";
+  const statusMap = {
+    Approved: { label: "approved", message: "Approving payroll...", approval_status: "Approved", payment_status: "Unpaid" },
+    Returned: { label: "returned for revision", message: "Returning payroll for revision...", approval_status: "Returned", payment_status: "Unpaid" },
+    Rejected: { label: "rejected", message: "Rejecting payroll...", approval_status: "Rejected", payment_status: "Unpaid" }
+  };
+  const config = statusMap[status];
+  if (!config) return;
+  if (status === "Returned" && !notes && !confirm("Return this payroll for revision without notes?")) return;
+  if (status === "Rejected" && !notes && !confirm("Reject this payroll without notes?")) return;
+  if (status === "Approved" && !confirm(`Approve payroll ${payrollId}?`)) return;
+
+  setApprovalMessage(config.message, "info");
+  try {
+    const now = new Date().toISOString();
+    await payrollSupabaseStatusPost(payrollId, {
+      status,
+      approval_status: config.approval_status,
+      payment_status: config.payment_status,
+      approved_by: status === "Approved" ? "Mother" : "",
+      approved_at: status === "Approved" ? now : ""
+    });
+    updateLocalPayrollStatus(payrollId, status, {
+      approverName: status === "Approved" ? "Mother" : "",
+      approvalNotes: notes,
+      revisionReason: status !== "Approved" ? notes : ""
+    });
+    closeApprovalDetail();
+    reloadApprovalList(`Payroll ${payrollId} ${config.label}.`);
+    triggerPaymentQueuePushCheck();
+  } catch (error) {
+    console.error("Payroll approval action failed", error);
+    setApprovalMessage(error?.message || "Payroll approval action failed. Please check console/network.", "error");
+  }
 }
 
 function cashApprovalPost(action, payload = {}) {
@@ -2081,7 +2440,7 @@ function isCloudSuccess(result) {
 function getActivePayrollId() {
   const item = acState.activeItem;
   if (!item || item.type !== "payroll") return "";
-  return acText(item.raw?.id || item.raw?.Liquidation_ID || item.id, "");
+  return getPayrollApprovalReference(item.raw || {}, item.id);
 }
 
 function approvePayrollFromModal() {
@@ -2163,11 +2522,15 @@ function updateLocalPayrollStatus(id, status, approvalPatch = {}) {
   const records = acReadJson(AC_KEYS.payroll);
   const now = new Date().toISOString();
   const updated = records.map(record => {
-    const recordId = acText(record.id || record.Liquidation_ID, "");
+    const recordId = getPayrollApprovalReference(record, record.id || record.Liquidation_ID);
     if (recordId !== id) return record;
     return {
       ...record,
       status,
+      approvalStatus: status === "Approved" ? "Approved" : status,
+      paymentStatus: record.paymentStatus || record.payment_status || "Unpaid",
+      approval_status: status === "Approved" ? "Approved" : status,
+      payment_status: record.payment_status || record.paymentStatus || "Unpaid",
       Approval_Status: status,
       Workflow_Status: status,
       approval: {
@@ -2294,7 +2657,21 @@ function bindApprovalEvents() {
   });
   document.addEventListener("click", event => {
     const trigger = event.target.closest("[data-detail]");
-    if (trigger) openApprovalDetail(Number(trigger.dataset.detail));
+    if (trigger) {
+      openApprovalDetail(Number(trigger.dataset.detail));
+      return;
+    }
+    const row = event.target.closest("[data-row-detail]");
+    if (row && !event.target.closest("button, a, input, select, textarea")) {
+      openApprovalDetail(Number(row.dataset.rowDetail));
+    }
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const row = event.target.closest("[data-row-detail]");
+    if (!row) return;
+    event.preventDefault();
+    openApprovalDetail(Number(row.dataset.rowDetail));
   });
   if (close) close.addEventListener("click", closeApprovalDetail);
   if (modal) modal.addEventListener("click", event => {

@@ -201,12 +201,21 @@
         <h2>Pasahod Summary</h2>
         <p>Salary, allowance, deductions, and net pay for driver and helper.</p>
       </div>
+      <section class="payroll-section-card payroll-budget-card pasahod-shared-totals">
+        <div class="payroll-card-head">
+          <div>
+            <h2>Shared Payroll Totals</h2>
+            <p>Budget, expenses, bali, and salary payable for this payroll.</p>
+          </div>
+        </div>
+        <div id="pasahod-budget-summary" class="payroll-summary-grid"></div>
+      </section>
       <section class="pasahod-summary-section">
         <div class="payroll-section-card payroll-paper-card">
           <div class="payroll-card-head">
             <div>
               <p class="eyebrow">Pasahod</p>
-              <h2>Driver Payroll Summary</h2>
+              <h2>Driver Payroll Summary <span id="driver-summary-name" class="payroll-person-title-name"></span></h2>
             </div>
           </div>
           <div class="person-payroll-grid">
@@ -241,7 +250,7 @@
           <div class="payroll-card-head">
             <div>
               <p class="eyebrow">Pasahod</p>
-              <h2>Helper Payroll Summary</h2>
+              <h2>Helper Payroll Summary <span id="helper-summary-name" class="payroll-person-title-name"></span></h2>
             </div>
           </div>
           <div class="person-payroll-grid">
@@ -284,16 +293,6 @@
         <div id="payroll-trip-earnings-breakdown" class="payroll-trip-breakdown"></div>
       </section>
 
-      <section class="payroll-section-card payroll-budget-card pasahod-shared-totals">
-        <div class="payroll-card-head">
-          <div>
-            <h2>Shared Payroll Totals</h2>
-            <p>Budget, expenses, remaining balance, suggested deduction, and notes.</p>
-          </div>
-        </div>
-        <div id="pasahod-budget-summary" class="payroll-summary-grid"></div>
-      </section>
-
       <section class="payroll-section-card payroll-balance-card">
         <div class="payroll-card-head">
           <div>
@@ -334,52 +333,73 @@
             <button id="submit-payroll-button" class="btn btn-primary" type="button">Submit for Approval</button>
           </div>
         </div>
+        <span id="pasahod-submit-status" class="payroll-status-line"></span>
       </section>
       </section>
 
       <section id="approval-payment-tab" class="payroll-tab-panel" data-vns-role="Admin">
       <div class="payroll-tab-heading">
         <h2>Approval / Payment</h2>
-        <p>Office review, overrides, payment details, and Viber-ready message.</p>
+        <p>Mother reviews payroll first. Sister marks approved payrolls as paid after payment.</p>
       </div>
-      <section class="payroll-section-card payroll-review-card">
+      <section class="payroll-section-card payroll-approval-center-card">
         <div class="payroll-card-head">
           <div>
-            <h2>Approval / Office Review</h2>
-            <p>Final checks, overrides, payment reference, and Viber-ready message.</p>
+            <h2>For Mother Approval</h2>
+            <p>Submitted payrolls waiting for approval, return, or rejection.</p>
+          </div>
+          <button id="refresh-approval-payment-button" class="btn btn-outline" type="button">Refresh Records</button>
+        </div>
+        <div class="payroll-table-wrap approval-center-table-wrap">
+          <table class="payroll-table approval-center-table">
+            <thead>
+              <tr>
+                <th>Payroll ID</th><th>Payroll Date</th><th>Plate Number</th><th>Driver</th><th>Helper</th><th>Group</th><th>Total Expenses</th><th>Driver Net Pay</th><th>Helper Net Pay</th><th>Total Bali</th><th>Total Budget Released</th><th>Total Payable</th><th>Status</th><th>Approval Status</th><th>Payment Status</th>
+              </tr>
+            </thead>
+            <tbody id="mother-approval-records-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="payroll-section-card payroll-payment-center-card">
+        <div class="payroll-card-head">
+          <div>
+            <h2>For Sister Payment</h2>
+            <p>Approved payrolls that are still unpaid.</p>
           </div>
         </div>
-        <div class="payroll-form-grid">
-          <label><span>Approver Name</span><input id="approver-name" type="text"></label>
-          <label><span>Override Driver Deduction</span><input id="override-driver-deduction" type="number" min="0" step="0.01"></label>
-          <label><span>Override Helper Deduction</span><input id="override-helper-deduction" type="number" min="0" step="0.01"></label>
-          <label><span>Final Driver Net Pay</span><input id="final-driver-net-pay" type="text" readonly></label>
-          <label><span>Final Helper Net Pay</span><input id="final-helper-net-pay" type="text" readonly></label>
-          <label><span>Payment Reference</span><input id="payment-reference" type="text"></label>
-          <label><span>Payment Date</span><input id="payment-date" type="date"></label>
-          <label class="wide-field"><span>Approval Notes</span><textarea id="approval-notes" rows="3"></textarea></label>
-          <label class="wide-field"><span>Rejection / Revision Reason</span><textarea id="revision-reason" rows="3"></textarea></label>
-          <div class="payroll-actions payroll-toolbar">
-            <button id="approve-payroll-button" class="btn btn-primary" type="button">Approve Payroll</button>
-            <button id="return-payroll-button" class="btn btn-outline" type="button">Return for Revision</button>
-            <button id="reject-payroll-button" class="btn btn-outline danger-outline" type="button">Reject Payroll</button>
-            <button id="mark-paid-button" class="btn btn-outline" type="button">Mark as Paid</button>
-            <button id="generate-viber-button" class="btn btn-outline" type="button">Generate Viber Message</button>
-          </div>
-        </div>
-        <div class="viber-box">
-          <div class="payroll-card-head">
-            <div>
-              <h2>Viber Message</h2>
-              <p>Copy after approval or payment.</p>
-            </div>
-            <button id="copy-viber-button" class="btn btn-primary" type="button">Copy Message</button>
-          </div>
-          <textarea id="viber-message" class="viber-message" rows="13" readonly></textarea>
-          <div id="copy-viber-status" class="payroll-status-line"></div>
+        <div class="payroll-table-wrap approval-center-table-wrap">
+          <table class="payroll-table payment-center-table">
+            <thead>
+              <tr>
+                <th>Payroll ID</th><th>Payroll Date</th><th>Plate Number</th><th>Driver</th><th>Helper</th><th>Group</th><th>Driver Net Pay</th><th>Helper Net Pay</th><th>Total Bali</th><th>Total Budget Released</th><th>Total Payable</th><th>Payment Status</th><th>Payment Date</th><th>Payment Reference</th>
+              </tr>
+            </thead>
+            <tbody id="sister-payment-records-body"></tbody>
+          </table>
         </div>
       </section>
       </section>
+
+      <div hidden>
+        <input id="approver-name" type="text">
+        <input id="override-driver-deduction" type="number">
+        <input id="override-helper-deduction" type="number">
+        <input id="final-driver-net-pay" type="text">
+        <input id="final-helper-net-pay" type="text">
+        <input id="payment-reference" type="text">
+        <input id="payment-date" type="date">
+        <textarea id="approval-notes"></textarea>
+        <textarea id="revision-reason"></textarea>
+        <button id="approve-payroll-button" type="button"></button>
+        <button id="return-payroll-button" type="button"></button>
+        <button id="reject-payroll-button" type="button"></button>
+        <button id="mark-paid-button" type="button"></button>
+        <button id="generate-viber-button" type="button"></button>
+        <button id="copy-viber-button" type="button"></button>
+        <textarea id="viber-message"></textarea>
+        <div id="copy-viber-status"></div>
+      </div>
 
       <section id="for-approval-tab" class="payroll-tab-panel" data-vns-role="Admin" hidden>
       <section class="payroll-section-card payroll-records-card payroll-approval-card">

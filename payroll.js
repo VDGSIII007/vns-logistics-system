@@ -172,6 +172,9 @@ function bindPayrollEvents() {
   if ($("refresh-payroll-records-button")) {
     $("refresh-payroll-records-button").addEventListener("click", loadSavedPayrollRecordsFromSupabase);
   }
+  if ($("refresh-approval-payment-button")) {
+    $("refresh-approval-payment-button").addEventListener("click", loadSavedPayrollRecordsFromSupabase);
+  }
   if ($("records-body") && !$("records-body").dataset.payrollActionsBound) {
     $("records-body").dataset.payrollActionsBound = "true";
     $("records-body").addEventListener("click", handleSavedPayrollRecordAction);
@@ -598,20 +601,32 @@ function savePayrollRecord() {
   renderForApprovalQueue();
   renderWarnings(headerWarnings.concat(payrollState.warnings));
   setStatus("Saved locally. Syncing to Supabase...", "info");
-  savePayrollToSupabase(record)
+  const savePromise = savePayrollToSupabase(record)
     .then(() => savePayrollTripLinesToSupabase(record))
     .then(() => {
+      console.log("Payroll save result", {
+        payroll_id: record.payrollNumber || record.id,
+        status: record.status,
+        approvalStatus: record.approvalStatus,
+        paymentStatus: record.paymentStatus
+      });
       setStatus("Saved and synced to Supabase.", "success");
+      return record;
     })
     .catch(supabaseError => {
       console.warn("Payroll Supabase save failed; trying Google Sheets fallback", supabaseError);
-      syncPayrollRecordToCloud(record)
-        .then(() => setStatus("Saved locally and synced to Google Sheets.", "success"))
+      return syncPayrollRecordToCloud(record)
+        .then(() => {
+          setStatus("Saved locally and synced to Google Sheets.", "success");
+          return record;
+        })
         .catch(error => {
           console.warn("Payroll cloud sync also failed", error);
           setStatus("Payroll cloud sync failed. Saved locally only.", "warning");
+          throw error;
         });
     });
+  payrollState.lastSavePromise = savePromise;
   return record;
 }
 
@@ -646,9 +661,11 @@ function backToTripLines() {
 }
 
 function submitPayrollForApproval() {
+  console.log("Submit for Approval clicked");
   payrollState.hasSubmittedPayroll = true;
   const headerWarnings = validatePayrollHeader();
   if (headerWarnings.length) {
+    console.warn("Submit for Approval blocked by header warnings", headerWarnings);
     renderWarnings(headerWarnings);
     setStatus("Complete required header fields before submitting.", "warning");
     return;
@@ -656,8 +673,49 @@ function submitPayrollForApproval() {
   $("payroll-status").value = "For Approval";
   calculatePayroll({ showWarnings: true });
   const record = savePayrollRecord();
+  const payrollId = record.payrollNumber || record.payroll_id || record.payrollId || record.id;
+  const statusPayload = {
+    status: "For Approval",
+    approval_status: "Pending",
+    payment_status: "Unpaid"
+  };
+  console.log("Submit for Approval payroll_id", payrollId);
+  console.log("Submit for Approval update-status payload", statusPayload);
   updateLockState();
-  setStatus(`${record.payrollNumber} submitted for approval.`, "success");
+  setPasahodSubmitStatus("Submitting payroll for approval...", "info");
+  Promise.resolve(payrollState.lastSavePromise)
+    .then(saveResult => {
+      console.log("Submit for Approval save result", saveResult);
+      return updatePayrollStatusInWorker(payrollId, statusPayload);
+    })
+    .then(response => {
+      console.log("Submit for Approval update-status response", response);
+      record.status = "For Approval";
+      record.approvalStatus = "Pending";
+      record.paymentStatus = "Unpaid";
+      payrollState.records = payrollState.records.map(item => samePayrollRecord(item, record) ? { ...item, ...record } : item);
+      writeJson(PAYROLL_RECORDS_KEY, payrollState.records);
+      renderPayrollRecordsTable();
+      renderApprovalPaymentCenter();
+      const approvalCount = dedupePayrollRecords(payrollState.records).filter(isMotherApprovalRecord).length;
+      console.log("Submit for Approval final local record status", {
+        payroll_id: payrollId,
+        status: record.status,
+        approvalStatus: record.approvalStatus,
+        paymentStatus: record.paymentStatus
+      });
+      console.log("Submit for Approval approval queue count after refresh", approvalCount);
+      const successMessage = record.payrollNumber
+        ? `Payroll ${record.payrollNumber} submitted for approval.`
+        : "Payroll submitted for approval successfully.";
+      setStatus(successMessage, "success");
+      setPasahodSubmitStatus(successMessage, "success");
+    })
+    .catch(error => {
+      console.error("Submit for Approval failed", error);
+      setStatus("Submit for Approval failed. Please check console/network.", "error");
+      setPasahodSubmitStatus("Submit for Approval failed. Please check console/network.", "error");
+    });
 }
 
 function approvePayroll() {
@@ -872,32 +930,43 @@ function renderCalculationSummary() {
   const totals = payrollState.totals || getEmptyTotals();
   const quickItems = [
     ["Total Trips", totals.totalTrips, "count"],
+    ["Total Budget Released", getCurrentTotalBudgetReleased(totals)],
     ["Total Driver Salary", totals.totalDriverSalary],
     ["Total Helper Salary", totals.totalHelperSalary],
     ["Diesel Total", totals.totalDiesel],
+    ["Total Bali", getCurrentTotalBali(totals)],
     ["Total Allowances", totals.totalDriverAllowance + totals.totalHelperAllowance],
     ["Total Expenses", totals.totalExpenses],
     ["Row Total", totals.totalRowAmount]
   ];
   const pasahodItems = [
-    ["Total Budget Released", totals.totalBudgetReleased],
+    ["Driver Name", $("driver-name")?.value || "-", "text"],
+    ["Helper Name", $("helper-name")?.value || "-", "text"],
+    ["Driver Bali", totals.driverDeduction],
+    ["Helper Bali", totals.helperDeduction],
+    ["Total Bali", getCurrentTotalBali(totals)],
+    ["Total Budget Released", getCurrentTotalBudgetReleased(totals)],
     ["Total Expenses", totals.totalExpenses],
-    ["Remaining Balance", totals.budgetDifference],
-    ["Suggested Driver Deduction", totals.suggestedDriverDeduction || 0],
-    ["Suggested Helper Deduction", totals.suggestedHelperDeduction || 0],
-    ["Suggested Deduction Total", (totals.suggestedDriverDeduction || 0) + (totals.suggestedHelperDeduction || 0)],
-    ["Driver Net Pay", totals.driverNetPay],
-    ["Helper Net Pay", totals.helperNetPay]
+    ["Total Payable", parseNumber(totals.driverNetPay) + parseNumber(totals.helperNetPay)]
   ];
   const renderItems = items => items.map(([label, value, kind]) => `
     <div class="payroll-stat">
       <span>${escapeHtml(label)}</span>
-      <strong>${kind === "count" ? escapeHtml(String(value || 0)) : formatCurrency(value)}</strong>
+      <strong>${kind === "count" || kind === "text" ? escapeHtml(String(value || (kind === "text" ? "-" : 0))) : formatCurrency(value)}</strong>
     </div>
   `).join("");
   $("calculation-summary").innerHTML = renderItems(quickItems);
   const pasahodBudgetSummary = $("pasahod-budget-summary");
   if (pasahodBudgetSummary) pasahodBudgetSummary.innerHTML = renderItems(pasahodItems);
+}
+
+function getCurrentTotalBali(totals = payrollState.totals || getEmptyTotals()) {
+  return parseNumber(totals.driverDeduction) + parseNumber(totals.helperDeduction);
+}
+
+function getCurrentTotalBudgetReleased(totals = payrollState.totals || getEmptyTotals()) {
+  return parseNumber(totals.totalBudgetReleased) ||
+    (parseNumber(totals.totalExpenses) + parseNumber(totals.driverNetPay) + parseNumber(totals.helperNetPay));
 }
 
 function renderDriverHelperSummary() {
@@ -916,6 +985,8 @@ function renderDriverHelperSummary() {
   setText("helper-suggested-deduction", formatCurrency(totals.suggestedHelperDeduction || 0));
   setText("helper-total-deductions", formatCurrency(totals.helperDeduction));
   setText("helper-net-pay", formatCurrency(totals.helperNetPay));
+  setText("driver-summary-name", $("driver-name")?.value ? `— ${$("driver-name").value}` : "");
+  setText("helper-summary-name", $("helper-name")?.value ? `— ${$("helper-name").value}` : "");
   renderPayrollTripEarningsBreakdown();
 }
 
@@ -1537,6 +1608,7 @@ function renderPayrollRecordsTable() {
       : `Showing ${rows.length} saved payroll records.`;
   }
   renderForApprovalQueue();
+  renderApprovalPaymentCenter();
 }
 
 function dedupePayrollRecords(records = []) {
@@ -1591,6 +1663,8 @@ function renderPayrollDetailsModal(record = {}, lines = []) {
       ${approvalDetailItem("Helper Net Pay", formatCurrency(totals.helperNetPay))}
       ${approvalDetailItem("Driver Bali", `${formatCurrency(totals.driverBaliBalance)}${totals.driverBaliRecorded ? "" : " / No recorded bali"}`)}
       ${approvalDetailItem("Helper Bali", `${formatCurrency(totals.helperBaliBalance)}${totals.helperBaliRecorded ? "" : " / No recorded bali"}`)}
+      ${approvalDetailItem("Total Bali", formatCurrency(totals.totalBali))}
+      ${approvalDetailItem("Total Budget Released", formatCurrency(totals.totalBudgetReleased))}
       ${approvalDetailItem("Total Payable", formatCurrency(totals.totalSalaryPayable))}
     </div>
     <div class="payroll-detail-tabs" role="tablist" aria-label="Payroll detail sections">
@@ -1747,15 +1821,15 @@ function getPayrollDetailTotals(record = {}, lines = []) {
   const driverBali = payrollDetailNumberWithMeta(record, "driverBaliBalance",
     "driver_bali", "driver_balance", "driver_deduction", "driver_deductions",
     "driver_cash_advance", "driver_ca", "driver_loan", "driver_balance_amount",
-    "driver_cash_advance_balance", "driver_previous_balance"
+    "driver_cash_advance_balance", "driver_previous_balance", "driver_total_deductions"
   );
   const helperBali = payrollDetailNumberWithMeta(record, "helperBaliBalance",
     "helper_bali", "helper_balance", "helper_deduction", "helper_deductions",
     "helper_cash_advance", "helper_ca", "helper_loan", "helper_balance_amount",
-    "helper_cash_advance_balance", "helper_previous_balance"
+    "helper_cash_advance_balance", "helper_previous_balance", "helper_total_deductions"
   );
   const detailTotals = {
-    totalBudgetReleased: payrollDetailNumber(record, "totalBudgetReleased", "total_budget_released", "total_trip_budget", "total_released"),
+    totalBudgetReleased: payrollDetailNumber(record, "totalBudgetReleased", "total_budget_released", "total_budget", "budget_released", "total_trip_budget", "total_released"),
     totalExpenses: payrollDetailNumber(record, "totalExpenses", "total_expenses") || sumPayrollLineTotal(lines, getLineExpenseTotalForDetails),
     totalDriverSalary: payrollDetailNumber(record, "totalDriverSalary", "driver_salary", "driver_gross") || sumPayrollLineTotal(lines, line => line.driverSalary),
     totalHelperSalary: payrollDetailNumber(record, "totalHelperSalary", "helper_salary", "helper_gross") || sumPayrollLineTotal(lines, line => line.helperSalary),
@@ -1773,6 +1847,10 @@ function getPayrollDetailTotals(record = {}, lines = []) {
   };
   if (!detailTotals.totalSalaryPayable) {
     detailTotals.totalSalaryPayable = detailTotals.driverNetPay + detailTotals.helperNetPay;
+  }
+  detailTotals.totalBali = detailTotals.driverBaliBalance + detailTotals.helperBaliBalance;
+  if (!detailTotals.totalBudgetReleased) {
+    detailTotals.totalBudgetReleased = detailTotals.totalExpenses + detailTotals.driverNetPay + detailTotals.helperNetPay;
   }
   return detailTotals;
 }
@@ -3025,6 +3103,238 @@ function bindSpreadsheetCells() {
   });
 }
 
+function renderApprovalPaymentCenter() {
+  const motherBody = $("mother-approval-records-body");
+  const sisterBody = $("sister-payment-records-body");
+  if (!motherBody && !sisterBody) return;
+  const records = dedupePayrollRecords(payrollState.records);
+  const motherRows = records.filter(isMotherApprovalRecord);
+  const sisterRows = records.filter(isSisterPaymentRecord);
+
+  if (motherBody) {
+    motherBody.innerHTML = motherRows.length ? motherRows.map(record => {
+      const totals = getPayrollDetailTotals(record, record.lines || []);
+      return `
+        <tr class="approval-center-row" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}" data-review-mode="approval" tabindex="0">
+          <td>${escapeHtml(record.payrollNumber || record.id)}</td>
+          <td>${escapeHtml(record.payrollDate || "")}</td>
+          <td>${escapeHtml(record.plateNumber || "")}</td>
+          <td>${escapeHtml(record.driverName || "")}</td>
+          <td>${escapeHtml(record.helperName || "")}</td>
+          <td>${escapeHtml(record.groupCategory || "")}</td>
+          <td>${formatCurrency(totals.totalExpenses)}</td>
+          <td>${formatCurrency(totals.driverNetPay)}</td>
+          <td>${formatCurrency(totals.helperNetPay)}</td>
+          <td>${formatCurrency(totals.totalBali)}</td>
+          <td>${formatCurrency(totals.totalBudgetReleased)}</td>
+          <td>${formatCurrency(totals.totalSalaryPayable)}</td>
+          <td>${statusBadge(getSavedPayrollDisplayStatus(record))}</td>
+          <td>${statusBadge(record.approvalStatus || record.approval_status || "Pending")}</td>
+          <td>${statusBadge(record.paymentStatus || record.payment_status || "Unpaid")}</td>
+        </tr>
+      `;
+    }).join("") : `<tr><td colspan="15" class="empty-table">No payroll records waiting for mother approval.</td></tr>`;
+  }
+
+  if (sisterBody) {
+    sisterBody.innerHTML = sisterRows.length ? sisterRows.map(record => {
+      const totals = getPayrollDetailTotals(record, record.lines || []);
+      return `
+        <tr class="approval-center-row" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}" data-review-mode="payment" tabindex="0">
+          <td>${escapeHtml(record.payrollNumber || record.id)}</td>
+          <td>${escapeHtml(record.payrollDate || "")}</td>
+          <td>${escapeHtml(record.plateNumber || "")}</td>
+          <td>${escapeHtml(record.driverName || "")}</td>
+          <td>${escapeHtml(record.helperName || "")}</td>
+          <td>${escapeHtml(record.groupCategory || "")}</td>
+          <td>${formatCurrency(totals.driverNetPay)}</td>
+          <td>${formatCurrency(totals.helperNetPay)}</td>
+          <td>${formatCurrency(totals.totalBali)}</td>
+          <td>${formatCurrency(totals.totalBudgetReleased)}</td>
+          <td>${formatCurrency(totals.totalSalaryPayable)}</td>
+          <td>${statusBadge(record.paymentStatus || record.payment_status || "Unpaid")}</td>
+          <td>${escapeHtml(record.approval?.paymentDate || record.paymentDate || "")}</td>
+          <td>${escapeHtml(record.approval?.paymentReference || record.paymentReference || "")}</td>
+        </tr>
+      `;
+    }).join("") : `<tr><td colspan="14" class="empty-table">No approved unpaid payroll records waiting for payment.</td></tr>`;
+  }
+
+  document.querySelectorAll(".approval-center-row").forEach(row => {
+    row.addEventListener("click", () => showApprovalPaymentReview(row.dataset.payrollId, row.dataset.reviewMode));
+    row.addEventListener("keydown", event => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      showApprovalPaymentReview(row.dataset.payrollId, row.dataset.reviewMode);
+    });
+  });
+}
+
+function isMotherApprovalRecord(record = {}) {
+  const status = normalize(record.status || "");
+  const approval = normalize(record.approvalStatus || record.approval_status || "");
+  const payment = normalize(record.paymentStatus || record.payment_status || "Unpaid");
+  return payment !== "paid" && (status === "for approval" || approval === "pending" || approval === "for approval");
+}
+
+function isSisterPaymentRecord(record = {}) {
+  const status = normalize(record.status || "");
+  const approval = normalize(record.approvalStatus || record.approval_status || "");
+  const payment = normalize(record.paymentStatus || record.payment_status || "Unpaid");
+  return payment === "unpaid" && (status === "approved" || approval === "approved");
+}
+
+async function showApprovalPaymentReview(payrollId, mode = "approval") {
+  const record = findPayrollRecordByLookupId(payrollId);
+  const panel = $("payroll-details-panel");
+  const content = $("payroll-details-content");
+  if (!record || !panel || !content) return;
+  content.innerHTML = `<div class="detail-block"><p class="payroll-info-note" style="margin:0">Loading payroll review...</p></div>`;
+  panel.hidden = false;
+  const lines = await loadPayrollTripLinesForRecord(record, { updateEditor: false });
+  content.innerHTML = renderApprovalPaymentReview(record, lines, mode);
+  bindApprovalPaymentReviewActions(content, record, mode);
+}
+
+function renderApprovalPaymentReview(record = {}, lines = [], mode = "approval") {
+  const totals = getPayrollDetailTotals(record, lines);
+  const footer = mode === "payment" ? `
+    <div class="approval-payment-fields">
+      <label><span>Payment Reference</span><input id="review-payment-reference" type="text" value="${escapeAttr(record.approval?.paymentReference || record.paymentReference || "")}"></label>
+      <label><span>Payment Date</span><input id="review-payment-date" type="date" value="${escapeAttr(record.approval?.paymentDate || record.paymentDate || new Date().toISOString().slice(0, 10))}"></label>
+      <label class="wide-field"><span>Payment Notes</span><textarea id="review-payment-notes" rows="2">${escapeHtml(record.approval?.paymentNotes || "")}</textarea></label>
+    </div>
+    <div class="payroll-details-footer">
+      <button type="button" data-approval-center-action="paid">Mark as Paid</button>
+      <button type="button" data-approval-center-action="close">Close</button>
+    </div>
+  ` : `
+    <div class="approval-payment-fields">
+      <label><span>Approver Name</span><input id="review-approver-name" type="text" value="${escapeAttr(record.approval?.approverName || "Mother")}"></label>
+      <label class="wide-field"><span>Approval / Revision Notes</span><textarea id="review-approval-notes" rows="2">${escapeHtml(record.approval?.approvalNotes || record.approval?.revisionReason || "")}</textarea></label>
+    </div>
+    <div class="payroll-details-footer">
+      <button type="button" data-approval-center-action="approve">Approve</button>
+      <button type="button" data-approval-center-action="return">Return for Revision</button>
+      <button type="button" data-approval-center-action="reject" class="danger-outline">Reject</button>
+      <button type="button" data-approval-center-action="close">Close</button>
+    </div>
+  `;
+  return `
+    <div class="detail-block approval-detail-grid payroll-details-summary-grid">
+      ${approvalDetailItem("Payroll ID", record.payrollNumber || record.id)}
+      ${approvalDetailItem("Plate Number", record.plateNumber)}
+      ${approvalDetailItem("Driver", record.driverName)}
+      ${approvalDetailItem("Helper", record.helperName)}
+      ${approvalDetailItem("Group", record.groupCategory)}
+      ${approvalDetailItem("Payroll Date", record.payrollDate)}
+      ${approvalDetailItem("Status", getSavedPayrollDisplayStatus(record))}
+      ${approvalDetailItem("Approval Status", record.approvalStatus || record.approval_status || "")}
+      ${approvalDetailItem("Payment Status", record.paymentStatus || record.payment_status || "Unpaid")}
+      ${approvalDetailItem("Total Expenses", formatCurrency(totals.totalExpenses))}
+      ${approvalDetailItem("Driver Net Pay", formatCurrency(totals.driverNetPay))}
+      ${approvalDetailItem("Helper Net Pay", formatCurrency(totals.helperNetPay))}
+      ${approvalDetailItem("Total Bali", formatCurrency(totals.totalBali))}
+      ${approvalDetailItem("Total Budget Released", formatCurrency(totals.totalBudgetReleased))}
+      ${approvalDetailItem("Total Payable", formatCurrency(totals.totalSalaryPayable))}
+    </div>
+    <div class="payroll-detail-tabs" role="tablist" aria-label="Payroll review sections">
+      <button type="button" class="payroll-detail-tab-button active" data-detail-tab="trip-lines" role="tab" aria-selected="true">Trip Lines / Budget</button>
+      <button type="button" class="payroll-detail-tab-button" data-detail-tab="salary-summary" role="tab" aria-selected="false">Salary Summary</button>
+    </div>
+    <section class="payroll-detail-tab-panel active" data-detail-panel="trip-lines" role="tabpanel">
+      ${renderPayrollRouteBreakdownForDetails(lines)}
+      ${renderPayrollTripLineDetailsTable(lines)}
+    </section>
+    <section class="payroll-detail-tab-panel" data-detail-panel="salary-summary" role="tabpanel" hidden>
+      ${renderPayrollSalarySummary(record, totals, getPayrollCoverage(record), record.paymentStatus || "Unpaid")}
+    </section>
+    ${footer}
+  `;
+}
+
+function bindApprovalPaymentReviewActions(content, record, mode) {
+  bindPayrollDetailsModalActions(content);
+  content.querySelectorAll("[data-approval-center-action]").forEach(button => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.approvalCenterAction;
+      if (action === "close") {
+        closePayrollDetails();
+      } else if (action === "approve") {
+        updateApprovalPaymentStatus(record, {
+          status: "Approved",
+          approval_status: "Approved",
+          payment_status: "Unpaid",
+          approved_by: $("review-approver-name")?.value || "Mother",
+          approved_at: new Date().toISOString()
+        }, {
+          approverName: $("review-approver-name")?.value || "Mother",
+          approvalNotes: $("review-approval-notes")?.value || ""
+        });
+      } else if (action === "return") {
+        updateApprovalPaymentStatus(record, {
+          status: "Returned",
+          approval_status: "Returned",
+          payment_status: "Unpaid"
+        }, {
+          approvalNotes: $("review-approval-notes")?.value || "",
+          revisionReason: $("review-approval-notes")?.value || ""
+        });
+      } else if (action === "reject") {
+        updateApprovalPaymentStatus(record, {
+          status: "Rejected",
+          approval_status: "Rejected",
+          payment_status: "Unpaid"
+        }, {
+          approvalNotes: $("review-approval-notes")?.value || "",
+          revisionReason: $("review-approval-notes")?.value || ""
+        });
+      } else if (action === "paid") {
+        updateApprovalPaymentStatus(record, {
+          status: "Paid",
+          approval_status: "Approved",
+          payment_status: "Paid",
+          deposited_at: $("review-payment-date")?.value || new Date().toISOString().slice(0, 10)
+        }, {
+          paymentReference: $("review-payment-reference")?.value || "",
+          paymentDate: $("review-payment-date")?.value || new Date().toISOString().slice(0, 10),
+          paymentNotes: $("review-payment-notes")?.value || ""
+        });
+      }
+    });
+  });
+}
+
+function updateApprovalPaymentStatus(record, statusData, approvalPatch = {}) {
+  const payrollId = record.payrollNumber || record.payroll_id || record.payrollId || record.id;
+  if (!payrollId) return;
+  setStatus("Updating payroll status...", "info");
+  updatePayrollStatusInWorker(payrollId, statusData)
+    .then(result => {
+      const updated = normalizeSupabasePayrollRecord(result.record || {});
+      payrollState.records = payrollState.records.map(item => {
+        if (!samePayrollRecord(item, record) && payrollIdentity(item) !== payrollIdentity(updated)) return item;
+        return {
+          ...item,
+          ...updated,
+          id: item.id || updated.id,
+          payrollNumber: item.payrollNumber || updated.payrollNumber,
+          approval: { ...(item.approval || {}), ...(updated.approval || {}), ...approvalPatch },
+          paymentReference: approvalPatch.paymentReference || item.paymentReference || "",
+          paymentDate: approvalPatch.paymentDate || item.paymentDate || ""
+        };
+      });
+      writeJson(PAYROLL_RECORDS_KEY, payrollState.records);
+      renderPayrollRecordsTable();
+      closePayrollDetails();
+      setStatus("Payroll status updated.", "success");
+    })
+    .catch(error => {
+      console.warn("Payroll status update failed", error);
+      setStatus("Payroll status update failed. Please try again.", "error");
+    });
+}
+
 document.addEventListener("mouseup", () => {
   payrollState.isSelectingSheetRange = false;
 });
@@ -3387,6 +3697,9 @@ function buildPayrollRecord(existing = {}) {
     status,
     approvalStatus: mapPayrollToApprovalStatus(status, existing.approvalStatus),
     paymentStatus: ["Draft", "For Approval"].includes(status) ? "Unpaid" : (existing.paymentStatus || "Unpaid"),
+    total_bali: getCurrentTotalBali(totals),
+    total_budget_released: getCurrentTotalBudgetReleased(totals),
+    total_payable: parseNumber(totals.driverNetPay) + parseNumber(totals.helperNetPay),
     ...deductionFieldsForSave,
     remarks: $("general-remarks").value.trim(),
     lines: payrollState.lines.filter(line => !isLineBlank(line)),
@@ -3636,6 +3949,13 @@ function setStatus(message, type = "info") {
   target.className = `payroll-status-line ${type}`;
 }
 
+function setPasahodSubmitStatus(message, type = "info") {
+  const target = $("pasahod-submit-status");
+  if (!target) return;
+  target.textContent = message;
+  target.className = `payroll-status-line ${type}`;
+}
+
 function formatDateTime(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -3719,6 +4039,9 @@ async function savePayrollToSupabase(record) {
       driver_allowance: totals.totalDriverAllowance || 0,
       helper_allowance: totals.totalHelperAllowance || 0,
       total_expenses: totals.totalExpenses || 0,
+      total_budget_released: record.total_budget_released || getCurrentTotalBudgetReleased(totals),
+      total_bali: record.total_bali || getCurrentTotalBali(totals),
+      total_payable: record.total_payable || (parseNumber(totals.driverNetPay) + parseNumber(totals.helperNetPay)),
       driver_cash_advance: record.driver_cash_advance || 0,
       helper_cash_advance: record.helper_cash_advance || 0,
       driver_net_pay: totals.driverNetPay || 0,
