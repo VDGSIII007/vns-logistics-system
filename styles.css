@@ -597,15 +597,181 @@ body.payroll-page{
   width:min(1120px,94vw);
 }
 .payroll-details-modal .record-details-card{
-  width:min(1280px,96vw);
-  max-height:88vh;
+  width:95vw;
+  height:min(90vh,980px);
+  max-height:90vh;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  box-sizing:border-box;
+}
+.payroll-details-modal .record-details-header{
+  flex:0 0 auto;
+  min-height:44px;
+  padding:6px 12px;
+  background:#fff;
+  border-bottom:1px solid var(--line);
+  box-sizing:border-box;
+}
+.payroll-details-modal .record-details-header h2{
+  font-size:1rem;
+  line-height:1.1;
+}
+.payroll-details-modal .details-close{
+  min-height:30px;
+  padding:5px 10px;
+  font-size:.76rem;
+  background:#fff7f7;
+  border-color:#fecaca;
+  border-radius:6px;
+}
+.payroll-details-modal .record-details-content{
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  justify-content:flex-start;
+  flex:1 1 auto;
+  min-height:0;
+  overflow:auto;
+  padding:10px 12px;
+  gap:0;
+  box-sizing:border-box;
+  max-width:100%;
+}
+.payroll-details-modal .detail-block{
+  border-radius:8px;
+  padding:8px 10px;
+  max-width:100%;
+  box-sizing:border-box;
+}
+.payroll-details-modal .payroll-detail-tab-panel > .detail-block{
+  border:0;
+  border-radius:0;
+  padding:0;
+  background:transparent;
+}
+.payroll-details-modal .approval-detail-grid{
+  grid-template-columns:repeat(7,minmax(130px,1fr));
+}
+.payroll-details-modal .payroll-details-summary-grid{
+  grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+  gap:8px 14px;
+  align-items:start;
+  padding:10px 12px;
+  border-radius:8px;
+  background:#fff;
+  margin:0;
+}
+.payroll-details-modal .approval-detail-item{
+  gap:3px;
+  min-height:0;
+}
+.payroll-details-modal .approval-detail-item span{
+  font-size:.68rem;
+  line-height:1.1;
+  letter-spacing:.035em;
+}
+.payroll-details-modal .approval-detail-item strong{
+  font-size:.8rem;
+  line-height:1.2;
 }
 .payroll-details-table-wrap{
-  max-height:56vh;
+  max-height:58vh;
   overflow:auto;
+  border-radius:8px;
+  max-width:100%;
+  box-sizing:border-box;
 }
 .payroll-record-details-table{
-  min-width:3100px;
+  min-width:3350px;
+  font-size:.8rem;
+  border-collapse:separate;
+  border-spacing:0;
+}
+.payroll-route-review-wrap{
+  max-width:100%;
+  overflow:auto;
+  border:1px solid var(--line);
+  border-radius:8px;
+  margin-bottom:8px;
+  background:#fff;
+}
+.payroll-route-review-table{
+  width:100%;
+  min-width:1180px;
+  border-collapse:separate;
+  border-spacing:0;
+  font-size:.78rem;
+}
+.payroll-route-review-table th,
+.payroll-route-review-table td{
+  padding:6px 8px;
+  border-bottom:1px solid #eef0f3;
+  text-align:left;
+  white-space:nowrap;
+}
+.payroll-route-review-table th{
+  position:sticky;
+  top:0;
+  z-index:3;
+  background:#f9fafb;
+  font-size:.72rem;
+  font-weight:900;
+}
+.payroll-route-review-table td:nth-child(n+2),
+.payroll-route-review-table th:nth-child(n+2){
+  text-align:right;
+}
+.payroll-record-details-table th,
+.payroll-record-details-table td{
+  padding:6px 8px;
+  line-height:1.2;
+  white-space:nowrap;
+  background:#fff;
+}
+.payroll-record-details-table th{
+  position:sticky;
+  top:0;
+  z-index:8;
+  background:#f9fafb;
+  font-size:.74rem;
+}
+.payroll-record-details-table th:nth-child(1),
+.payroll-record-details-table td:nth-child(1){
+  position:sticky;
+  left:0;
+  z-index:9;
+  min-width:132px;
+  background:#fff;
+  box-shadow:1px 0 0 #e5e7eb;
+}
+.payroll-record-details-table th:nth-child(2),
+.payroll-record-details-table td:nth-child(2){
+  position:sticky;
+  left:132px;
+  z-index:9;
+  min-width:170px;
+  background:#fff;
+  box-shadow:1px 0 0 #e5e7eb;
+}
+.payroll-record-details-table th:nth-child(3),
+.payroll-record-details-table td:nth-child(3){
+  position:sticky;
+  left:302px;
+  z-index:9;
+  min-width:180px;
+  background:#fff;
+  box-shadow:2px 0 5px rgba(17,24,39,.08);
+}
+.payroll-record-details-table th:nth-child(-n+3){
+  z-index:12;
+  background:#f9fafb;
+}
+.payroll-record-details-table tbody tr:hover td{
+  background:#fff7f7;
+}
+.payroll-record-details-table tbody tr:hover td:nth-child(-n+3){
+  background:#fff7f7;
 }
 .payroll-saved-record-row{
   cursor:pointer;
@@ -618,24 +784,199 @@ body.payroll-page{
   outline:2px solid rgba(215,25,32,.35);
   outline-offset:-2px;
 }
-.payroll-details-footer{
+.payroll-detail-tabs{
   display:flex;
-  justify-content:flex-end;
-  gap:8px;
   flex-wrap:wrap;
-  border-top:1px solid var(--line);
-  padding-top:14px;
+  gap:4px;
+  border-bottom:1px solid var(--line);
+  padding:0;
+  margin:8px 0 8px;
+  justify-content:flex-start;
 }
-.payroll-details-footer button{
+.payroll-detail-tab-button{
   border:1px solid var(--line);
   background:#fff;
-  color:var(--red);
-  border-radius:999px;
-  padding:8px 12px;
+  color:var(--muted);
+  border-radius:8px 8px 0 0;
+  height:36px;
+  min-height:0;
+  padding:6px 12px;
   font:inherit;
-  font-size:.78rem;
+  font-size:.82rem;
   font-weight:900;
   cursor:pointer;
+}
+.payroll-detail-tab-button.active{
+  background:var(--red);
+  border-color:var(--red);
+  color:#fff;
+}
+.payroll-detail-tab-panel{
+  display:block;
+  margin:0;
+  padding:0;
+  max-width:100%;
+  min-width:0;
+}
+.payroll-detail-tab-panel[hidden]{
+  display:none;
+}
+.payroll-detail-tab-panel.active{
+  display:block;
+}
+.payroll-details-budget-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(118px,1fr));
+  gap:3px;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  overflow:hidden;
+  box-sizing:border-box;
+}
+.payroll-details-budget-card,
+.payroll-salary-summary-table{
+  border:1px solid var(--line);
+  border-radius:8px;
+  background:#fff;
+  padding:10px 12px;
+  box-shadow:none;
+  min-width:0;
+  box-sizing:border-box;
+}
+.payroll-details-budget-card{
+  display:grid;
+  gap:1px;
+  min-width:0;
+}
+.payroll-details-budget-card span,
+.payroll-salary-summary-table th{
+  color:var(--muted);
+  font-size:.76rem;
+  font-weight:800;
+}
+.payroll-details-budget-card strong{
+  color:var(--ink);
+  font-size:.78rem;
+  line-height:1.08;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.payroll-details-budget-card small,
+.payroll-salary-summary-table small{
+  display:block;
+  margin-top:1px;
+  color:#9f1239;
+  font-size:.68rem;
+  font-weight:800;
+  line-height:1.05;
+}
+.payroll-salary-summary-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(260px,1fr));
+  gap:14px;
+  max-width:100%;
+  min-width:0;
+  margin:0;
+  align-items:start;
+}
+.payroll-salary-summary-table.wide{
+  grid-column:1/-1;
+}
+.payroll-salary-summary-table h3{
+  margin:0 0 8px;
+  font-size:.98rem;
+  line-height:1.2;
+}
+.payroll-salary-summary-table table{
+  width:100%;
+  border-collapse:collapse;
+  table-layout:fixed;
+}
+.payroll-salary-summary-table th,
+.payroll-salary-summary-table td{
+  border-top:1px solid #f1f5f9;
+  padding:6px 8px;
+  vertical-align:top;
+  line-height:1.2;
+}
+.payroll-salary-summary-table th{
+  width:42%;
+  text-align:left;
+}
+.payroll-salary-summary-table td{
+  text-align:right;
+  color:var(--ink);
+  font-size:.84rem;
+  font-weight:900;
+  overflow-wrap:anywhere;
+}
+.payroll-details-footer{
+  position:sticky;
+  bottom:0;
+  background:#fff;
+  display:flex !important;
+  justify-content:flex-end !important;
+  align-items:center !important;
+  gap:8px !important;
+  flex-wrap:nowrap !important;
+  border-top:1px solid var(--line);
+  min-height:0 !important;
+  height:44px !important;
+  padding:6px 12px !important;
+  box-sizing:border-box;
+  margin:0;
+}
+.payroll-details-modal .payroll-details-footer button{
+  width:auto !important;
+  min-width:0 !important;
+  max-width:none !important;
+  height:34px !important;
+  min-height:0 !important;
+  max-height:38px !important;
+  padding:6px 14px !important;
+  border:1px solid var(--line) !important;
+  border-radius:10px !important;
+  background:#fff !important;
+  color:var(--red) !important;
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  flex:0 0 auto !important;
+  font:inherit !important;
+  font-size:.8rem !important;
+  line-height:1 !important;
+  font-weight:900 !important;
+  cursor:pointer;
+  white-space:nowrap !important;
+  box-shadow:none !important;
+  text-align:center;
+}
+.payroll-details-modal .payroll-details-footer button.danger-outline{
+  border-color:#ef4444 !important;
+  color:#dc2626 !important;
+}
+@media (max-width:760px){
+  .payroll-details-modal .record-details-card{
+    width:96vw;
+    height:90vh;
+  }
+  .payroll-details-modal .record-details-content{
+    padding:14px;
+  }
+  .payroll-salary-summary-grid{
+    grid-template-columns:1fr;
+  }
+  .payroll-salary-summary-table.wide{
+    grid-column:auto;
+  }
+  .payroll-salary-summary-table th,
+  .payroll-salary-summary-table td{
+    display:block;
+    width:100%;
+    text-align:left;
+  }
 }
 .approval-detail-grid,
 .approval-totals-grid{
@@ -4051,8 +4392,9 @@ body.payroll-page{
   text-transform:uppercase;
   letter-spacing:.05em;
 }
-.payroll-trip-breakdown-table td:nth-child(n+4),
-.payroll-trip-breakdown-table tfoot td:nth-child(n+4){
+.payroll-trip-breakdown-table td:nth-child(n+2),
+.payroll-trip-breakdown-table th:nth-child(n+2),
+.payroll-trip-breakdown-table tfoot td:nth-child(n+2){
   text-align:right;
 }
 .payroll-trip-breakdown-table tbody tr:hover td{

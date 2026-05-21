@@ -139,6 +139,9 @@ function bindPayrollEvents() {
   });
   $("new-payroll-button").addEventListener("click", newPayroll);
   $("save-draft-button").addEventListener("click", savePayrollDraft);
+  if ($("pasahod-save-draft-button")) $("pasahod-save-draft-button").addEventListener("click", savePayrollDraft);
+  if ($("review-pasahod-button")) $("review-pasahod-button").addEventListener("click", reviewPasahodSummary);
+  if ($("back-to-trip-lines-button")) $("back-to-trip-lines-button").addEventListener("click", backToTripLines);
   $("submit-payroll-button").addEventListener("click", submitPayrollForApproval);
   $("clear-form-button").addEventListener("click", newPayroll);
   $("add-line-button").addEventListener("click", () => addPayrollLine());
@@ -629,6 +632,19 @@ function savePayrollDraft() {
   return record;
 }
 
+function reviewPasahodSummary() {
+  calculatePayroll({ showWarnings: true });
+  switchPayrollTab("pasahod-summary-tab");
+  $("pasahod-summary-tab")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  setStatus("Review the Pasahod Summary before saving or submitting for approval.", "info");
+}
+
+function backToTripLines() {
+  calculatePayroll();
+  switchPayrollTab("encode-payroll-tab");
+  $("encode-payroll-tab")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function submitPayrollForApproval() {
   payrollState.hasSubmittedPayroll = true;
   const headerWarnings = validatePayrollHeader();
@@ -906,25 +922,7 @@ function renderDriverHelperSummary() {
 function renderPayrollTripEarningsBreakdown() {
   const target = $("payroll-trip-earnings-breakdown");
   if (!target) return;
-  const rows = payrollState.lines
-    .filter(line => !isLineBlank(line))
-    .map(line => {
-      const driverSalary = parseNumber(line.driverSalary);
-      const driverAllowance = parseNumber(line.driverAllowance);
-      const helperSalary = parseNumber(line.helperSalary);
-      const helperAllowance = parseNumber(line.helperAllowance);
-      return {
-        tripDate: line.tripDate || "",
-        route: formatPayrollRoute(line),
-        referenceNo: line.referenceNo || line.ref || "",
-        driverSalary,
-        driverAllowance,
-        driverTotal: driverSalary + driverAllowance,
-        helperSalary,
-        helperAllowance,
-        helperTotal: helperSalary + helperAllowance
-      };
-    });
+  const rows = buildPayrollRouteBreakdown(payrollState.lines);
 
   if (!rows.length) {
     target.innerHTML = '<p class="payroll-trip-empty">No trip earnings yet. Add trip lines in Encode Payroll / Pasahod 2.</p>';
@@ -932,20 +930,26 @@ function renderPayrollTripEarningsBreakdown() {
   }
 
   const totals = rows.reduce((sum, row) => {
+    sum.tripCount += row.tripCount;
     sum.driverSalary += row.driverSalary;
     sum.driverAllowance += row.driverAllowance;
-    sum.driverTotal += row.driverTotal;
     sum.helperSalary += row.helperSalary;
     sum.helperAllowance += row.helperAllowance;
-    sum.helperTotal += row.helperTotal;
+    sum.diesel += row.diesel;
+    sum.toll += row.toll;
+    sum.otherExpenses += row.otherExpenses;
+    sum.routeExpenses += row.routeExpenses;
     return sum;
   }, {
+    tripCount: 0,
     driverSalary: 0,
     driverAllowance: 0,
-    driverTotal: 0,
     helperSalary: 0,
     helperAllowance: 0,
-    helperTotal: 0
+    diesel: 0,
+    toll: 0,
+    otherExpenses: 0,
+    routeExpenses: 0
   });
 
   target.innerHTML = `
@@ -953,41 +957,46 @@ function renderPayrollTripEarningsBreakdown() {
       <table class="payroll-trip-breakdown-table">
         <thead>
           <tr>
-            <th>Date</th>
             <th>Route</th>
-            <th>Reference No.</th>
-            <th>Driver Salary</th>
-            <th>Driver Allowance</th>
-            <th>Driver Total</th>
-            <th>Helper Salary</th>
-            <th>Helper Allowance</th>
-            <th>Helper Total</th>
+            <th>Trips</th>
+            <th>Driver Salary Total</th>
+            <th>Helper Salary Total</th>
+            <th>Driver Allowance Total</th>
+            <th>Helper Allowance Total</th>
+            <th>Diesel Total</th>
+            <th>Toll Total</th>
+            <th>Other Expenses Total</th>
+            <th>Total Route Expenses</th>
           </tr>
         </thead>
         <tbody>
           ${rows.map(row => `
             <tr>
-              <td data-label="Date">${escapeHtml(formatPayrollTripDate(row.tripDate))}</td>
               <td data-label="Route">${escapeHtml(row.route)}</td>
-              <td data-label="Reference No.">${escapeHtml(row.referenceNo || "-")}</td>
-              <td data-label="Driver Salary">${formatCurrency(row.driverSalary)}</td>
-              <td data-label="Driver Allowance">${formatCurrency(row.driverAllowance)}</td>
-              <td data-label="Driver Total"><strong>${formatCurrency(row.driverTotal)}</strong></td>
-              <td data-label="Helper Salary">${formatCurrency(row.helperSalary)}</td>
-              <td data-label="Helper Allowance">${formatCurrency(row.helperAllowance)}</td>
-              <td data-label="Helper Total"><strong>${formatCurrency(row.helperTotal)}</strong></td>
+              <td data-label="Trips">${escapeHtml(String(row.tripCount))}</td>
+              <td data-label="Driver Salary Total">${formatCurrency(row.driverSalary)}</td>
+              <td data-label="Helper Salary Total">${formatCurrency(row.helperSalary)}</td>
+              <td data-label="Driver Allowance Total">${formatCurrency(row.driverAllowance)}</td>
+              <td data-label="Helper Allowance Total">${formatCurrency(row.helperAllowance)}</td>
+              <td data-label="Diesel Total">${formatCurrency(row.diesel)}</td>
+              <td data-label="Toll Total">${formatCurrency(row.toll)}</td>
+              <td data-label="Other Expenses Total">${formatCurrency(row.otherExpenses)}</td>
+              <td data-label="Total Route Expenses"><strong>${formatCurrency(row.routeExpenses)}</strong></td>
             </tr>
           `).join("")}
         </tbody>
         <tfoot>
           <tr>
-            <td colspan="3">Total</td>
+            <td>Total</td>
+            <td>${escapeHtml(String(totals.tripCount))}</td>
             <td>${formatCurrency(totals.driverSalary)}</td>
-            <td>${formatCurrency(totals.driverAllowance)}</td>
-            <td>${formatCurrency(totals.driverTotal)}</td>
             <td>${formatCurrency(totals.helperSalary)}</td>
+            <td>${formatCurrency(totals.driverAllowance)}</td>
             <td>${formatCurrency(totals.helperAllowance)}</td>
-            <td>${formatCurrency(totals.helperTotal)}</td>
+            <td>${formatCurrency(totals.diesel)}</td>
+            <td>${formatCurrency(totals.toll)}</td>
+            <td>${formatCurrency(totals.otherExpenses)}</td>
+            <td>${formatCurrency(totals.routeExpenses)}</td>
           </tr>
         </tfoot>
       </table>
@@ -995,10 +1004,47 @@ function renderPayrollTripEarningsBreakdown() {
   `;
 }
 
+function buildPayrollRouteBreakdown(lines = []) {
+  const grouped = new Map();
+  (lines || []).filter(line => !isLineBlank(line)).forEach(line => {
+    const route = formatPayrollRoute(line);
+    const tripType = String(line.tripType || "").trim();
+    const key = [normalize(route), normalize(tripType)].join("|");
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        route: tripType ? `${route} (${tripType})` : route,
+        tripCount: 0,
+        driverSalary: 0,
+        helperSalary: 0,
+        driverAllowance: 0,
+        helperAllowance: 0,
+        diesel: 0,
+        toll: 0,
+        otherExpenses: 0,
+        routeExpenses: 0
+      });
+    }
+    const row = grouped.get(key);
+    const otherExpenses = parseNumber(line.passway) + parseNumber(line.parking) + getOtherExpenseTotal(line);
+    row.tripCount += 1;
+    row.driverSalary += parseNumber(line.driverSalary);
+    row.helperSalary += parseNumber(line.helperSalary);
+    row.driverAllowance += parseNumber(line.driverAllowance);
+    row.helperAllowance += parseNumber(line.helperAllowance);
+    row.diesel += parseNumber(line.diesel);
+    row.toll += parseNumber(line.tollFee);
+    row.otherExpenses += otherExpenses;
+    row.routeExpenses += parseNumber(line.driverSalary) + parseNumber(line.helperSalary) +
+      parseNumber(line.driverAllowance) + parseNumber(line.helperAllowance) +
+      parseNumber(line.diesel) + parseNumber(line.tollFee) + otherExpenses;
+  });
+  return [...grouped.values()].sort((a, b) => a.route.localeCompare(b.route));
+}
+
 function formatPayrollRoute(line = {}) {
   const source = String(line.source || "").trim();
   const destination = String(line.destination || "").trim();
-  if (source && destination) return `${source} -> ${destination}`;
+  if (source && destination) return `${source} → ${destination}`;
   return source || destination || "-";
 }
 
@@ -1459,7 +1505,8 @@ function renderPayrollRecordsTable() {
     driver: normalize($("filter-driver").value),
     payrollDate: $("filter-payroll-date").value
   };
-  const rows = payrollState.records.filter(record => {
+  const displayRecords = dedupePayrollRecords(payrollState.records);
+  const rows = displayRecords.filter(record => {
     if (filters.status && getSavedPayrollDisplayStatus(record) !== filters.status) return false;
     if (filters.group && record.groupCategory !== filters.group) return false;
     if (filters.plate && !normalize(record.plateNumber).includes(filters.plate)) return false;
@@ -1482,21 +1529,91 @@ function renderPayrollRecordsTable() {
       <td>${formatCurrency(record.totals?.helperNetPay)}</td>
     </tr>
   `).join("") : `<tr><td colspan="10" class="empty-table">No payroll records yet.</td></tr>`;
+  const localFallbackCount = rows.filter(isLocalFallbackPayrollRecord).length;
+  const statusEl = $("payroll-records-load-status");
+  if (statusEl) {
+    statusEl.textContent = localFallbackCount
+      ? `Showing ${rows.length} saved payroll records, including ${localFallbackCount} local fallback records.`
+      : `Showing ${rows.length} saved payroll records.`;
+  }
   renderForApprovalQueue();
+}
+
+function dedupePayrollRecords(records = []) {
+  const byIdentity = new Map();
+  records.forEach(record => {
+    const identity = payrollIdentity(record);
+    if (!identity) return;
+    const current = byIdentity.get(identity);
+    byIdentity.set(identity, pickPreferredPayrollRecord(current, record));
+  });
+  return [...byIdentity.values()];
+}
+
+function pickPreferredPayrollRecord(current, candidate) {
+  if (!current) return candidate;
+  const currentIsCloud = isSupabasePayrollRecord(current);
+  const candidateIsCloud = isSupabasePayrollRecord(candidate);
+  if (candidateIsCloud && !currentIsCloud) return candidate;
+  if (currentIsCloud && !candidateIsCloud) return current;
+  const currentTime = Date.parse(current.updatedAt || current.createdAt || "") || 0;
+  const candidateTime = Date.parse(candidate.updatedAt || candidate.createdAt || "") || 0;
+  return candidateTime >= currentTime ? candidate : current;
+}
+
+function isSupabasePayrollRecord(record = {}) {
+  return Boolean(record.supabaseId || record.source === "supabase");
+}
+
+function isLocalFallbackPayrollRecord(record = {}) {
+  return !isSupabasePayrollRecord(record);
 }
 
 function renderPayrollDetailsModal(record = {}, lines = []) {
   const payrollId = getPayrollRecordLookupId(record);
+  const coverage = getPayrollCoverage(record);
+  const totals = getPayrollDetailTotals(record, lines);
+  const paymentStatus = record.paymentStatus || record.Payment_Status || record.approval?.paymentStatus || "Unpaid";
   return `
-    <div class="detail-block approval-detail-grid">
+    <div class="detail-block approval-detail-grid payroll-details-summary-grid">
       ${approvalDetailItem("Payroll ID", record.payrollNumber || record.id)}
       ${approvalDetailItem("Plate Number", record.plateNumber)}
       ${approvalDetailItem("Driver", record.driverName)}
       ${approvalDetailItem("Helper", record.helperName)}
       ${approvalDetailItem("Group", record.groupCategory)}
       ${approvalDetailItem("Payroll Date", record.payrollDate)}
+      ${approvalDetailItem("Coverage", coverage.summary)}
       ${approvalDetailItem("Status", getSavedPayrollDisplayStatus(record))}
+      ${approvalDetailItem("Approval Status", record.approvalStatus || getSavedPayrollDisplayStatus(record))}
+      ${approvalDetailItem("Payment Status", paymentStatus)}
+      ${approvalDetailItem("Total Expenses", formatCurrency(totals.totalExpenses))}
+      ${approvalDetailItem("Driver Net Pay", formatCurrency(totals.driverNetPay))}
+      ${approvalDetailItem("Helper Net Pay", formatCurrency(totals.helperNetPay))}
+      ${approvalDetailItem("Driver Bali", `${formatCurrency(totals.driverBaliBalance)}${totals.driverBaliRecorded ? "" : " / No recorded bali"}`)}
+      ${approvalDetailItem("Helper Bali", `${formatCurrency(totals.helperBaliBalance)}${totals.helperBaliRecorded ? "" : " / No recorded bali"}`)}
+      ${approvalDetailItem("Total Payable", formatCurrency(totals.totalSalaryPayable))}
     </div>
+    <div class="payroll-detail-tabs" role="tablist" aria-label="Payroll detail sections">
+      <button type="button" class="payroll-detail-tab-button active" data-detail-tab="trip-lines" role="tab" aria-selected="true">Trip Lines / Budget</button>
+      <button type="button" class="payroll-detail-tab-button" data-detail-tab="salary-summary" role="tab" aria-selected="false">Salary Summary</button>
+    </div>
+    <section class="payroll-detail-tab-panel active" data-detail-panel="trip-lines" role="tabpanel">
+      ${renderPayrollRouteBreakdownForDetails(lines)}
+      ${renderPayrollTripLineDetailsTable(lines)}
+    </section>
+    <section class="payroll-detail-tab-panel" data-detail-panel="salary-summary" role="tabpanel" hidden>
+      ${renderPayrollSalarySummary(record, totals, coverage, paymentStatus)}
+    </section>
+    <div class="payroll-details-footer">
+      <button type="button" data-modal-action="view" data-payroll-id="${escapeAttr(payrollId)}">View/Edit</button>
+      <button type="button" data-modal-action="delete" data-payroll-id="${escapeAttr(payrollId)}" class="danger-outline">Delete</button>
+      <button type="button" data-modal-action="close">Close</button>
+    </div>
+  `;
+}
+
+function renderPayrollTripLineDetailsTable(lines = []) {
+  return `
     <div class="detail-block">
       <div class="payroll-table-wrap payroll-details-table-wrap">
         <table class="payroll-table payroll-record-details-table">
@@ -1509,12 +1626,191 @@ function renderPayrollDetailsModal(record = {}, lines = []) {
         </table>
       </div>
     </div>
-    <div class="payroll-details-footer">
-      <button type="button" data-modal-action="view" data-payroll-id="${escapeAttr(payrollId)}">View/Edit</button>
-      <button type="button" data-modal-action="delete" data-payroll-id="${escapeAttr(payrollId)}" class="danger-outline">Delete</button>
-      <button type="button" data-modal-action="close">Close</button>
+  `;
+}
+
+function renderPayrollRouteBreakdownForDetails(lines = []) {
+  const rows = buildPayrollRouteBreakdown(lines);
+  if (!rows.length) return "";
+  return `
+    <div class="payroll-route-review-wrap">
+      <table class="payroll-route-review-table">
+        <thead>
+          <tr>
+            <th>Route</th><th>Trips</th><th>Driver Salary</th><th>Helper Salary</th><th>Driver Allowance</th><th>Helper Allowance</th><th>Diesel</th><th>Toll</th><th>Other Expenses</th><th>Total Route Expenses</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(row => `
+            <tr>
+              <td>${escapeHtml(row.route)}</td>
+              <td>${escapeHtml(String(row.tripCount))}</td>
+              <td>${formatCurrency(row.driverSalary)}</td>
+              <td>${formatCurrency(row.helperSalary)}</td>
+              <td>${formatCurrency(row.driverAllowance)}</td>
+              <td>${formatCurrency(row.helperAllowance)}</td>
+              <td>${formatCurrency(row.diesel)}</td>
+              <td>${formatCurrency(row.toll)}</td>
+              <td>${formatCurrency(row.otherExpenses)}</td>
+              <td><strong>${formatCurrency(row.routeExpenses)}</strong></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
     </div>
   `;
+}
+
+function renderPayrollBudgetCard(label, value, note = "") {
+  return `
+    <article class="payroll-details-budget-card">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value || "Not set")}</strong>
+      ${note ? `<small>${escapeHtml(note)}</small>` : ""}
+    </article>
+  `;
+}
+
+function renderPayrollSalarySummary(record = {}, totals = {}, coverage = {}, paymentStatus = "Unpaid") {
+  return `
+    <div class="payroll-salary-summary-grid">
+      ${renderPayrollSalaryTable("Driver", [
+        ["Name", record.driverName || "Not set"],
+        ["Gross Salary", formatCurrency(totals.totalDriverSalary)],
+        ["Driver Allowance", formatCurrency(totals.totalDriverAllowance)],
+        ["Bali / Deduction", formatCurrency(totals.driverDeduction || totals.driverBaliBalance), totals.driverBaliRecorded || totals.driverDeduction ? "" : "No recorded bali"],
+        ["Net Pay", formatCurrency(totals.driverNetPay)]
+      ])}
+      ${renderPayrollSalaryTable("Helper", [
+        ["Name", record.helperName || "Not set"],
+        ["Gross Salary", formatCurrency(totals.totalHelperSalary)],
+        ["Helper Allowance", formatCurrency(totals.totalHelperAllowance)],
+        ["Bali / Deduction", formatCurrency(totals.helperDeduction || totals.helperBaliBalance), totals.helperBaliRecorded || totals.helperDeduction ? "" : "No recorded bali"],
+        ["Net Pay", formatCurrency(totals.helperNetPay)]
+      ])}
+      ${renderPayrollSalaryTable("Combined Payment Summary", [
+        ["Plate Number", record.plateNumber || "Not set"],
+        ["Payroll ID", record.payrollNumber || record.id || "Not set"],
+        ["Coverage", coverage.summary || "Not set"],
+        ["Total Driver Net Pay", formatCurrency(totals.driverNetPay)],
+        ["Total Helper Net Pay", formatCurrency(totals.helperNetPay)],
+        ["Total Payable", formatCurrency(totals.totalSalaryPayable)],
+        ["Payment Status", paymentStatus || "Unpaid"]
+      ], "wide")}
+    </div>
+  `;
+}
+
+function renderPayrollSalaryTable(title, rows = [], extraClass = "") {
+  return `
+    <article class="payroll-salary-summary-table ${escapeAttr(extraClass)}">
+      <h3>${escapeHtml(title)}</h3>
+      <table>
+        <tbody>
+          ${rows.map(([label, value, note]) => `
+            <tr>
+              <th>${escapeHtml(label)}</th>
+              <td>${escapeHtml(String(value ?? "Not set"))}${note ? `<small>${escapeHtml(note)}</small>` : ""}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </article>
+  `;
+}
+
+function getPayrollCoverage(record = {}) {
+  const start = record.cutoffStart || record.cutoff_start || record.cutoffFrom || "";
+  const end = record.cutoffEnd || record.cutoff_end || record.cutoffTo || "";
+  const payrollDate = record.payrollDate || record.payroll_date || "";
+  if (start && end) {
+    const days = getInclusiveDayCount(start, end);
+    return {
+      summary: `Coverage: ${start} to ${end}${days ? ` | Duration: ${days} day(s)` : ""}`,
+      days
+    };
+  }
+  if (payrollDate) return { summary: `Payroll Date: ${payrollDate}`, days: 0 };
+  return { summary: "Not set", days: 0 };
+}
+
+function getInclusiveDayCount(start, end) {
+  const startDate = new Date(`${String(start).slice(0, 10)}T00:00:00`);
+  const endDate = new Date(`${String(end).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return 0;
+  const diff = Math.round((endDate - startDate) / 86400000) + 1;
+  return diff > 0 ? diff : 0;
+}
+
+function getPayrollDetailTotals(record = {}, lines = []) {
+  const totals = record.totals || {};
+  const driverBali = payrollDetailNumberWithMeta(record, "driverBaliBalance",
+    "driver_bali", "driver_balance", "driver_deduction", "driver_deductions",
+    "driver_cash_advance", "driver_ca", "driver_loan", "driver_balance_amount",
+    "driver_cash_advance_balance", "driver_previous_balance"
+  );
+  const helperBali = payrollDetailNumberWithMeta(record, "helperBaliBalance",
+    "helper_bali", "helper_balance", "helper_deduction", "helper_deductions",
+    "helper_cash_advance", "helper_ca", "helper_loan", "helper_balance_amount",
+    "helper_cash_advance_balance", "helper_previous_balance"
+  );
+  const detailTotals = {
+    totalBudgetReleased: payrollDetailNumber(record, "totalBudgetReleased", "total_budget_released", "total_trip_budget", "total_released"),
+    totalExpenses: payrollDetailNumber(record, "totalExpenses", "total_expenses") || sumPayrollLineTotal(lines, getLineExpenseTotalForDetails),
+    totalDriverSalary: payrollDetailNumber(record, "totalDriverSalary", "driver_salary", "driver_gross") || sumPayrollLineTotal(lines, line => line.driverSalary),
+    totalHelperSalary: payrollDetailNumber(record, "totalHelperSalary", "helper_salary", "helper_gross") || sumPayrollLineTotal(lines, line => line.helperSalary),
+    totalDriverAllowance: payrollDetailNumber(record, "totalDriverAllowance", "driver_allowance") || sumPayrollLineTotal(lines, line => line.driverAllowance),
+    totalHelperAllowance: payrollDetailNumber(record, "totalHelperAllowance", "helper_allowance") || sumPayrollLineTotal(lines, line => line.helperAllowance),
+    driverDeduction: payrollDetailNumber(record, "driverDeduction", "driver_deduction", "suggested_driver_deduction"),
+    helperDeduction: payrollDetailNumber(record, "helperDeduction", "helper_deduction", "suggested_helper_deduction"),
+    driverNetPay: payrollDetailNumber(record, "driverNetPay", "driver_net_pay", "driver_take_home") || parseNumber(totals.driverNetPay),
+    helperNetPay: payrollDetailNumber(record, "helperNetPay", "helper_net_pay", "helper_take_home") || parseNumber(totals.helperNetPay),
+    driverBaliBalance: driverBali.value,
+    helperBaliBalance: helperBali.value,
+    driverBaliRecorded: driverBali.recorded,
+    helperBaliRecorded: helperBali.recorded,
+    totalSalaryPayable: payrollDetailNumber(record, "totalSalaryPayable", "total_salary_payable", "total_payable")
+  };
+  if (!detailTotals.totalSalaryPayable) {
+    detailTotals.totalSalaryPayable = detailTotals.driverNetPay + detailTotals.helperNetPay;
+  }
+  return detailTotals;
+}
+
+function payrollDetailNumberWithMeta(record = {}, totalsKey, ...rawKeys) {
+  const totals = record.totals || {};
+  if (hasValue(totals[totalsKey])) return { value: parseNumber(totals[totalsKey]), recorded: true };
+  const raw = record.rawData || record.raw_data || {};
+  const detail = getBudgetBalanceDraftDetail(raw);
+  for (const key of rawKeys) {
+    const value = raw[key] ?? detail[key] ?? record[key];
+    if (hasValue(value)) return { value: parseNumber(value), recorded: true };
+  }
+  return { value: 0, recorded: false };
+}
+
+function payrollDetailNumber(record = {}, totalsKey, ...rawKeys) {
+  const totals = record.totals || {};
+  if (hasValue(totals[totalsKey])) return parseNumber(totals[totalsKey]);
+  const raw = record.rawData || record.raw_data || {};
+  const detail = getBudgetBalanceDraftDetail(raw);
+  for (const key of rawKeys) {
+    const value = raw[key] ?? detail[key] ?? record[key];
+    if (hasValue(value)) return parseNumber(value);
+  }
+  return 0;
+}
+
+function sumPayrollLineTotal(lines = [], getter) {
+  return (lines || []).reduce((sum, line) => sum + parseNumber(getter(createBlankPayrollLine(line))), 0);
+}
+
+function getLineExpenseTotalForDetails(line = {}) {
+  return parseNumber(line.diesel) +
+    parseNumber(line.tollFee) +
+    parseNumber(line.passway) +
+    parseNumber(line.parking) +
+    getOtherExpenseTotal(line);
 }
 
 function renderSavedPayrollTripLines(lines = []) {
@@ -1568,7 +1864,8 @@ function samePayrollRecord(a = {}, b = {}) {
 
 function findPayrollRecordByLookupId(payrollId) {
   const normalizedId = String(payrollId || "").trim();
-  return payrollState.records.find(record => [
+  const records = dedupePayrollRecords(payrollState.records).concat(payrollState.records);
+  return records.find(record => [
     record.id,
     record.payrollNumber,
     record.payroll_id,
@@ -1644,6 +1941,21 @@ function closePayrollDetails() {
 }
 
 function bindPayrollDetailsModalActions(content) {
+  content.querySelectorAll("[data-detail-tab]").forEach(button => {
+    button.addEventListener("click", () => {
+      const tab = button.dataset.detailTab;
+      content.querySelectorAll("[data-detail-tab]").forEach(tabButton => {
+        const active = tabButton.dataset.detailTab === tab;
+        tabButton.classList.toggle("active", active);
+        tabButton.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      content.querySelectorAll("[data-detail-panel]").forEach(panel => {
+        const active = panel.dataset.detailPanel === tab;
+        panel.hidden = !active;
+        panel.classList.toggle("active", active);
+      });
+    });
+  });
   content.querySelectorAll("[data-modal-action]").forEach(button => {
     button.addEventListener("click", () => {
       const action = button.dataset.modalAction;
@@ -2684,7 +2996,12 @@ function syncLinesFromTable() {
 function bindSpreadsheetCells() {
   const inputs = [...document.querySelectorAll(".payroll-cell-input")];
   inputs.forEach(input => {
-    input.addEventListener("focus", event => selectSpreadsheetCell(event.currentTarget, event.shiftKey));
+    input.addEventListener("focus", event => {
+      selectSpreadsheetCell(event.currentTarget, event.shiftKey);
+      if (event.currentTarget.dataset.readonly !== "true") {
+        requestAnimationFrame(() => event.currentTarget.select?.());
+      }
+    });
     input.addEventListener("mousedown", event => {
       if (event.button !== 0) return;
       payrollState.isSelectingSheetRange = true;
@@ -2696,6 +3013,15 @@ function bindSpreadsheetCells() {
     });
     input.addEventListener("keydown", handleSpreadsheetKeydown);
     input.addEventListener("paste", handleSpreadsheetPaste);
+  });
+  document.querySelectorAll("#payroll-lines-body td").forEach(cell => {
+    cell.addEventListener("mousedown", event => {
+      if (event.target.closest("button, input[type='checkbox']")) return;
+      const input = cell.querySelector(".payroll-cell-input:not([disabled])");
+      if (!input) return;
+      event.preventDefault();
+      focusSpreadsheetInput(input, { select: true });
+    });
   });
 }
 
@@ -2797,6 +3123,7 @@ function pasteSpreadsheetText(text, startRow, startCol) {
     rowValues.forEach((value, colOffset) => {
       const colIndex = startCol + colOffset;
       if (colIndex >= lineColumns.length) return;
+      if (!getEditablePayrollColumnIndexes().includes(colIndex)) return;
       const [field, type] = lineColumns[colIndex];
       const line = payrollState.lines[startRow + rowOffset];
       line[field] = type === "number" ? amountValue(value) : value.trim();
@@ -2817,6 +3144,19 @@ function pasteSpreadsheetText(text, startRow, startCol) {
 
 function handleSpreadsheetKeydown(event) {
   if (!event.currentTarget.classList.contains("payroll-cell-input")) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.currentTarget.blur();
+    return;
+  }
+  if (event.key === "F2") {
+    event.preventDefault();
+    const input = event.currentTarget;
+    input.focus();
+    const end = input.value.length;
+    input.setSelectionRange?.(end, end);
+    return;
+  }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
     event.preventDefault();
     selectAllSpreadsheetCells();
@@ -2840,8 +3180,10 @@ function handleSpreadsheetKeydown(event) {
   if (!navigation[event.key]) return;
   if (event.key.startsWith("Arrow") && !shouldNavigateWithArrow(event)) return;
   event.preventDefault();
+  syncSinglePayrollCell(event.currentTarget);
+  calculatePayroll();
   const [rowDelta, colDelta] = navigation[event.key];
-  moveSpreadsheetFocus(event.currentTarget, rowDelta, colDelta, event.shiftKey && event.key !== "Enter");
+  moveSpreadsheetFocus(event.currentTarget, rowDelta, colDelta, event.shiftKey && event.key !== "Enter", event.key);
 }
 
 function selectAllSpreadsheetCells() {
@@ -2873,13 +3215,20 @@ function clearSelectedSpreadsheetCells() {
     if (!line) continue;
     for (let colIndex = minCol; colIndex <= maxCol; colIndex += 1) {
       const [field] = lineColumns[colIndex] || [];
-      if (field) line[field] = "";
+      if (field && getEditablePayrollColumnIndexes().includes(colIndex)) line[field] = "";
     }
     line.warnings = [];
   }
   renderLinesTable(false);
   calculatePayroll();
   focusSpreadsheetCell(minRow, minCol);
+}
+
+function syncSinglePayrollCell(input) {
+  const line = payrollState.lines.find(item => item.id === input.dataset.id);
+  if (!line || input.dataset.readonly === "true") return;
+  line[input.dataset.field] = input.type === "number" ? parseNumber(input.value) : input.value;
+  line.rowTotal = getLineRowTotal(line);
 }
 
 function shouldNavigateWithArrow(event) {
@@ -2892,31 +3241,64 @@ function shouldNavigateWithArrow(event) {
   return true;
 }
 
-function moveSpreadsheetFocus(input, rowDelta, colDelta, extend) {
+function moveSpreadsheetFocus(input, rowDelta, colDelta, extend, key = "") {
   let row = Number(input.dataset.rowIndex) + rowDelta;
   let col = Number(input.dataset.colIndex) + colDelta;
-  if (col < 0) {
-    col = lineColumns.length - 1;
-    row -= 1;
-  }
-  if (col >= lineColumns.length) {
-    col = 0;
-    row += 1;
+  const editableCols = getEditablePayrollColumnIndexes();
+  const firstCol = editableCols[0] ?? 0;
+  const lastCol = editableCols[editableCols.length - 1] ?? lineColumns.length - 1;
+  if (key === "Tab") {
+    const currentEditableIndex = editableCols.indexOf(Number(input.dataset.colIndex));
+    let nextEditableIndex = currentEditableIndex + (colDelta > 0 ? 1 : -1);
+    row = Number(input.dataset.rowIndex);
+    if (nextEditableIndex >= editableCols.length) {
+      nextEditableIndex = 0;
+      row += 1;
+    }
+    if (nextEditableIndex < 0) {
+      nextEditableIndex = editableCols.length - 1;
+      row -= 1;
+    }
+    col = editableCols[nextEditableIndex];
+  } else {
+    if (col < firstCol) col = firstCol;
+    if (col > lastCol) col = lastCol;
+    col = nearestEditablePayrollColumn(col, colDelta < 0 ? -1 : 1);
   }
   if (row < 0) row = 0;
   if (row >= payrollState.lines.length && !isLockedStatus($("payroll-status").value)) {
+    syncLinesFromTable();
     payrollState.lines.push(createBlankPayrollLine());
     renderLinesTable(false);
   }
   focusSpreadsheetCell(row, col, extend);
 }
 
+function getEditablePayrollColumnIndexes() {
+  return lineColumns
+    .map(([field], index) => ({ field, index }))
+    .filter(({ field }) => !["rowTotal", "rateMatchStatus"].includes(field))
+    .map(({ index }) => index);
+}
+
+function nearestEditablePayrollColumn(col, direction = 1) {
+  const editableCols = getEditablePayrollColumnIndexes();
+  if (editableCols.includes(col)) return col;
+  const sorted = direction < 0 ? [...editableCols].reverse() : editableCols;
+  return sorted.find(index => direction < 0 ? index < col : index > col) ?? sorted[0] ?? col;
+}
+
 function focusSpreadsheetCell(row, col, extend = false) {
-  const input = document.querySelector(`.payroll-cell-input[data-row-index="${row}"][data-col-index="${col}"]`);
+  const targetCol = nearestEditablePayrollColumn(Number(col), 1);
+  const input = document.querySelector(`.payroll-cell-input[data-row-index="${row}"][data-col-index="${targetCol}"]:not([disabled])`);
   if (!input) return;
-  input.focus();
-  input.select();
+  focusSpreadsheetInput(input, { select: true });
   selectSpreadsheetCell(input, extend);
+}
+
+function focusSpreadsheetInput(input, options = {}) {
+  input.focus();
+  if (options.select !== false) requestAnimationFrame(() => input.select?.());
 }
 
 function applyMatchingRulesToLines() {
@@ -2985,6 +3367,11 @@ function syncRulesFromTable() {
 function buildPayrollRecord(existing = {}) {
   const totals = calculatePayroll();
   const status = $("payroll-status").value || "Draft";
+  const deductions = {
+    driver: getPersonDeductions("driver"),
+    helper: getPersonDeductions("helper")
+  };
+  const deductionFieldsForSave = getPayrollDeductionFlatFields(deductions, totals);
   return {
     id: payrollState.currentId,
     payrollNumber: $("payroll-number").value || generatePayrollId(),
@@ -3000,6 +3387,7 @@ function buildPayrollRecord(existing = {}) {
     status,
     approvalStatus: mapPayrollToApprovalStatus(status, existing.approvalStatus),
     paymentStatus: ["Draft", "For Approval"].includes(status) ? "Unpaid" : (existing.paymentStatus || "Unpaid"),
+    ...deductionFieldsForSave,
     remarks: $("general-remarks").value.trim(),
     lines: payrollState.lines.filter(line => !isLineBlank(line)),
     totals,
@@ -3014,10 +3402,7 @@ function buildPayrollRecord(existing = {}) {
       paymentReference: $("payment-reference").value.trim(),
       paymentDate: $("payment-date").value
     },
-    deductions: {
-      driver: getPersonDeductions("driver"),
-      helper: getPersonDeductions("helper")
-    },
+    deductions,
     createdBy: existing.createdBy || $("encoder-name").value.trim(),
     createdAt: existing.createdAt,
     updatedAt: existing.updatedAt
@@ -3060,7 +3445,8 @@ function rebuildBalances() {
 
 function updateLockState() {
   const status = $("payroll-status").value;
-  $("header-status-badge").outerHTML = statusBadge(status, "header-status-badge");
+  const headerStatusBadge = $("header-status-badge");
+  if (headerStatusBadge) headerStatusBadge.outerHTML = statusBadge(status, "header-status-badge");
   const locked = isLockedStatus(status);
   document.querySelectorAll("#payroll-header-form input:not(#payroll-number), #payroll-header-form select, #payroll-header-form textarea, #payroll-lines-body input").forEach(input => {
     if (input.id !== "payroll-status") input.disabled = locked;
@@ -3333,6 +3719,8 @@ async function savePayrollToSupabase(record) {
       driver_allowance: totals.totalDriverAllowance || 0,
       helper_allowance: totals.totalHelperAllowance || 0,
       total_expenses: totals.totalExpenses || 0,
+      driver_cash_advance: record.driver_cash_advance || 0,
+      helper_cash_advance: record.helper_cash_advance || 0,
       driver_net_pay: totals.driverNetPay || 0,
       helper_net_pay: totals.helperNetPay || 0,
       status: record.status || "Draft",
@@ -3441,6 +3829,35 @@ function payrollLineToSupabasePayload(record, line) {
   };
 }
 
+function getPayrollDeductionFlatFields(deductions = {}, totals = {}) {
+  const driver = deductions.driver || {};
+  const helper = deductions.helper || {};
+  return {
+    driver_cash_advance: parseNumber(driver.ca),
+    driver_sss: parseNumber(driver.sss),
+    driver_pagibig: parseNumber(driver.pagibig),
+    driver_philhealth: parseNumber(driver.philhealth),
+    driver_atm_card: parseNumber(driver.atm),
+    driver_shortage: parseNumber(driver.short),
+    driver_other_deduction_1: parseNumber(driver.other1),
+    driver_other_deduction_2: parseNumber(driver.other2),
+    driver_other_deduction_3: parseNumber(driver.other3),
+    driver_total_deductions: parseNumber(totals.driverDeduction),
+    driver_net_pay: parseNumber(totals.driverNetPay),
+    helper_cash_advance: parseNumber(helper.ca),
+    helper_sss: parseNumber(helper.sss),
+    helper_pagibig: parseNumber(helper.pagibig),
+    helper_philhealth: parseNumber(helper.philhealth),
+    helper_atm_card: parseNumber(helper.atm),
+    helper_shortage: parseNumber(helper.short),
+    helper_other_deduction_1: parseNumber(helper.other1),
+    helper_other_deduction_2: parseNumber(helper.other2),
+    helper_other_deduction_3: parseNumber(helper.other3),
+    helper_total_deductions: parseNumber(totals.helperDeduction),
+    helper_net_pay: parseNumber(totals.helperNetPay)
+  };
+}
+
 // ── Supabase: load saved payroll records ─────────────────────────────────────
 async function loadPayrollRecordsFromSupabase() {
   const response = await fetch(`${VNS_PAYROLL_WORKER_API_BASE}/api/payroll/list?limit=200`);
@@ -3453,6 +3870,8 @@ function normalizeSupabasePayrollRecord(r) {
   const raw = r.raw_data || {};
   return {
     id: r.id || createId("payroll"),
+    supabaseId: r.id || "",
+    source: "supabase",
     payrollNumber: r.payroll_id || raw.payrollNumber || "",
     payrollDate: r.payroll_date ? String(r.payroll_date).slice(0, 10) : "",
     cutoffStart: r.cutoff_from ? String(r.cutoff_from).slice(0, 10) : "",
@@ -3476,7 +3895,7 @@ function normalizeSupabasePayrollRecord(r) {
     },
     lines: raw.lines || [],
     approval: raw.approval || {},
-    deductions: raw.deductions || { driver: {}, helper: {} },
+    deductions: raw.deductions || getDeductionsFromFlatFields(raw, r),
     rawData: raw,
     remarks: raw.remarks || "",
     encoderName: raw.encoderName || "",
@@ -3484,6 +3903,34 @@ function normalizeSupabasePayrollRecord(r) {
     createdBy: raw.createdBy || "",
     createdAt: r.created_at || raw.createdAt || "",
     updatedAt: r.updated_at || raw.updatedAt || ""
+  };
+}
+
+function getDeductionsFromFlatFields(raw = {}, record = {}) {
+  const pick = key => raw[key] ?? record[key] ?? "";
+  return {
+    driver: {
+      ca: pick("driver_cash_advance"),
+      sss: pick("driver_sss"),
+      pagibig: pick("driver_pagibig"),
+      philhealth: pick("driver_philhealth"),
+      atm: pick("driver_atm_card"),
+      short: pick("driver_shortage"),
+      other1: pick("driver_other_deduction_1"),
+      other2: pick("driver_other_deduction_2"),
+      other3: pick("driver_other_deduction_3")
+    },
+    helper: {
+      ca: pick("helper_cash_advance"),
+      sss: pick("helper_sss"),
+      pagibig: pick("helper_pagibig"),
+      philhealth: pick("helper_philhealth"),
+      atm: pick("helper_atm_card"),
+      short: pick("helper_shortage"),
+      other1: pick("helper_other_deduction_1"),
+      other2: pick("helper_other_deduction_2"),
+      other3: pick("helper_other_deduction_3")
+    }
   };
 }
 
@@ -3570,18 +4017,17 @@ function loadSavedPayrollRecordsFromSupabase() {
   loadPayrollRecordsFromSupabase()
     .then(cloudRecords => {
       if (!cloudRecords.length) {
-        if (statusEl) statusEl.textContent = "No Supabase records found. Showing local records.";
+        renderPayrollRecordsTable();
         return;
       }
       payrollState.supabaseSource = true;
       payrollState.records = mergePayrollRecords(payrollState.records, cloudRecords);
       writeJson(PAYROLL_RECORDS_KEY, payrollState.records);
       renderPayrollRecordsTable();
-      if (statusEl) statusEl.textContent = `Loaded ${cloudRecords.length} payroll record${cloudRecords.length === 1 ? "" : "s"} from Supabase.`;
     })
     .catch(error => {
       console.warn("Payroll Supabase load failed; using local records", error);
-      if (statusEl) statusEl.textContent = "Supabase not connected yet. Showing local records.";
+      renderPayrollRecordsTable();
     });
 }
 

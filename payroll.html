@@ -67,7 +67,6 @@
             <h2>Payroll Header</h2>
             <p>Basic cutoff and truck details.</p>
           </div>
-          <span id="header-status-badge" class="status-badge status-draft">Draft</span>
         </div>
 
         <form id="payroll-header-form" class="payroll-form-grid payroll-header-grid">
@@ -175,8 +174,8 @@
           </div>
           <div class="payroll-actions-right payroll-toolbar">
             <button id="calculate-payroll-button" class="btn btn-outline" type="button">Calculate Payroll</button>
+            <button id="review-pasahod-button" class="btn btn-primary" type="button">Review Pasahod Summary</button>
             <button id="save-draft-button" class="btn btn-primary" type="button">Save Draft</button>
-            <button id="submit-payroll-button" class="btn btn-outline" type="button">Submit for Approval</button>
             <button id="apply-deduction-button" class="btn btn-outline" type="button" disabled title="Coming next after payroll review is validated.">Apply Payroll Deduction</button>
           </div>
         </div>
@@ -278,8 +277,8 @@
         <div class="payroll-card-head">
           <div>
             <p class="payroll-eyebrow">Trip Earnings</p>
-            <h2>Driver and Helper Earnings Breakdown</h2>
-            <p>Trips from the current encoder and the salary or allowance earned per line.</p>
+            <h2>Route / Trip Breakdown</h2>
+            <p>Grouped by route and trip type from the current payroll trip lines.</p>
           </div>
         </div>
         <div id="payroll-trip-earnings-breakdown" class="payroll-trip-breakdown"></div>
@@ -324,6 +323,17 @@
         <p class="payroll-info-note" id="truck-monitoring-note">
           Truck Monitoring data source not connected yet. Trip data will be pulled from Google Sheets once connected.
         </p>
+      </section>
+      <section class="payroll-section-card payroll-bottom-actions-card pasahod-review-actions-card">
+        <div class="payroll-bottom-actions">
+          <div class="payroll-actions-left payroll-toolbar">
+            <button id="back-to-trip-lines-button" class="btn btn-outline" type="button">Back to Trip Lines</button>
+          </div>
+          <div class="payroll-actions-right payroll-toolbar">
+            <button id="pasahod-save-draft-button" class="btn btn-outline" type="button">Save Draft</button>
+            <button id="submit-payroll-button" class="btn btn-primary" type="button">Submit for Approval</button>
+          </div>
+        </div>
       </section>
       </section>
 
