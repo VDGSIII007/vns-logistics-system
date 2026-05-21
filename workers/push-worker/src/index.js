@@ -30,7 +30,8 @@ import {
   uploadRepairMediaToSupabase,
   updateRepairRequestStatus,
   updateRepairBackupStatus,
-  upsertRepairRequestToSupabase
+  upsertRepairRequestToSupabase,
+  upsertForRepairTruckToSupabase
 } from "./repair-api.js";
 import {
   createPayrollBalanceEventInSupabase,
@@ -64,7 +65,8 @@ const REPAIR_API_PATHS = new Set([
   "/api/repair/media/upload",
   "/api/repair/media/signed-url",
   "/api/repair/update-status",
-  "/api/repair/backup-status"
+  "/api/repair/backup-status",
+  "/api/repair/for-repair-truck"
 ]);
 const PAYROLL_API_PATHS = new Set([
   "/api/payroll/list",
@@ -374,6 +376,26 @@ async function handleCashUpdateStatus(request, env) {
   return jsonResponse(result);
 }
 
+async function handleForRepairTruckUpsert(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
+
+  const result = await upsertForRepairTruckToSupabase(env, input);
+  if (!result.ok) {
+    return jsonResponse({
+      ok: false,
+      error: result.error || "For-repair-truck save failed"
+    }, result.status || 500);
+  }
+
+  return jsonResponse({
+    ok: true,
+    for_repair_id: result.for_repair_id,
+    truck_repair_ref_id: result.truck_repair_ref_id,
+    source: result.source
+  });
+}
+
 async function handleRepairCreate(request, env) {
   const input = await readJson(request);
   if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
@@ -390,7 +412,9 @@ async function handleRepairCreate(request, env) {
     ok: true,
     request_id: result.request_id,
     count: result.count,
-    source: result.source
+    source: result.source,
+    records: result.records || [],
+    record: Array.isArray(result.records) ? result.records[0] || null : null
   });
 }
 
@@ -717,6 +741,7 @@ async function routeRequest(request, env) {
   if (request.method === "POST" && url.pathname === "/api/cash/update-status") return withCors(await handleCashUpdateStatus(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/cash/backup-status") return withCors(await handleCashBackupStatus(request, env), request);
   if (isCashApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
+  if (request.method === "POST" && url.pathname === "/api/repair/for-repair-truck") return withCors(await handleForRepairTruckUpsert(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/repair/create") return withCors(await handleRepairCreate(request, env), request);
   if (request.method === "GET" && url.pathname === "/api/repair/list") return withCors(await handleRepairList(url, env), request);
   if (request.method === "POST" && url.pathname === "/api/repair/media/upload") return withCors(await handleRepairMediaUpload(request, env), request);

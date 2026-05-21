@@ -90,6 +90,56 @@ function normalizeRepairInput(input) {
   return [];
 }
 
+function friendlyDateStamp(value) {
+  const parsed = value ? new Date(value) : new Date();
+  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  return date.toISOString().slice(0, 10).replaceAll("-", "");
+}
+
+async function generateFriendlyId(env, table, field, prefix, dateValue) {
+  const stamp = friendlyDateStamp(dateValue);
+  const start = `${prefix}-${stamp}-`;
+  const filters = new URLSearchParams({ select: field, [field]: `like.${start}%`, order: `${field}.desc`, limit: "100" });
+  const result = await supabaseFetch(env, `${table}?${filters.toString()}`, { method: "GET" });
+  if (result.error) {
+    console.warn("Friendly ID lookup failed; using fallback", { table, field, prefix, error: result.error });
+    return `${start}${String(Date.now()).slice(-3)}`;
+  }
+  const highest = (Array.isArray(result.body) ? result.body : []).reduce((max, row) => {
+    const match = String(row?.[field] || "").match(/-(\d+)$/);
+    return match ? Math.max(max, Number(match[1]) || 0) : max;
+  }, 0);
+  return `${start}${String(highest + 1).padStart(3, "0")}`;
+}
+
+function stripFriendlyRepairColumns(record = {}) {
+  const copy = { ...record };
+  ["request_no", "repair_ref_id", "odometer_reading", "account_number", "repair_items", "payment_ref_id", "payment_reference", "payment_notes", "truck_repair_ref_id", "labor_items"].forEach(key => delete copy[key]);
+  return copy;
+}
+
+function repairMissingFriendlyColumn(result = {}) {
+  return /request_no|repair_ref_id|odometer_reading|account_number|repair_items|payment_ref_id|payment_reference|payment_notes|truck_repair_ref_id|labor_items/i.test(String(result.details?.message || result.error || result.details || ""));
+}
+
+function withRepairFriendlyAliases(record = {}) {
+  const requestNo = textOrNull(firstValue(record, ["request_no", "requestNo", "Request_No"]));
+  const repairRefId = textOrNull(firstValue(record, ["repair_ref_id", "repairRefId", "Repair_Ref_ID", "request_no", "requestNo", "Request_No"]));
+  const truckRepairRefId = textOrNull(firstValue(record, ["truck_repair_ref_id", "truckRepairRefId", "Truck_Repair_Ref_ID"]));
+  return {
+    ...record,
+    request_no: requestNo,
+    requestNo,
+    Request_No: requestNo,
+    repair_ref_id: repairRefId,
+    repairRefId,
+    Repair_Ref_ID: repairRefId,
+    truck_repair_ref_id: truckRepairRefId,
+    truckRepairRefId,
+    Truck_Repair_Ref_ID: truckRepairRefId
+  };
+}
+
 function mapRepairRecord(record) {
   const now = new Date().toISOString();
   const requestId = textOrNull(firstValue(record, ["Request_ID", "request_id", "requestId"]));
@@ -100,6 +150,8 @@ function mapRepairRecord(record) {
 
   return {
     request_id: requestId,
+    request_no: textOrNull(firstValue(record, ["request_no", "requestNo", "Request_No", "repair_ref_id", "repairRefId", "Repair_Ref_ID"])),
+    repair_ref_id: textOrNull(firstValue(record, ["repair_ref_id", "repairRefId", "Repair_Ref_ID", "request_no", "requestNo", "Request_No"])),
     request_type: textOrNull(firstValue(record, ["Request_Type", "request_type", "requestType"])),
     date_requested: dateOrNull(firstValue(record, ["Date_Requested", "date_requested", "dateRequested"])),
     date_finished: dateOrNull(firstValue(record, ["Date_Finished", "date_finished", "dateFinished"])),
@@ -108,6 +160,7 @@ function mapRepairRecord(record) {
     truck_type: textOrNull(firstValue(record, ["Truck_Type", "truck_type", "truckType"])),
     driver: textOrNull(firstValue(record, ["Driver", "driver"])),
     helper: textOrNull(firstValue(record, ["Helper", "helper"])),
+    odometer_reading: textOrNull(firstValue(record, ["Odometer", "odometer", "odometer_reading", "odometerReading", "KM_Reading", "kmReading"])),
     category: textOrNull(firstValue(record, ["Category", "category"])),
     repair_parts: textOrNull(firstValue(record, ["Repair_Parts", "repair_parts", "repairParts"])),
     work_done: textOrNull(firstValue(record, ["Work_Done", "work_done", "workDone"])),
@@ -120,11 +173,15 @@ function mapRepairRecord(record) {
     payee: textOrNull(firstValue(record, ["Payee", "payee"])),
     account_number: textOrNull(firstValue(record, ["Account_Number", "account_number", "accountNumber"])),
     repair_items: repairItemsFromValue(firstValue(record, ["Repair_Items", "repair_items", "repairItems"])),
+    labor_items: repairItemsFromValue(firstValue(record, ["Labor_Items", "labor_items", "laborItems"])),
     status: textOrNull(firstValue(record, ["Status", "status"])) || "Draft",
     repair_status: textOrNull(firstValue(record, ["Repair_Status", "repair_status", "repairStatus"])) || "Pending",
     approval_status: textOrNull(firstValue(record, ["Approval_Status", "approval_status", "approvalStatus"])) || "Pending",
     payment_status: textOrNull(firstValue(record, ["Payment_Status", "payment_status", "paymentStatus"])) || "Unpaid",
     approved_by: textOrNull(firstValue(record, ["Approved_By", "approved_by", "approvedBy"])),
+    payment_ref_id: textOrNull(firstValue(record, ["payment_ref_id", "paymentRefId", "Payment_Ref_ID"])),
+    payment_reference: textOrNull(firstValue(record, ["payment_reference", "paymentReference", "Payment_Reference", "Proof_Of_Payment"])),
+    payment_notes: textOrNull(firstValue(record, ["payment_notes", "paymentNotes", "Payment_Notes", "notes", "Notes"])),
     photo_links: [
       ...linkArrayFromValue(firstValue(record, ["photo_links", "Photo_Links", "photoLinks"])),
       ...linksJson(record.Photo_Link, record.Receipt_Link, record.Proof_Of_Payment)
@@ -346,14 +403,29 @@ export async function upsertRepairRequestToSupabase(env, input) {
   }
 
   let persistedRecords = records;
+  for (const record of records) {
+    const friendlyPrefix = /truck repair|for repair/i.test(String(record.request_type || "")) ? "TRKREP" : "REP";
+    if (!record.request_no) record.request_no = await generateFriendlyId(env, "repair_requests", "request_no", friendlyPrefix, record.date_requested || record.created_at);
+    if (!record.repair_ref_id) record.repair_ref_id = record.request_no;
+  }
   let result = await supabaseFetch(env, "repair_requests?on_conflict=request_id", {
     method: "POST",
     prefer: "resolution=merge-duplicates,return=representation",
     body: JSON.stringify(persistedRecords)
   });
 
-  if (result.error && /repair_items|account_number|schema cache|column/i.test(JSON.stringify(result.details || result.error || ""))) {
-    persistedRecords = records.map(({ repair_items, account_number, ...record }) => record);
+  if (result.error && /repair_items|labor_items|account_number|schema cache|column/i.test(JSON.stringify(result.details || result.error || ""))) {
+    persistedRecords = records.map(({ repair_items, labor_items, account_number, ...record }) => record);
+    result = await supabaseFetch(env, "repair_requests?on_conflict=request_id", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=representation",
+      body: JSON.stringify(persistedRecords)
+    });
+  }
+
+  if (result.error && repairMissingFriendlyColumn(result)) {
+    console.warn("Repair friendly ref columns missing; retrying without friendly fields. Run supabase/friendly-ref-ids-and-payment-fields.sql.", result.error);
+    persistedRecords = records.map(stripFriendlyRepairColumns);
     result = await supabaseFetch(env, "repair_requests?on_conflict=request_id", {
       method: "POST",
       prefer: "resolution=merge-duplicates,return=representation",
@@ -370,7 +442,7 @@ export async function upsertRepairRequestToSupabase(env, input) {
     source: "supabase",
     request_id: records[0].request_id,
     count: records.length,
-    records: Array.isArray(result.body) ? result.body : []
+    records: (Array.isArray(result.body) ? result.body : []).map(withRepairFriendlyAliases)
   };
 }
 
@@ -456,6 +528,9 @@ export async function updateRepairRequestStatus(env, input = {}) {
     approved_at: input.approved_at || input.Approved_At || input.approvedAt || null,
     paid_by: textOrNull(input.paid_by || input.Paid_By || input.paidBy),
     paid_at: input.paid_at || input.Paid_At || input.paidAt || null,
+    payment_ref_id: textOrNull(input.payment_ref_id || input.Payment_Ref_ID || input.paymentRefId),
+    payment_reference: textOrNull(input.payment_reference || input.Payment_Reference || input.paymentReference || input.reference || input.Reference),
+    payment_notes: textOrNull(input.payment_notes || input.Payment_Notes || input.paymentNotes || input.notes || input.Notes),
     updated_at: timestampOrNow(input.updated_at || input.Updated_At || input.updatedAt || now),
     backup_status: textOrNull(input.backup_status || input.Backup_Status || input.backupStatus) || "pending",
     backup_synced_at: null,
@@ -466,6 +541,8 @@ export async function updateRepairRequestStatus(env, input = {}) {
   Object.keys(payload).forEach(key => {
     if (payload[key] === null || payload[key] === undefined || payload[key] === "") delete payload[key];
   });
+  const isPaidUpdate = String(payload.status || "").toLowerCase() === "paid" || String(payload.payment_status || "").toLowerCase() === "paid";
+  if (isPaidUpdate && !payload.payment_ref_id) payload.payment_ref_id = await generateFriendlyId(env, "repair_requests", "payment_ref_id", "PMT", now);
 
   const filters = new URLSearchParams({
     request_id: `eq.${requestId}`
@@ -481,6 +558,16 @@ export async function updateRepairRequestStatus(env, input = {}) {
     delete fallbackPayload.approved_at;
     delete fallbackPayload.paid_by;
     delete fallbackPayload.paid_at;
+    result = await supabaseFetch(env, `repair_requests?${filters.toString()}`, {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: JSON.stringify(fallbackPayload)
+    });
+  }
+
+  if (result.error && repairMissingFriendlyColumn(result)) {
+    const fallbackPayload = { ...payload };
+    ["payment_ref_id", "payment_reference", "payment_notes"].forEach(key => delete fallbackPayload[key]);
     result = await supabaseFetch(env, `repair_requests?${filters.toString()}`, {
       method: "PATCH",
       prefer: "return=representation",
@@ -511,4 +598,80 @@ export function repairArrayFromAnyResponse(payload) {
     if (Array.isArray(payload[key])) return payload[key];
   }
   return [];
+}
+
+export async function upsertForRepairTruckToSupabase(env, input) {
+  const raw = Array.isArray(input) ? input[0] : (input?.record ?? input);
+  if (!raw || typeof raw !== "object") {
+    return { ok: false, error: "No valid for-repair-truck record provided", status: 400 };
+  }
+
+  const forRepairId = textOrNull(
+    firstValue(raw, ["For_Repair_ID", "for_repair_id", "forRepairId"])
+  );
+  if (!forRepairId) {
+    return { ok: false, error: "For_Repair_ID is required", status: 400 };
+  }
+
+  const dateValue = textOrNull(
+    firstValue(raw, ["Start_Date", "start_date", "startDate", "Created_At", "created_at"])
+  );
+
+  const existingRef = textOrNull(
+    firstValue(raw, ["truck_repair_ref_id", "truckRepairRefId", "Truck_Repair_Ref_ID"])
+  );
+
+  const truckRepairRefId = existingRef ||
+    await generateFriendlyId(env, "for_repair_trucks", "truck_repair_ref_id", "TRKREP", dateValue);
+
+  const record = {
+    for_repair_id: forRepairId,
+    truck_repair_ref_id: truckRepairRefId,
+    plate_number: textOrNull(firstValue(raw, ["Plate_Number", "plate_number", "plateNumber"])),
+    group_category: textOrNull(firstValue(raw, ["Group_Category", "group_category", "groupCategory"])),
+    truck_type: textOrNull(firstValue(raw, ["Truck_Type", "truck_type", "truckType"])),
+    driver: textOrNull(firstValue(raw, ["Driver", "driver"])),
+    helper: textOrNull(firstValue(raw, ["Helper", "helper"])),
+    garage_location: textOrNull(firstValue(raw, ["Garage_Location", "garage_location", "garageLocation"])),
+    repair_issue: textOrNull(firstValue(raw, ["Repair_Issue", "repair_issue", "repairIssue"])),
+    start_date: dateOrNull(firstValue(raw, ["Start_Date", "start_date", "startDate"])),
+    estimated_finish_date: dateOrNull(firstValue(raw, ["Estimated_Finish_Date", "estimated_finish_date", "estimatedFinishDate"])),
+    end_date: dateOrNull(firstValue(raw, ["End_Date", "end_date", "endDate"])),
+    repair_status: textOrNull(firstValue(raw, ["Repair_Status", "repair_status", "repairStatus"])) || "For Repair",
+    remarks: textOrNull(firstValue(raw, ["Remarks", "remarks"])),
+    odometer_reading: textOrNull(firstValue(raw, ["Odometer", "odometer", "odometer_reading", "odometerReading"])),
+    created_at: timestampOrNow(firstValue(raw, ["Created_At", "created_at", "createdAt"])),
+    updated_at: new Date().toISOString()
+  };
+
+  let result = await supabaseFetch(env, "for_repair_trucks?on_conflict=for_repair_id", {
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=representation",
+    body: JSON.stringify([record])
+  });
+
+  if (result.error && /truck_repair_ref_id|odometer_reading/i.test(String(result.details?.message || result.error || ""))) {
+    console.warn("for_repair_trucks friendly columns missing; retrying without them. Run supabase/friendly-ref-ids-and-payment-fields.sql.");
+    const fallbackRecord = { ...record };
+    delete fallbackRecord.truck_repair_ref_id;
+    delete fallbackRecord.odometer_reading;
+    result = await supabaseFetch(env, "for_repair_trucks?on_conflict=for_repair_id", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=representation",
+      body: JSON.stringify([fallbackRecord])
+    });
+  }
+
+  if (result.error) {
+    return { ok: false, error: SAFE_ERROR, details: result.error, status: result.status || 500 };
+  }
+
+  const saved = Array.isArray(result.body) ? result.body[0] : null;
+  return {
+    ok: true,
+    source: "supabase",
+    for_repair_id: forRepairId,
+    truck_repair_ref_id: truckRepairRefId,
+    record: saved || record
+  };
 }

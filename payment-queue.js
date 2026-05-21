@@ -361,7 +361,8 @@ function approvalStatusLabel(record) {
 }
 
 function repairRequestType(record) {
-  return text(record.Request_Type || record.requestType || record.Category || record.category || record.type || record.Type, "Repair / Labor");
+  const requestType = text(record.Request_Type || record.requestType || record.request_type || record.Category || record.category || record.type || record.Type, "Repair / Labor");
+  return requestType === "Repair Monitoring Update" ? "Other Repair Request" : requestType;
 }
 
 function repairDetails(record) {
@@ -395,12 +396,82 @@ function cashDetails(record) {
   return text(record.Description || record.description || record.Reason || record.reason || record.Remarks || record.remarks || record.Source_Message || record.sourceMessage || record.Route || record.route, "View details");
 }
 
+function friendlySequence(value) {
+  const raw = String(value || "").trim();
+  const numeric = raw.match(/(\d{1,6})(?!.*\d)/);
+  if (numeric) return numeric[1].slice(-4).padStart(4, "0");
+  return raw.replace(/[^a-z0-9]/gi, "").slice(-6).toUpperCase() || "0000";
+}
+
+function isFriendlyRef(value) {
+  return /^[A-Z]+-\d{8}-\d{3,}$/.test(String(value || "").trim());
+}
+
+function cashFriendlyPrefix(record = {}) {
+  const type = cashRequestType(record).toLowerCase();
+  return type.includes("bali") || type.includes("advance") ? "BALI" : "CPO";
+}
+
+function isBaliRecord(record = {}) {
+  const type = String(
+    record.request_type || record.requestType || record.Request_Type ||
+    record.Transaction_Type || record.Type || record.type || ""
+  ).toLowerCase();
+  return /(bali|cash.?advance)/i.test(type);
+}
+
+function cashDisplayRef(record = {}, fallback = "") {
+  const ref = text(record.request_no || record.requestNo || record.Request_No || record.cash_ref_id || record.cashRefId || record.Cash_Ref_ID || record.reference_id || record.referenceId || record.Reference_ID, "");
+  if (ref) return ref;
+  const raw = text(record.request_id || record.requestId || record.Request_ID || record.Cash_ID || record.Record_ID || record.id || fallback, "");
+  return isFriendlyRef(raw) ? raw : "Pending Ref";
+}
+
+function repairDisplayRef(record = {}, fallback = "") {
+  const ref = text(record.request_no || record.requestNo || record.Request_No || record.repair_ref_id || record.repairRefId || record.Repair_Ref_ID || record.truck_repair_ref_id || record.truckRepairRefId || record.Truck_Repair_Ref_ID, "");
+  if (ref) return ref;
+  const raw = text(record.Request_ID || record.request_id || record.requestId || record.Repair_Record_ID || record.repairRecordId || record.forRepairId || record.id || fallback, "");
+  return isFriendlyRef(raw) ? raw : "Pending Ref";
+}
+
+function payrollDisplayRef(record = {}, fallback = "") {
+  const friendly = text(record.payroll_ref_id || record.payrollRefId || record.Payroll_Ref_ID, "");
+  if (friendly) return friendly;
+  const raw = text(record.payroll_id || record.payrollId || record.Payroll_ID || record.payrollNumber || record.Payroll_Number || fallback, "");
+  return isFriendlyRef(raw) ? raw : (raw ? "Pending Ref" : "");
+}
+
+function paymentDisplayRef(record = {}) {
+  return text(record.payment_ref_id || record.paymentRefId || record.Payment_Ref_ID || record.payment_reference || record.paymentReference || record.Payment_Reference, "");
+}
+
+function showPaymentToast(type, title, item, options = {}) {
+  window.showAppToast?.({
+    type,
+    title,
+    message: options.message || "",
+    refLabel: options.refLabel || "Source Ref",
+    refValue: item?.displayRef || item?.sourceRefId || "Pending Ref",
+    extra: options.paymentRef ? `Payment Ref: ${options.paymentRef}` : options.extra || "",
+    duration: options.duration || 4500
+  });
+}
+
 function makeItem(type, module, record, fallbackId) {
+  const internalId = text(record.request_id || record.Request_ID || record.requestId || record.Repair_Record_ID || record.repairRecordId || record.Record_ID || record.Cash_ID || record.id || record.referenceId || record.Reference_ID || record.poNumber || record.PO_Number || fallbackId);
+  const displayRef = type === "payroll"
+    ? payrollDisplayRef(record, fallbackId)
+    : type === "cash"
+      ? cashDisplayRef(record, internalId)
+      : repairDisplayRef(record, internalId);
   const common = {
     source: module,
     type,
     raw: record,
-    id: text(record.request_id || record.Request_ID || record.requestId || record.Repair_Record_ID || record.repairRecordId || record.Record_ID || record.Cash_ID || record.id || record.referenceId || record.Reference_ID || record.poNumber || record.PO_Number || fallbackId),
+    id: internalId,
+    displayRef,
+    sourceRefId: displayRef,
+    paymentRefId: paymentDisplayRef(record),
     plate: text(record.plate_number || record.plateNumber || record.Plate_Number || record.plate || record.truckPlate, "No Plate"),
     group: normalizeGroup(record.groupCategory || record.Group_Category || record.plateGroup || record.group),
     requestType: module,
@@ -409,21 +480,34 @@ function makeItem(type, module, record, fallbackId) {
     status: paymentStatusLabel(record),
     paid: isPaid(record),
     cloudId: type === "cash"
-      ? String(record.request_id || record.requestId || record.Cash_ID || record.Record_ID || record.id || "").trim()
+      ? String(record.request_id || record.requestId || record.Cash_ID || record.cashId || record.bali_id || record.baliId || record.Record_ID || record.id || "").trim()
       : type === "repair"
-        ? String(record.Request_ID || record.requestId || record.Repair_Record_ID || "").trim()
-        : ""
+        ? String(record.Request_ID || record.request_id || record.requestId || record.Repair_Record_ID || record.id || "").trim()
+        : type === "payroll"
+          ? String(record.payroll_id || record.payrollId || record.Payroll_ID || record.id || "").trim()
+          : ""
   };
 
   if (type === "payroll") {
+    const driverAmt = Number(record.driverNetPay || record.driver_net_pay || record.Driver_Net_Pay || record.totals?.driverNetPay) || 0;
+    const helperAmt = Number(record.helperNetPay || record.helper_net_pay || record.Helper_Net_Pay || record.totals?.helperNetPay) || 0;
     return {
       ...common,
-      payee: text([record.driverName || record.Driver_Name, record.helperName || record.Helper_Name].filter(Boolean).join(" / ")),
+      payee: text([record.driverName || record.driver_name || record.Driver_Name, record.helperName || record.helper_name || record.Helper_Name].filter(Boolean).join(" / ")),
       requestType: "Payroll",
-      details: text(record.payrollNumber || record.Payroll_Number || record.Liquidation_Number || record.remarks || record.Remarks, "Payroll liquidation"),
-      date: record.date || record.payrollDate || record.Liquidation_Date || record.cutoffEnd || record.Period_End || record.createdAt,
-      amount: (Number(record.driverNetPay || record.Driver_Net_Pay || record.totals?.driverNetPay) || 0) +
-        (Number(record.helperNetPay || record.Helper_Net_Pay || record.totals?.helperNetPay) || 0)
+      details: text(record.payrollNumber || record.payroll_number || record.Payroll_Number || record.Liquidation_Number || record.remarks || record.Remarks, "Payroll liquidation"),
+      date: record.date || record.payrollDate || record.payroll_date || record.Liquidation_Date || record.cutoffEnd || record.Period_End || record.createdAt,
+      amount: driverAmt + helperAmt,
+      driverName: text(record.driverName || record.driver_name || record.Driver_Name, ""),
+      helperName: text(record.helperName || record.helper_name || record.Helper_Name, ""),
+      driverAmount: driverAmt,
+      helperAmount: helperAmt,
+      driverPaymentStatus: text(record.driver_payment_status || record.driverPaymentStatus, "Unpaid"),
+      helperPaymentStatus: text(record.helper_payment_status || record.helperPaymentStatus, "Unpaid"),
+      driverPaidAt: text(record.driver_paid_at || record.driverPaidAt, ""),
+      helperPaidAt: text(record.helper_paid_at || record.helperPaidAt, ""),
+      driverPaymentRefId: text(record.driver_payment_ref_id || record.driverPaymentRefId, ""),
+      helperPaymentRefId: text(record.helper_payment_ref_id || record.helperPaymentRefId, "")
     };
   }
 
@@ -460,12 +544,13 @@ function currentUser() {
   }
 }
 
-async function cashMarkPaidPost(raw) {
+async function cashMarkPaidPost(raw, paymentDate = "", paymentReference = "", paymentNotes = "") {
   const now = new Date().toISOString();
   const user = currentUser();
   const requestId = String(raw.request_id || raw.requestId || raw.Cash_ID || raw.cashId || raw.Record_ID || raw.id || "").trim();
   if (!requestId) throw new Error("Cash record has no request ID - cannot mark paid.");
-  const notes = String(raw.notes || raw.Notes || raw.remarks || raw.Remarks || "").trim();
+  const paidAt = paymentDate ? new Date(paymentDate).toISOString() : now;
+  const notes = paymentNotes || String(raw.notes || raw.Notes || raw.remarks || raw.Remarks || "").trim();
   const record = {
     ...raw,
     request_id: requestId,
@@ -475,9 +560,9 @@ async function cashMarkPaidPost(raw) {
     Posted_Status: "Paid",
     Payment_Status: "Paid",
     Paid_By: user,
-    Paid_At: now,
+    Paid_At: paidAt,
     Released_By: user,
-    Released_At: now,
+    Released_At: paidAt,
     Updated_At: now
   };
 
@@ -486,7 +571,9 @@ async function cashMarkPaidPost(raw) {
     status: "Paid",
     payment_status: "Paid",
     paid_by: user,
-    paid_at: now,
+    paid_at: paidAt,
+    payment_reference: paymentReference || "",
+    payment_notes: notes,
     notes
   };
 
@@ -580,7 +667,7 @@ function cashBackupStatusPost(requestId, backupStatus, backupError = "") {
 
 async function repairMarkPaidPost(raw) {
   const now = new Date().toISOString();
-  const requestId = String(raw.Request_ID || raw.requestId || raw.Repair_Record_ID || "").trim();
+  const requestId = String(raw.Request_ID || raw.request_id || raw.requestId || raw.Repair_Record_ID || raw.id || "").trim();
   if (!requestId) throw new Error("Repair record has no Request_ID — cannot mark paid.");
   const response = await fetch(REPAIR_WEB_APP_URL, {
     method: "POST",
@@ -604,11 +691,12 @@ async function repairMarkPaidPost(raw) {
   return result;
 }
 
-async function repairMarkPaidSupabaseFirst(raw) {
+async function repairMarkPaidSupabaseFirst(raw, paymentDate = "", paymentReference = "", paymentNotes = "") {
   const now = new Date().toISOString();
   const user = currentUser() || "Payment";
-  const requestId = String(raw.Request_ID || raw.requestId || raw.Repair_Record_ID || "").trim();
+  const requestId = String(raw.Request_ID || raw.request_id || raw.requestId || raw.Repair_Record_ID || raw.id || "").trim();
   if (!requestId) throw new Error("Repair record has no Request_ID - cannot mark paid.");
+  const paidAt = paymentDate ? new Date(paymentDate).toISOString() : now;
   const sheetsPayload = {
     action: "updateStatus",
     Request_ID: requestId,
@@ -618,9 +706,9 @@ async function repairMarkPaidSupabaseFirst(raw) {
     Approval_Status: "Approved",
     Repair_Status: "Approved",
     Paid_By: user,
-    Paid_At: now,
+    Paid_At: paidAt,
     Released_By: user,
-    Released_At: now,
+    Released_At: paidAt,
     Last_Updated: now
   };
 
@@ -635,7 +723,9 @@ async function repairMarkPaidSupabaseFirst(raw) {
         approval_status: "Approved",
         repair_status: "Approved",
         paid_by: user,
-        paid_at: now,
+        paid_at: paidAt,
+        payment_reference: paymentReference || "",
+        payment_notes: paymentNotes || "",
         updated_at: now,
         backup_status: "pending"
       })
@@ -705,47 +795,232 @@ function notifyPaid(module) {
   }).catch(error => console.warn("Payment notify-paid push failed (non-blocking).", error));
 }
 
-async function handleMarkPaid(index, button) {
+function handleMarkPaid(index) {
   const item = state.filtered[index];
-  if (!item || item.paid || !item.cloudId || (item.type !== "cash" && item.type !== "repair")) return;
-
-  const label = item.type === "cash" ? "Cash / PO / Bali" : "Repair / Labor";
-  const confirmed = window.confirm(`Mark this ${label} record as Paid / Released?\n\nReference: ${item.id}`);
-  if (!confirmed) return;
-
-  if (button) {
-    button.disabled = true;
-    button.textContent = "Saving...";
+  if (!item || item.paid || !item.cloudId || (item.type !== "cash" && item.type !== "repair" && item.type !== "payroll")) return;
+  if (item.type === "payroll") {
+    openDetail(index);
+    return;
   }
+  closeDetail();
+  openPaymentModal(index);
+}
 
+async function payrollMarkPersonPaidPost(payrollId, person, paymentDate, paymentReference, paymentNotes, markFullPaid) {
+  const now = new Date().toISOString();
+  const user = currentUser();
+  const isDriver = person === "driver";
+  const paidAt = paymentDate ? new Date(paymentDate).toISOString() : now;
+  const payload = {
+    payroll_id: payrollId,
+    person_target: person,
+    approved_by: user
+  };
+  if (isDriver) {
+    payload.driver_payment_reference = paymentReference || "";
+    payload.driver_payment_notes = paymentNotes || "";
+    payload.driver_paid_at = paidAt;
+  } else {
+    payload.helper_payment_reference = paymentReference || "";
+    payload.helper_payment_notes = paymentNotes || "";
+    payload.helper_paid_at = paidAt;
+  }
+  if (markFullPaid) {
+    payload.status = "Paid";
+    payload.approval_status = "Approved";
+    payload.payment_status = "Paid";
+    payload.paid_at = paidAt;
+  }
+  const response = await fetch(`${VNS_WORKER_API_BASE}/api/payroll/update-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result?.ok) {
+    throw new Error(result?.error || `Payroll ${person} payment update failed (${response.status})`);
+  }
+  return result;
+}
+
+function renderPersonPaymentBadge(status) {
+  const paid = String(status || "").toLowerCase() === "paid";
+  return `<span class="pq-person-badge ${paid ? "pq-badge-paid" : "pq-badge-unpaid"}">${escapeHtml(paid ? "Paid" : (status || "Unpaid"))}</span>`;
+}
+
+function buildPayrollSplitDetailHtml(item, index) {
+  const r = item.raw || {};
+  const hasHelper = !!(item.helperName && item.helperAmount > 0);
+  const driverPaid = item.driverPaymentStatus === "Paid";
+  const helperPaid = !hasHelper || item.helperPaymentStatus === "Paid";
+  const totalPaid = (driverPaid ? item.driverAmount : 0) + (hasHelper && helperPaid ? item.helperAmount : 0);
+  const remaining = item.amount - totalPaid;
+
+  const personCard = (role, name, amt, paid, paidAt, refId, dataVal) => {
+    if (!name && amt === 0) return "";
+    const payBtn = !paid
+      ? `<button type="button" class="ops-primary-btn pq-person-pay-btn" data-pay-person="${dataVal}" data-pay-index="${index}">Mark ${role} as Paid</button>`
+      : `<p class="pq-person-paid-note">Paid on ${escapeHtml(formatDate(paidAt) || "—")}${refId ? ` · <span class="ops-mono">${escapeHtml(refId)}</span>` : ""}</p>`;
+    return `
+      <div class="pq-person-card${paid ? " pq-person-card--paid" : ""}">
+        <span class="pq-person-role">${escapeHtml(role)}</span>
+        <div class="pq-person-name">${escapeHtml(name || "—")}</div>
+        <div class="pq-person-amount">${escapeHtml(money(amt))}</div>
+        <div class="pq-person-status-row">${renderPersonPaymentBadge(paid ? "Paid" : "Unpaid")}</div>
+        ${payBtn}
+      </div>`;
+  };
+
+  const driverCard = personCard("Driver", item.driverName, item.driverAmount, driverPaid, item.driverPaidAt, item.driverPaymentRefId, "driver");
+  const helperCard = personCard("Helper", item.helperName, item.helperAmount, item.helperPaymentStatus === "Paid", item.helperPaidAt, item.helperPaymentRefId, "helper");
+
+  return `
+    <p class="ops-eyebrow">Payroll Payment Details</p>
+    <h2 id="pq-modal-title">${escapeHtml(item.displayRef || item.id)}</h2>
+    <div class="ops-detail-grid pq-payroll-split-summary">
+      <div><span>Plate / No Plate</span><strong>${escapeHtml(item.plate)}</strong></div>
+      <div><span>Payroll Date</span><strong>${escapeHtml(formatDate(item.date))}</strong></div>
+      <div><span>Approval Status</span><strong>${renderPaymentStatusChip(item.approvalStatus)}</strong></div>
+      <div><span>Overall Payment</span><strong>${renderPaymentStatusChip(item.status)}</strong></div>
+    </div>
+    <div class="pq-person-cards">
+      ${driverCard}
+      ${helperCard}
+    </div>
+    <div class="pq-payroll-totals">
+      <div class="pq-total-row"><span>Total Payable</span><strong>${escapeHtml(money(item.amount))}</strong></div>
+      <div class="pq-total-row"><span>Total Paid</span><strong>${escapeHtml(money(totalPaid))}</strong></div>
+      <div class="pq-total-row${remaining > 0 ? " pq-total-remaining" : ""}"><span>Remaining</span><strong>${escapeHtml(money(remaining))}</strong></div>
+    </div>
+  `;
+}
+
+function openPaymentModal(index, person = null) {
+  const item = state.filtered[index];
+  if (!item || !item.cloudId) return;
+  const modal = $("pq-pay-modal");
+  if (!modal) return;
+  const form = $("pq-pay-form");
+  if (form) form.reset();
+  const isPayrollPerson = item.type === "payroll" && !!person;
+  const displayName = isPayrollPerson
+    ? (person === "driver" ? item.driverName : item.helperName)
+    : item.payee;
+  const displayAmt = isPayrollPerson
+    ? (person === "driver" ? item.driverAmount : item.helperAmount)
+    : item.amount;
+  let title;
+  if (item.type === "payroll") {
+    title = person === "driver" ? "Driver Payment" : "Helper Payment";
+  } else if (item.type === "repair") {
+    title = "Repair / Labor Payment";
+  } else {
+    title = isBaliRecord(item.raw) ? "Bali / Cash Advance Payment" : "Cash PO Payment";
+  }
+  const titleEl = $("pq-pay-modal-title");
+  if (titleEl) titleEl.textContent = title;
+  const refLabel = $("pq-pay-ref-label");
+  if (refLabel) refLabel.textContent = "Source Ref: " + (item.displayRef || item.id || "—");
+  const summary = $("pq-pay-summary");
+  if (summary) {
+    const nameLabel = item.type === "payroll" ? "Person" : (item.type === "repair" ? "Payee / Supplier" : "Payee / Person");
+    summary.innerHTML = [
+      [nameLabel, displayName || "—"],
+      ["Amount", money(displayAmt)],
+      ["Plate / No Plate", item.plate || "—"],
+      ["Payment Ref ID", "Auto-generated after payment"]
+    ].map(([l, v]) =>
+      `<div class="pq-pay-summary-item"><span class="pq-pay-summary-label">${escapeHtml(l)}</span><span class="pq-pay-summary-value">${escapeHtml(v)}</span></div>`
+    ).join("");
+  }
+  const dateInput = $("pq-pay-date");
+  if (dateInput) dateInput.value = new Date().toISOString().slice(0, 10);
+  const statusEl = $("pq-pay-status");
+  if (statusEl) statusEl.textContent = "";
+  const submitBtn = $("pq-pay-submit");
+  if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Confirm Payment"; }
+  modal.dataset.itemIndex = String(index);
+  modal.dataset.itemType = item.type;
+  if (isPayrollPerson) {
+    const hasHelper = !!(item.helperName && item.helperAmount > 0);
+    const otherAlreadyPaid = person === "driver"
+      ? (!hasHelper || item.helperPaymentStatus === "Paid")
+      : (item.driverPaymentStatus === "Paid");
+    modal.dataset.payrollPerson = person;
+    modal.dataset.markFullPaid = String(otherAlreadyPaid);
+  } else {
+    delete modal.dataset.payrollPerson;
+    delete modal.dataset.markFullPaid;
+  }
+  modal.hidden = false;
+}
+
+function closePaymentModal() {
+  const modal = $("pq-pay-modal");
+  if (modal) modal.hidden = true;
+}
+
+async function handlePaymentModalSubmit(event) {
+  event.preventDefault();
+  const modal = $("pq-pay-modal");
+  if (!modal) return;
+  const index = Number(modal.dataset.itemIndex ?? modal.dataset.payrollIndex);
+  const item = state.filtered[index];
+  if (!item || !item.cloudId) return;
+  const itemType = modal.dataset.itemType || item.type;
+  const person = modal.dataset.payrollPerson || null;
+  const markFullPaid = modal.dataset.markFullPaid === "true";
+  const submitBtn = $("pq-pay-submit");
+  const statusEl = $("pq-pay-status");
+  const paymentDate = $("pq-pay-date")?.value?.trim() || "";
+  const paymentReference = $("pq-pay-ref")?.value?.trim() || "";
+  const paymentNotes = $("pq-pay-notes")?.value?.trim() || "";
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Saving..."; }
+  if (statusEl) statusEl.textContent = "";
   try {
-    if (item.type === "cash") {
-      const result = await cashMarkPaidPost(item.raw);
-      updateCashPaidState(item.id, cashRecordFromPaymentResult(result, {
+    if (itemType === "payroll") {
+      const result = await payrollMarkPersonPaidPost(item.cloudId, person, paymentDate, paymentReference, paymentNotes, markFullPaid);
+      notifyPaid(item.source);
+      closePaymentModal();
+      closeDetail();
+      await loadItems();
+      applyFilters();
+      showPaymentToast("success", person === "helper" ? "Helper payment completed" : "Driver payment completed", item, {
+        paymentRef: paymentDisplayRef(result?.record || {}) || "Generated by system"
+      });
+    } else if (itemType === "cash") {
+      const result = await cashMarkPaidPost(item.raw, paymentDate, paymentReference, paymentNotes);
+      notifyPaid(item.source);
+      closePaymentModal();
+      closeDetail();
+      updateCashPaidState(item.cloudId || item.id, cashRecordFromPaymentResult(result, {
         ...item.raw,
-        request_id: item.id,
+        request_id: item.cloudId || item.id,
         status: "Paid",
         payment_status: "Paid",
-        paid_at: new Date().toISOString()
+        paid_at: paymentDate ? new Date(paymentDate).toISOString() : new Date().toISOString()
       }));
+      showPaymentToast("success", `${item.requestType || "Cash"} payment completed`, item, {
+        paymentRef: paymentDisplayRef(result?.record || result || {}) || "Generated by system"
+      });
+    } else if (itemType === "repair") {
+      const result = await repairMarkPaidSupabaseFirst(item.raw, paymentDate, paymentReference, paymentNotes);
       notifyPaid(item.source);
+      closePaymentModal();
       closeDetail();
-      return;
-    } else {
-      await repairMarkPaidSupabaseFirst(item.raw);
+      await loadItems();
+      applyFilters();
+      showPaymentToast("success", "Repair / Labor payment completed", item, {
+        paymentRef: paymentDisplayRef(result?.record || result || {}) || "Generated by system"
+      });
     }
-    notifyPaid(item.source);
-    closeDetail();
-    await loadItems();
-    applyFilters();
   } catch (error) {
-    const backend = item.type === "cash" ? "Cash Apps Script" : "Repair Apps Script";
-    console.error(`Mark paid failed [${backend}]:`, error?.message || error);
-    if (button) {
-      button.disabled = false;
-      button.textContent = "Mark Paid / Released";
-    }
-    window.alert(`Could not mark as paid: ${error?.message || "Unknown error. Please try again."}`);
+    console.error("Payment failed:", error?.message || error);
+    if (statusEl) statusEl.textContent = error?.message || "Could not mark as paid. Please try again.";
+    showPaymentToast("error", "Payment failed", item, {
+      message: error?.message || "Could not mark as paid. Please try again."
+    });
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Confirm Payment"; }
   }
 }
 
@@ -859,12 +1134,27 @@ async function loadRepairPaymentItems() {
   return approved.map((record, index) => makeItem("repair", "Repair / Labor", record, `REP-${index + 1}`));
 }
 
-async function loadItems() {
-  const payroll = readJson(STORAGE_KEYS.payroll)
+async function loadPayrollPaymentItems() {
+  let records;
+  try {
+    const response = await fetch(`${VNS_WORKER_API_BASE}/api/payroll/list?limit=500`);
+    if (!response.ok) throw new Error(`Payroll Supabase list failed: ${response.status}`);
+    const data = await response.json();
+    if (data && data.ok === false) throw new Error(data.error || data.message || "Payroll Supabase list returned an error.");
+    records = normalizeListResponse(data).filter(record => record && typeof record === "object");
+    console.log("Payment Queue cloud payroll records loaded", records.length);
+  } catch (error) {
+    console.warn("Payment Queue payroll Supabase load failed; using local fallback.", error);
+    records = readJson(STORAGE_KEYS.payroll);
+  }
+  return records
     .filter(record => record && !record.isDeleted && (isForPaymentRecord(record, "payroll") || isPaymentHistoryRecord(record, "payroll")))
     .map((record, index) => makeItem("payroll", "Payroll", record, `PAY-${index + 1}`));
+}
 
-  const [cash, repair] = await Promise.all([
+async function loadItems() {
+  const [payroll, cash, repair] = await Promise.all([
+    loadPayrollPaymentItems(),
     loadCashPaymentItems(),
     loadRepairPaymentItems()
   ]);
@@ -880,7 +1170,7 @@ function applyFilters() {
     : list.filter(item => !item.paid);
   if (state.group !== "all") list = list.filter(item => item.group === state.group);
   if (query) {
-    list = list.filter(item => [item.source, item.id, item.plate, item.group, item.requestType, item.details, item.payee, item.approvalStatus, item.status]
+    list = list.filter(item => [item.source, item.id, item.displayRef, item.sourceRefId, item.paymentRefId, item.plate, item.group, item.requestType, item.details, item.payee, item.approvalStatus, item.status]
       .join(" ")
       .toLowerCase()
       .includes(query));
@@ -937,9 +1227,10 @@ function renderViewNote() {
 }
 
 function rowHtml(item, index) {
-  const canMarkPaid = state.activeSubtab === "for-payment" && !item.paid && !!item.cloudId && (item.type === "cash" || item.type === "repair");
+  const canMarkPaid = state.activeSubtab === "for-payment" && !item.paid && !!item.cloudId && (item.type === "cash" || item.type === "repair" || item.type === "payroll");
+  const markPaidLabel = item.type === "payroll" ? "Mark as Paid" : "Mark Paid / Released";
   const markPaidBtn = canMarkPaid
-    ? `<button type="button" class="ops-secondary-btn" data-mark-paid="${index}">Mark Paid / Released</button>`
+    ? `<button type="button" class="ops-secondary-btn" data-mark-paid="${index}">${markPaidLabel}</button>`
     : "";
   const issueBtn = state.activeSubtab === "for-payment"
     ? `<button type="button" class="ops-disabled-btn" disabled title="Backend payment action not connected yet.">Report Issue</button>`
@@ -947,7 +1238,7 @@ function rowHtml(item, index) {
   return `
     <tr>
       <td>${escapeHtml(formatDate(item.date))}</td>
-      <td class="ops-mono">${escapeHtml(item.id)}</td>
+      <td class="ops-mono">${escapeHtml(item.displayRef || item.id)}</td>
       <td>${escapeHtml(item.plate)}</td>
       <td>${renderRequestTypeChip(item.requestType, item.type)}</td>
       <td><span class="details-clamp" title="${escapeHtml(item.details)}">${escapeHtml(item.details)}</span></td>
@@ -965,9 +1256,10 @@ function rowHtml(item, index) {
 }
 
 function cardHtml(item, index) {
-  const canMarkPaid = state.activeSubtab === "for-payment" && !item.paid && !!item.cloudId && (item.type === "cash" || item.type === "repair");
+  const canMarkPaid = state.activeSubtab === "for-payment" && !item.paid && !!item.cloudId && (item.type === "cash" || item.type === "repair" || item.type === "payroll");
+  const markPaidLabel = item.type === "payroll" ? "Mark as Paid" : "Mark Paid / Released";
   const markPaidBtn = canMarkPaid
-    ? `<button type="button" class="ops-secondary-btn" data-mark-paid="${index}">Mark Paid / Released</button>`
+    ? `<button type="button" class="ops-secondary-btn" data-mark-paid="${index}">${markPaidLabel}</button>`
     : "";
   const issueBtn = state.activeSubtab === "for-payment"
     ? `<button type="button" class="ops-disabled-btn" disabled title="Backend payment action not connected yet.">Report Issue</button>`
@@ -979,7 +1271,8 @@ function cardHtml(item, index) {
         <strong>${escapeHtml(money(item.amount))}</strong>
       </div>
       <dl>
-        <div><dt>Reference ID</dt><dd>${escapeHtml(item.id)}</dd></div>
+        <div><dt>Source Ref ID</dt><dd>${escapeHtml(item.displayRef || item.id)}</dd></div>
+        ${item.paymentRefId ? `<div><dt>Payment Ref ID</dt><dd>${escapeHtml(item.paymentRefId)}</dd></div>` : ""}
         <div><dt>Plate / No Plate</dt><dd>${escapeHtml(item.plate)}</dd></div>
         <div><dt>Request Type</dt><dd>${renderRequestTypeChip(item.requestType, item.type)}</dd></div>
         <div><dt>Details</dt><dd><span class="details-clamp" title="${escapeHtml(item.details)}">${escapeHtml(item.details)}</span></dd></div>
@@ -1034,6 +1327,13 @@ function openDetail(index) {
   const modal = $("pq-modal");
   if (!item) return;
   if (!detail || !modal) return;
+
+  if (item.type === "payroll") {
+    detail.innerHTML = buildPayrollSplitDetailHtml(item, index);
+    modal.hidden = false;
+    return;
+  }
+
   const canMarkPaid = state.activeSubtab === "for-payment" && !item.paid && !!item.cloudId && (item.type === "cash" || item.type === "repair");
   const markPaidBtn = canMarkPaid
     ? `<button type="button" class="ops-secondary-btn" data-mark-paid="${index}">Mark Paid / Released</button>`
@@ -1043,8 +1343,10 @@ function openDetail(index) {
     : "";
   detail.innerHTML = `
     <p class="ops-eyebrow">Payment Details</p>
-    <h2 id="pq-modal-title">${escapeHtml(item.source)} - ${escapeHtml(item.id)}</h2>
+    <h2 id="pq-modal-title">${escapeHtml(item.source)} - ${escapeHtml(item.displayRef || item.id)}</h2>
     <div class="ops-detail-grid">
+      <div><span>Source Ref ID</span><strong>${escapeHtml(item.displayRef || item.id)}</strong></div>
+      ${item.paymentRefId ? `<div><span>Payment Ref ID</span><strong>${escapeHtml(item.paymentRefId)}</strong></div>` : ""}
       <div><span>Plate / No Plate</span><strong>${escapeHtml(item.plate)}</strong></div>
       <div><span>Request Type</span><strong>${renderRequestTypeChip(item.requestType, item.type)}</strong></div>
       <div><span>Details</span><strong>${escapeHtml(item.details)}</strong></div>
@@ -1123,6 +1425,14 @@ function bindEvents() {
   document.addEventListener("click", event => {
     const trigger = event.target.closest("[data-detail]");
     if (trigger) { openDetail(Number(trigger.dataset.detail)); return; }
+    const payPersonTrigger = event.target.closest("[data-pay-person]");
+    if (payPersonTrigger) {
+      const person = payPersonTrigger.dataset.payPerson;
+      const idx = Number(payPersonTrigger.dataset.payIndex);
+      closeDetail();
+      openPaymentModal(idx, person);
+      return;
+    }
     const markPaidTrigger = event.target.closest("[data-mark-paid]");
     if (markPaidTrigger) handleMarkPaid(Number(markPaidTrigger.dataset.markPaid), markPaidTrigger);
   });
@@ -1130,6 +1440,17 @@ function bindEvents() {
   if (modal) modal.addEventListener("click", event => {
     if (event.target.id === "pq-modal") closeDetail();
   });
+
+  const payClose = $("pq-pay-close");
+  const payCancel = $("pq-pay-cancel");
+  const payModal = $("pq-pay-modal");
+  const payForm = $("pq-pay-form");
+  if (payClose) payClose.addEventListener("click", closePaymentModal);
+  if (payCancel) payCancel.addEventListener("click", closePaymentModal);
+  if (payModal) payModal.addEventListener("click", event => {
+    if (event.target.id === "pq-pay-modal") closePaymentModal();
+  });
+  if (payForm) payForm.addEventListener("submit", handlePaymentModalSubmit);
 }
 
 document.addEventListener("DOMContentLoaded", async () => {

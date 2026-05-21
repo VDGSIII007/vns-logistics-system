@@ -101,6 +101,108 @@ body.parallax-page{opacity:1}
 @media(max-width:1100px){.pasahod-summary-section,.payroll-budget-card{grid-template-columns:1fr}.single-payroll-workspace .payroll-main-actions{position:static}}
 @media(max-width:640px){.paper-block label{grid-template-columns:1fr}.paper-block input{text-align:left}.single-payroll-workspace{width:min(100%,94vw)}}
 
+/* Global action feedback toast */
+.app-toast-root{
+  position:fixed;
+  top:24px;
+  left:50%;
+  transform:translateX(-50%);
+  z-index:100000;
+  display:grid;
+  gap:10px;
+  width:min(520px,calc(100vw - 32px));
+  pointer-events:none;
+}
+.app-toast{
+  display:grid;
+  grid-template-columns:5px 1fr;
+  overflow:hidden;
+  background:#fff;
+  border:1px solid #e5e7eb;
+  border-radius:16px;
+  box-shadow:0 24px 70px rgba(17,24,39,.28);
+  pointer-events:auto;
+  animation:appToastIn .18s ease-out;
+}
+.app-toast.is-leaving{
+  animation:appToastOut .18s ease-in forwards;
+}
+.app-toast-accent{background:#64748b}
+.app-toast-success .app-toast-accent{background:#16a34a}
+.app-toast-error .app-toast-accent{background:#dc2626}
+.app-toast-warning .app-toast-accent{background:#f59e0b}
+.app-toast-info .app-toast-accent{background:#2563eb}
+.app-toast-content{
+  padding:14px 14px 14px 16px;
+  min-width:0;
+}
+.app-toast-title-row{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+}
+.app-toast-title-row strong{
+  color:#111827;
+  font-size:1.02rem;
+  line-height:1.25;
+}
+.app-toast-close{
+  flex:0 0 auto;
+  width:24px;
+  height:24px;
+  border:0;
+  border-radius:999px;
+  background:#f3f4f6;
+  color:#4b5563;
+  cursor:pointer;
+  font-size:1rem;
+  line-height:1;
+}
+.app-toast p{
+  margin:6px 0 0;
+  color:#4b5563;
+  font-size:.9rem;
+  line-height:1.35;
+}
+.app-toast-ref{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:8px;
+  font-size:.82rem;
+}
+.app-toast-ref span{
+  color:#6b7280;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.app-toast-ref b{
+  color:#111827;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+}
+.app-toast small{
+  display:block;
+  margin-top:5px;
+  color:#6b7280;
+  font-size:.78rem;
+}
+@keyframes appToastIn{
+  from{opacity:0;transform:translateY(-10px)}
+  to{opacity:1;transform:translateY(0)}
+}
+@keyframes appToastOut{
+  to{opacity:0;transform:translateY(-8px)}
+}
+@media(max-width:640px){
+  .app-toast-root{
+    top:12px;
+    width:calc(100vw - 24px);
+  }
+}
+
 /* Repair record row and evidence modal cleanup */
 .repair-page .repair-clickable-row{cursor:pointer}
 .repair-page .repair-clickable-row:hover td{background:#fff8f8}
@@ -4378,6 +4480,14 @@ body.payroll-page{
   padding:20px;
   background:rgba(17,24,39,.42);
 }
+
+#pq-modal{
+  z-index:10000;
+}
+
+#pq-pay-modal{
+  z-index:11000;
+}
 .ops-modal[hidden]{
   display:none;
 }
@@ -6070,4 +6180,240 @@ body.payroll-page{
   .inc-action-bar .btn{width:100%;justify-content:center;}
   .inc-form-top{flex-direction:column;}
   .inc-stat-grid{grid-template-columns:1fr 1fr;}
+}
+
+/* ── Payment Mark-as-Paid modal ──────────────────────────────────────────────── */
+.pq-pay-card{
+  width:min(460px,100%);
+  padding:28px 28px 24px;
+}
+.pq-pay-header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:20px;
+}
+.pq-pay-header .ops-modal-close{
+  float:none;
+  flex-shrink:0;
+  margin-top:2px;
+}
+.pq-pay-header h2{
+  margin:4px 0 0;
+  font-size:1.18rem;
+  line-height:1.2;
+}
+.pq-pay-source-ref{
+  margin:5px 0 0;
+  font-family:monospace;
+  font-size:.78rem;
+  color:#6b7280;
+  font-weight:700;
+  letter-spacing:.01em;
+}
+.pq-pay-summary{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+  margin-bottom:22px;
+  padding:14px;
+  border-radius:12px;
+  background:#f9fafb;
+  border:1px solid var(--line);
+}
+.pq-pay-summary-item{
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+}
+.pq-pay-summary-label{
+  color:#6b7280;
+  font-size:.67rem;
+  font-weight:900;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+.pq-pay-summary-value{
+  color:#111827;
+  font-size:.86rem;
+  font-weight:800;
+  overflow-wrap:anywhere;
+}
+.pq-pay-fields{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+.pq-pay-field{
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+}
+.pq-pay-field label{
+  font-size:.8rem;
+  font-weight:900;
+  color:#374151;
+  letter-spacing:.01em;
+}
+.pq-pay-field input,
+.pq-pay-field textarea{
+  width:100%;
+  padding:9px 12px;
+  border:1px solid #d1d5db;
+  border-radius:8px;
+  font:inherit;
+  font-size:.88rem;
+  background:#fff;
+  color:#111827;
+  box-sizing:border-box;
+  transition:border-color .15s,box-shadow .15s;
+}
+.pq-pay-field input:focus,
+.pq-pay-field textarea:focus{
+  outline:none;
+  border-color:var(--red);
+  box-shadow:0 0 0 3px rgba(215,25,32,.1);
+}
+.pq-pay-field textarea{
+  resize:vertical;
+  min-height:68px;
+}
+.pq-required{
+  color:var(--red);
+}
+.pq-pay-status{
+  min-height:18px;
+  margin:12px 0 0;
+  font-size:.8rem;
+  font-weight:800;
+  color:#b91c1c;
+}
+.pq-pay-footer{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  margin-top:20px;
+  padding-top:16px;
+  border-top:1px solid var(--line);
+}
+@media(max-width:520px){
+  .pq-pay-card{
+    padding:20px 16px 18px;
+  }
+  .pq-pay-summary{
+    grid-template-columns:1fr;
+  }
+  .pq-pay-footer{
+    flex-direction:column-reverse;
+    align-items:stretch;
+  }
+  .pq-pay-footer button{
+    width:100%;
+    justify-content:center;
+  }
+}
+
+/* Payroll split detail — driver / helper cards */
+.pq-payroll-split-summary{
+  margin-bottom:18px;
+}
+.pq-person-cards{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  margin-bottom:18px;
+}
+.pq-person-card{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  padding:16px;
+  border-radius:12px;
+  border:1px solid var(--line);
+  background:#fff;
+}
+.pq-person-card--paid{
+  background:#f0fdf4;
+  border-color:#bbf7d0;
+}
+.pq-person-role{
+  font-size:.67rem;
+  font-weight:900;
+  letter-spacing:.07em;
+  text-transform:uppercase;
+  color:#6b7280;
+}
+.pq-person-name{
+  font-size:.95rem;
+  font-weight:800;
+  color:#111827;
+  overflow-wrap:anywhere;
+}
+.pq-person-amount{
+  font-size:1.05rem;
+  font-weight:900;
+  color:#111827;
+  margin-top:2px;
+}
+.pq-person-status-row{
+  margin:4px 0 2px;
+}
+.pq-person-badge{
+  display:inline-block;
+  padding:3px 10px;
+  border-radius:99px;
+  font-size:.72rem;
+  font-weight:900;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.pq-badge-paid{
+  background:#dcfce7;
+  color:#15803d;
+}
+.pq-badge-unpaid{
+  background:#fef3c7;
+  color:#92400e;
+}
+.pq-person-pay-btn{
+  margin-top:6px;
+  width:100%;
+  justify-content:center;
+}
+.pq-person-paid-note{
+  margin:6px 0 0;
+  font-size:.75rem;
+  color:#6b7280;
+  line-height:1.4;
+}
+.pq-payroll-totals{
+  border-top:1px solid var(--line);
+  padding-top:14px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.pq-total-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  font-size:.86rem;
+}
+.pq-total-row span{
+  color:#6b7280;
+  font-weight:700;
+}
+.pq-total-row strong{
+  font-weight:900;
+  color:#111827;
+}
+.pq-total-remaining strong{
+  color:#b91c1c;
+}
+@media(max-width:520px){
+  .pq-person-cards{
+    grid-template-columns:1fr;
+  }
 }

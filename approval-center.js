@@ -196,7 +196,8 @@ function repairRequestPrefix(category) {
 }
 
 function isFriendlyRequestNo(value) {
-  return /^[A-Z]+[-\s]?\d{2,6}$/i.test(String(value || "").trim());
+  const text = String(value || "").trim();
+  return /^[A-Z]+-\d{8}-\d{3,}$/i.test(text) || /^[A-Z]+[-\s]?\d{2,6}$/i.test(text);
 }
 
 function shortRequestSequence(value) {
@@ -208,17 +209,51 @@ function shortRequestSequence(value) {
 }
 
 function getRepairFriendlyRequestNo(record = {}) {
-  const category = normalizeRepairRequestCategory(record);
-  const friendly = acBestValue(record, ["Request_No", "Request_Number"]);
+  const friendly = acBestValue(record, [
+    "request_no",
+    "requestNo",
+    "Request_No",
+    "Request_Number",
+    "repair_ref_id",
+    "repairRefId",
+    "Repair_Ref_ID",
+    "truck_repair_ref_id",
+    "truckRepairRefId",
+    "Truck_Repair_Ref_ID"
+  ]);
   if (friendly && isFriendlyRequestNo(friendly)) return String(friendly).trim().toUpperCase();
   const raw = acBestValue(record, ["Request_ID", "id", "Record_ID", "forRepairId"]);
-  return `${repairRequestPrefix(category)}-${shortRequestSequence(raw || friendly)}`;
+  if (raw && isFriendlyRequestNo(raw)) return String(raw).trim().toUpperCase();
+  return "Pending Ref";
+}
+
+function cashFriendlyPrefix(record = {}) {
+  const type = normalizeCashRequestType(record).toLowerCase();
+  return type.includes("bali") || type.includes("advance") ? "BALI" : "CPO";
+}
+
+function getCashFriendlyRequestNo(record = {}) {
+  const friendly = acBestValue(record, [
+    "request_no",
+    "requestNo",
+    "Request_No",
+    "cash_ref_id",
+    "cashRefId",
+    "Cash_Ref_ID",
+    "reference_id",
+    "referenceId",
+    "Reference_ID"
+  ]);
+  if (friendly && isFriendlyRequestNo(friendly)) return String(friendly).trim().toUpperCase();
+  const raw = acBestValue(record, ["request_id", "requestId", "Request_ID", "Cash_ID", "Record_ID", "id", "cashId"]);
+  if (raw && isFriendlyRequestNo(raw)) return String(raw).trim().toUpperCase();
+  return "Pending Ref";
 }
 
 function getItemRequestNo(item = {}) {
   if (item.type === "repair") return getRepairFriendlyRequestNo(item.raw || {});
-  if (item.type === "cash") return acText(item.raw?.Request_No || item.raw?.Reference_ID || item.id);
-  if (item.type === "payroll") return getPayrollApprovalReference(item.raw || {}, item.id);
+  if (item.type === "cash") return getCashFriendlyRequestNo(item.raw || {});
+  if (item.type === "payroll") return getPayrollFriendlyRef(item.raw || {}, item.id);
   return acText(item.raw?.Liquidation_Number || item.raw?.payrollNumber || item.raw?.Payroll_Number || item.id);
 }
 
@@ -232,9 +267,9 @@ function getItemSystemReference(item = {}) {
 function getPayrollApprovalReference(record = {}, fallback = "") {
   return acText(
     record.payroll_id ||
-    record.payrollNumber ||
     record.payrollId ||
     record.Payroll_ID ||
+    record.payrollNumber ||
     record.Payroll_Number ||
     record.request_no ||
     record.requestNo ||
@@ -246,6 +281,51 @@ function getPayrollApprovalReference(record = {}, fallback = "") {
     record.id ||
     fallback
   );
+}
+
+function showApprovalToast(type, title, item, options = {}) {
+  const refValue = window.getAppFriendlyRef?.(item || {}, [
+    "payroll_id", "payrollId", "payrollNumber",
+    "requestNo", "request_no", "Request_No",
+    "cash_ref_id", "cashRefId", "Cash_Ref_ID",
+    "cpo_ref_id", "cpoRefId", "CPO_Ref_ID",
+    "bali_ref_id", "baliRefId", "Bali_Ref_ID",
+    "repair_ref_id", "repairRefId", "Repair_Ref_ID",
+    "truck_repair_ref_id", "truckRepairRefId", "Truck_Repair_Ref_ID",
+    "reference_id", "referenceId"
+  ]) || item?.requestNo || "Pending Ref";
+  const detailParts = [];
+  if (item?.amount) detailParts.push(`Amount: ${acMoney(item.amount)}`);
+  if (item?.payee) detailParts.push(`Payee: ${item.payee}`);
+  if (item?.plate) detailParts.push(`Plate: ${item.plate}`);
+  window.showAppToast?.({
+    type,
+    title,
+    message: options.message || detailParts.join(" | "),
+    refLabel: "Ref ID",
+    refValue,
+    extra: options.extra || "",
+    duration: options.duration || 4500
+  });
+}
+
+function getPayrollFriendlyRef(record = {}, fallback = "") {
+  const friendly = acText(
+    record.payroll_ref_id ||
+    record.payrollRefId ||
+    record.Payroll_Ref_ID ||
+    ""
+  );
+  if (friendly) return friendly;
+  const raw = acText(
+    record.payroll_id ||
+    record.payrollId ||
+    record.Payroll_ID ||
+    record.payrollNumber ||
+    record.Payroll_Number ||
+    fallback
+  );
+  return /^[A-Z]+-\d{8}-\d{3,}$/.test(String(raw || "").trim()) ? raw : (raw ? "Pending Ref" : "");
 }
 
 function repairCategoryClass(category) {
@@ -546,6 +626,12 @@ function normalizeSupabaseRepairRecord(record = {}) {
     Request_ID: canonicalRequestId,
     request_id: canonicalRequestId,
     requestId: canonicalRequestId,
+    request_no: record.request_no || record.requestNo || record.Request_No,
+    Request_No: record.Request_No || record.request_no || record.requestNo,
+    repair_ref_id: record.repair_ref_id || record.repairRefId || record.Repair_Ref_ID,
+    Repair_Ref_ID: record.Repair_Ref_ID || record.repair_ref_id || record.repairRefId,
+    truck_repair_ref_id: record.truck_repair_ref_id || record.truckRepairRefId || record.Truck_Repair_Ref_ID,
+    Truck_Repair_Ref_ID: record.Truck_Repair_Ref_ID || record.truck_repair_ref_id || record.truckRepairRefId,
     Supabase_Request_ID: record.request_id || canonicalRequestId,
     Request_Type: record.Request_Type || record.request_type || record.requestType,
     Date_Requested: record.Date_Requested || record.date_requested || record.dateRequested,
@@ -668,6 +754,12 @@ function normalizeCashBackendRecord(record = {}, index = 0, source = "cash-cloud
     cashId,
     request_id: acFirst(record, ["request_id", "requestId", "Request_ID"], cashId),
     requestId: acFirst(record, ["request_id", "requestId", "Request_ID"], cashId),
+    request_no: acFirst(record, ["request_no", "requestNo", "Request_No"]),
+    requestNo: acFirst(record, ["requestNo", "Request_No", "request_no"]),
+    Request_No: acFirst(record, ["Request_No", "request_no", "requestNo"]),
+    cash_ref_id: acFirst(record, ["cash_ref_id", "cashRefId", "Cash_Ref_ID"]),
+    cashRefId: acFirst(record, ["cashRefId", "Cash_Ref_ID", "cash_ref_id"]),
+    Cash_Ref_ID: acFirst(record, ["Cash_Ref_ID", "cash_ref_id", "cashRefId"]),
     recordId: cashId,
     type: transactionType,
     request_type: transactionType,
@@ -993,7 +1085,7 @@ function renderApprovalHeaders() {
   let headers = ["Module", "Reference ID", "Date", "Plate / No Plate", "Group", "Payee / Driver / Person", "Amount", "Approval Status", "Actions"];
   if (acState.view === "history") headers = ["Date", "Request No.", "Plate", "Request", "Details", "Requested By", "Amount", "Final Status", "View"];
   else if (acState.tab === "repair") headers = ["Select", "Date", "Request No.", "Plate", "Request", "Details", "Requested By", "Amount", "Status", "View"];
-  else if (acState.tab === "cash") headers = ["Select", "Date", "Type", "Details", "Plate / No Plate", "Person / Logged By", "Amount", "Status", "View"];
+  else if (acState.tab === "cash") headers = ["Select", "Date", "Request No.", "Type", "Details", "Plate / No Plate", "Person / Logged By", "Amount", "Status", "View"];
   headRow.innerHTML = headers.map((label, index) => {
     if (acState.view !== "history" && acState.tab === "repair" && index === 0) {
       return '<th><input id="ac-repair-select-all" class="repair-select-checkbox" type="checkbox" aria-label="Select all visible repair requests"></th>';
@@ -1069,6 +1161,7 @@ function cashApprovalRow(item, index) {
     <tr>
       <td><input class="cash-row-checkbox repair-select-checkbox" type="checkbox" data-cash-id="${acEscape(item.id)}" aria-label="Select cash request"${checked}></td>
       <td>${acEscape(acDate(item.date))}</td>
+      <td class="ops-request-no">${acEscape(item.requestNo || item.id)}</td>
       <td>${cashTypeChip(item.cashType)}</td>
       <td>${cashDetailsCell(item.shortDetails)}</td>
       <td>${acEscape(item.plate)}</td>
@@ -1231,6 +1324,7 @@ function cashApprovalCard(item, index) {
       </div>
       <dl>
         <div><dt>Date</dt><dd>${acEscape(acDate(item.date))}</dd></div>
+        <div><dt>Request No.</dt><dd>${acEscape(item.requestNo || item.id)}</dd></div>
         <div><dt>Details</dt><dd>${acEscape(item.shortDetails || "Review details")}</dd></div>
         <div><dt>Plate / No Plate</dt><dd>${acEscape(item.plate)}</dd></div>
         <div><dt>Person</dt><dd>${acEscape(item.payee)}</dd></div>
@@ -1285,7 +1379,7 @@ function renderApprovalList() {
   if (!body || !mobile) return;
 
   if (!acState.filtered.length) {
-    const colspan = acState.view === "history" ? 9 : acState.tab === "repair" ? 10 : 9;
+    const colspan = acState.view === "history" ? 9 : (acState.tab === "repair" || acState.tab === "cash") ? 10 : 9;
     const emptyText = acState.view === "history" ? "No approval history records match this view." : "No pending approval records match this view.";
     body.innerHTML = `<tr><td colspan="${colspan}" class="ops-empty">${acEscape(emptyText)}</td></tr>`;
     mobile.innerHTML = `<div class="ops-empty">${acEscape(emptyText)}</div>`;
@@ -1620,7 +1714,7 @@ function buildPayrollDetailHtml(item) {
   const record = item.raw || {};
   const approvalTotals = getPayrollApprovalTotals(record, item);
   const lines = Array.isArray(record.lines) ? record.lines : [];
-  const payrollReference = getPayrollApprovalReference(record, item.id);
+  const payrollReference = getPayrollFriendlyRef(record, item.id);
   return `
     <div class="record-details-header">
       <h2 id="ac-modal-title">Payroll Details</h2>
@@ -1706,6 +1800,7 @@ function buildCashDetailHtml(item) {
     <section class="approval-detail-section">
       <h3>Request Info</h3>
       <div class="ops-detail-grid">
+        ${detailField("Request No.", item.requestNo || getCashFriendlyRequestNo(record))}
         ${detailField("Date", acDate(record.date || item.date))}
         ${detailField("Type", type)}
         ${detailField("Plate / No Plate", record.plateNumber || record.Plate_Number || item.plate)}
@@ -1740,7 +1835,7 @@ function buildCashDetailHtml(item) {
         ${detailField("Remarks / Source Message", record.remarks || record.Remarks || record.Source_Message || record.sourceMessage)}
       </div>
     </section>
-    <p class="ops-modal-note">Internal ID: ${acDisplay(record.Record_ID || record.Cash_ID || record.id || record.cashId || record.referenceId || record.Reference_ID || item.id)}</p>
+    <p class="ops-modal-note">Internal ID: ${acDisplay(record.request_id || record.Record_ID || record.Cash_ID || record.id || record.cashId || item.id)}</p>
   `;
 }
 
@@ -1996,10 +2091,12 @@ async function updatePayrollApprovalFromModal(item, status) {
     });
     closeApprovalDetail();
     reloadApprovalList(`Payroll ${payrollId} ${config.label}.`);
+    showApprovalToast("success", status === "Approved" ? "Payroll approved" : status === "Returned" ? "Payroll returned for revision" : "Payroll rejected", item);
     triggerPaymentQueuePushCheck();
   } catch (error) {
     console.error("Payroll approval action failed", error);
     setApprovalMessage(error?.message || "Payroll approval action failed. Please check console/network.", "error");
+    showApprovalToast("error", "Approval failed", item, { message: error?.message || "Payroll approval action failed." });
   }
 }
 
@@ -2171,10 +2268,12 @@ async function approveCashFromModal() {
     closeApprovalDetail();
     acState.selectedCashIds.delete(item.id);
     setApprovalMessage("Cash / PO / Bali request approved.", "success");
+    showApprovalToast("success", "Cash / PO / Bali approved", item);
     triggerPaymentQueuePushCheck();
   } catch (error) {
     console.warn("Cash approval failed", error);
     setApprovalMessage(error?.message || "Cash approval failed. Please try again.", "error");
+    showApprovalToast("error", "Approval failed", item, { message: error?.message || "Cash approval failed. Please try again." });
   }
 }
 
@@ -2208,6 +2307,11 @@ async function approveSelectedCashRecords() {
   if (failed.length) {
     console.warn("Some Cash approvals failed", failed);
     setApprovalMessage(`${approvedIds.length} approved, ${failed.length} failed. Failed rows remain pending.`, approvedIds.length ? "warning" : "error");
+    window.showAppToast?.({
+      type: approvedIds.length ? "warning" : "error",
+      title: "Approval failed",
+      message: `${failed.length} Cash / PO / Bali request${failed.length === 1 ? "" : "s"} failed.`
+    });
     if (approvedIds.length) applyApprovalFilters();
     else updateRepairBatchUi();
     return;
@@ -2216,6 +2320,15 @@ async function approveSelectedCashRecords() {
   acState.selectedCashIds.clear();
   applyApprovalFilters();
   setApprovalMessage(`${approvedIds.length} Cash / PO / Bali request${approvedIds.length === 1 ? "" : "s"} approved.`, "success");
+  const approvedRefs = selected.filter(item => approvedIds.includes(item.id)).map(item => item.requestNo || item.id).slice(0, 3).join(", ");
+  window.showAppToast?.({
+    type: "success",
+    title: "Selected requests approved",
+    message: `Approved: ${approvedIds.length}`,
+    refLabel: approvedRefs ? "Refs" : "",
+    refValue: approvedRefs || "",
+    duration: 5500
+  });
   triggerPaymentQueuePushCheck();
 }
 
@@ -2370,10 +2483,12 @@ async function approveRepairFromModal() {
     closeApprovalDetail();
     acState.selectedRepairIds.delete(item.id);
     await refreshRepairApprovalList("Repair / Labor request approved.");
+    showApprovalToast("success", "Repair / Labor request approved", item);
     triggerPaymentQueuePushCheck();
   } catch (error) {
     console.warn("Repair approval failed", error);
     setApprovalMessage(error?.message || "Repair approval failed. Please try again.", "error");
+    showApprovalToast("error", "Approval failed", item, { message: error?.message || "Repair approval failed. Please try again." });
   }
 }
 
@@ -2407,6 +2522,11 @@ async function approveSelectedRepairRecords() {
   if (failed.length) {
     console.warn("Some Repair approvals failed", failed);
     setApprovalMessage(`${approvedIds.length} approved, ${failed.length} failed. Failed rows remain pending.`, approvedIds.length ? "warning" : "error");
+    window.showAppToast?.({
+      type: approvedIds.length ? "warning" : "error",
+      title: "Approval failed",
+      message: `${failed.length} Repair / Labor request${failed.length === 1 ? "" : "s"} failed.`
+    });
     if (approvedIds.length) await refreshRepairApprovalList();
     else updateRepairBatchUi();
     return;
@@ -2414,6 +2534,15 @@ async function approveSelectedRepairRecords() {
 
   acState.selectedRepairIds.clear();
   await refreshRepairApprovalList(`${approvedIds.length} Repair / Labor request${approvedIds.length === 1 ? "" : "s"} approved.`);
+  const approvedRefs = selected.filter(item => approvedIds.includes(item.id)).map(item => item.requestNo || item.id).slice(0, 3).join(", ");
+  window.showAppToast?.({
+    type: "success",
+    title: "Selected requests approved",
+    message: `Approved: ${approvedIds.length}`,
+    refLabel: approvedRefs ? "Refs" : "",
+    refValue: approvedRefs || "",
+    duration: 5500
+  });
   triggerPaymentQueuePushCheck();
 }
 
