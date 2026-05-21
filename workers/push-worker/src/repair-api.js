@@ -112,6 +112,22 @@ async function generateFriendlyId(env, table, field, prefix, dateValue) {
   return `${start}${String(highest + 1).padStart(3, "0")}`;
 }
 
+function getRepairRefPrefix(requestType = "") {
+  const normalized = String(requestType || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+  const compact = normalized.replace(/[^a-z0-9]/g, "");
+
+  if (normalized.includes("labor payment") || compact.includes("laborpayment")) return "LAB";
+  if (normalized.includes("equipment") || normalized.includes("safety equipment") || compact.includes("equipmentrequest")) return "EQP";
+  if (normalized.includes("parts request") || normalized.includes("part request") || compact.includes("partsrequest")) return "PART";
+  if (normalized.includes("other repair") || normalized.includes("repair monitoring") || compact.includes("otherrepairrequest")) return "OTHREP";
+  if (normalized.includes("truck repair") || normalized.includes("for repair") || compact.includes("forrepair") || compact.includes("truckrepair")) return "TRKREP";
+  return "REP";
+}
+
 function stripFriendlyRepairColumns(record = {}) {
   const copy = { ...record };
   ["request_no", "repair_ref_id", "odometer_reading", "account_number", "repair_items", "payment_ref_id", "payment_reference", "payment_notes", "truck_repair_ref_id", "labor_items"].forEach(key => delete copy[key]);
@@ -404,7 +420,7 @@ export async function upsertRepairRequestToSupabase(env, input) {
 
   let persistedRecords = records;
   for (const record of records) {
-    const friendlyPrefix = /truck repair|for repair/i.test(String(record.request_type || "")) ? "TRKREP" : "REP";
+    const friendlyPrefix = getRepairRefPrefix(record.request_type);
     if (!record.request_no) record.request_no = await generateFriendlyId(env, "repair_requests", "request_no", friendlyPrefix, record.date_requested || record.created_at);
     if (!record.repair_ref_id) record.repair_ref_id = record.request_no;
   }
