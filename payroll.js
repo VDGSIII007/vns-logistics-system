@@ -22,7 +22,9 @@ const payrollState = {
   hasSubmittedPayroll: false,
   sheetSelection: null,
   isSelectingSheetRange: false,
+  originalLineIds: [],
   truckMaster: [],
+  truckMasterLoadFailed: false,
   selectedTruckType: "",
   personsMaster: [],
   baliSummary: {},
@@ -31,19 +33,23 @@ const payrollState = {
 };
 
 const amountFields = [
-  "diesel", "driverSalary", "helperSalary", "driverAllowance", "helperAllowance", "tollFee",
-  "passway", "parking", "vulcanize", "otherExpenses", "lagayLoaded", "lagayEmpty", "mano", "hugasTruck", "checkpoint", "budgetReleased"
+  "diesel", "costPerLiter", "driverSalary", "helperSalary", "driverAllowance", "helperAllowance", "tollFee",
+  "passway", "parking", "vulcanize", "otherExpenses", "lagayLoaded", "lagayEmpty", "mano", "timbang", "luna", "hugasTruck", "checkpoint", "budgetReleased"
 ];
 
 const lineColumns = [
   ["tripDate", "date", "Date"], ["source", "text", "Source"], ["destination", "text", "Destination"],
-  ["referenceNo", "text", "Reference No."], ["poNumber", "text", "PO Number"], ["diesel", "number", "Diesel"],
+  ["referenceNo", "text", "Reference No."], ["poNumber", "text", "PO Number"], ["shipmentNumber", "text", "Shipment Number"],
+  ["containerNumber", "text", "Container Number"], ["tripType", "text", "Trip Type"], ["diesel", "number", "Diesel"],
+  ["costPerLiter", "number", "Per Liter"],
   ["driverSalary", "number", "Driver Salary"], ["helperSalary", "number", "Helper Salary"], ["tollFee", "number", "Toll"],
   ["passway", "number", "Passway"], ["parking", "number", "Parking"], ["lagayLoaded", "number", "Lagay Loaded"],
-  ["lagayEmpty", "number", "Lagay Empty"], ["mano", "number", "Mano"], ["vulcanize", "number", "Vulcanize"],
+  ["lagayEmpty", "number", "Lagay Empty"], ["mano", "number", "Mano"], ["timbang", "number", "Timbang"],
+  ["luna", "number", "Luna"], ["vulcanize", "number", "Vulcanize"],
   ["driverAllowance", "number", "Allowance Driver"], ["helperAllowance", "number", "Allowance Helper"],
   ["hugasTruck", "number", "Hugas Truck"], ["checkpoint", "number", "Checkpoint"], ["otherExpenses", "number", "Other Expenses"],
-  ["rowTotal", "number", "Row Total"], ["rateMatchStatus", "text", "Rate Match Status"], ["remarks", "text", "Remarks"]
+  ["rowTotal", "number", "Row Total"], ["rateMatchStatus", "text", "Rate Match Status"], ["lineStatus", "text", "Status"],
+  ["sourceFile", "text", "Source File"], ["remarks", "text", "Remarks"]
 ];
 
 const rateAutoFillFields = new Set([
@@ -166,6 +172,7 @@ function bindPayrollEvents() {
   if ($("records-body") && !$("records-body").dataset.payrollActionsBound) {
     $("records-body").dataset.payrollActionsBound = "true";
     $("records-body").addEventListener("click", handleSavedPayrollRecordAction);
+    $("records-body").addEventListener("keydown", handleSavedPayrollRecordKeydown);
   }
 
   ["filter-status", "filter-group", "filter-plate", "filter-driver", "filter-payroll-date"].forEach(id => {
@@ -182,6 +189,20 @@ function bindPayrollEvents() {
       if (event.target === $("approval-details-panel")) closeApprovalDetails();
     });
   }
+  if ($("payroll-details-close")) {
+    $("payroll-details-close").addEventListener("click", closePayrollDetails);
+  }
+  if ($("payroll-details-panel")) {
+    $("payroll-details-panel").addEventListener("click", event => {
+      if (event.target === $("payroll-details-panel")) closePayrollDetails();
+    });
+  }
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      closePayrollDetails();
+      closeApprovalDetails();
+    }
+  });
 
   ["group-category", "plate-number", "driver-name", "helper-name", "payroll-status"].forEach(id => {
     $(id).addEventListener("input", () => {
@@ -232,6 +253,7 @@ function generatePayrollId() {
 
 function newPayroll() {
   payrollState.currentId = createId("payroll");
+  payrollState.originalLineIds = [];
   payrollState.lines = [];
   payrollState.totals = getEmptyTotals();
   payrollState.warnings = [];
@@ -282,27 +304,58 @@ function loadPayrollRecords() {
 function loadPayrollTruckMaster() {
   const localTrucks = readJson(PAYROLL_TRUCK_MASTER_KEY, []);
   payrollState.truckMaster = Array.isArray(localTrucks) ? localTrucks : [];
+  payrollState.truckMasterLoadFailed = false;
   renderPayrollTruckPlateOptions();
 
+  fetchPayrollTruckMasterFromSupabase()
+    .catch(error => {
+      console.warn("Payroll truck master Supabase load failed; trying Apps Script fallback", error);
+      return fetchPayrollTruckMasterFromAppsScript();
+    })
+    .then(trucks => {
+      if (!Array.isArray(trucks) || !trucks.length) throw new Error("Truck Master returned no trucks");
+      applyPayrollTruckMaster(trucks);
+    })
+    .catch(error => {
+      console.warn("Payroll truck master cloud load failed", error);
+      payrollState.truckMasterLoadFailed = !payrollState.truckMaster.length;
+      renderPayrollTruckPlateOptions();
+    });
+}
+
+function fetchPayrollTruckMasterFromSupabase() {
+  return fetch(`${VNS_PAYROLL_WORKER_API_BASE}/api/trucks/list?active=true&limit=5000`)
+    .then(response => response.json())
+    .then(result => {
+      if (!result?.ok || !Array.isArray(result.trucks)) throw new Error(result?.error || "Supabase Truck Master unavailable");
+      if (!result.trucks.length) throw new Error("Supabase Truck Master returned no trucks");
+      return result.trucks;
+    });
+}
+
+function fetchPayrollTruckMasterFromAppsScript() {
   const query = new URLSearchParams({
     action: "getAllMasterData",
     syncKey: PAYROLL_MASTER_SYNC_KEY
   });
-  fetch(`${PAYROLL_MASTER_APP_SCRIPT_URL}?${query.toString()}`)
+  return fetch(`${PAYROLL_MASTER_APP_SCRIPT_URL}?${query.toString()}`)
     .then(response => response.json())
     .then(result => {
       const trucks = result?.trucks || result?.Truck_Master || [];
-      if (!result?.ok || !Array.isArray(trucks) || !trucks.length) return;
-      payrollState.truckMaster = trucks;
-      writeJson(PAYROLL_TRUCK_MASTER_KEY, trucks);
-      renderPayrollTruckPlateOptions();
-      updatePayrollPersonsFromSources();
-      applyPayrollTruckToHeader(false);
-    })
-    .catch(error => {
-      console.warn("Payroll truck master cloud load failed", error);
-      renderPayrollTruckPlateOptions();
+      if (!result?.ok || !Array.isArray(trucks)) throw new Error(result?.error || "Apps Script Truck Master unavailable");
+      if (!trucks.length) throw new Error("Apps Script Truck Master returned no trucks");
+      return trucks;
     });
+}
+
+function applyPayrollTruckMaster(trucks) {
+  payrollState.truckMaster = trucks;
+  payrollState.truckMasterLoadFailed = false;
+  writeJson(PAYROLL_TRUCK_MASTER_KEY, trucks);
+  console.info("Payroll truck master loaded count", trucks.length);
+  renderPayrollTruckPlateOptions();
+  updatePayrollPersonsFromSources();
+  applyPayrollTruckToHeader(false);
 }
 
 function renderPayrollTruckPlateOptions() {
@@ -312,6 +365,30 @@ function renderPayrollTruckPlateOptions() {
   const trucks = getPayrollTrucksForGroup(group);
   const plates = [...new Set(trucks.map(getPayrollTruckPlate).filter(Boolean))].sort();
   list.innerHTML = plates.map(plate => `<option value="${escapeAttr(plate)}"></option>`).join("");
+  console.info("Payroll truck plate filter", {
+    loadedCount: payrollState.truckMaster.length,
+    selectedGroup: group || "All",
+    filteredTruckCount: trucks.length,
+    first5MatchedPlates: plates.slice(0, 5)
+  });
+  updatePayrollTruckMasterStatus(group, trucks.length);
+}
+
+function updatePayrollTruckMasterStatus(group, filteredCount) {
+  const status = $("payroll-truck-master-status");
+  if (!status) return;
+  if (payrollState.truckMasterLoadFailed) {
+    status.textContent = "Truck Master failed to load. Using manual plate input.";
+    status.hidden = false;
+    return;
+  }
+  if (group && payrollState.truckMaster.length && filteredCount === 0) {
+    status.textContent = `No trucks found for ${group} in Truck Master.`;
+    status.hidden = false;
+    return;
+  }
+  status.textContent = "";
+  status.hidden = true;
 }
 
 // ── Master data: persons ──────────────────────────────────────────────────────
@@ -439,23 +516,40 @@ function getPayrollTruckInfoByPlate(plate) {
 }
 
 function getPayrollTruckPlate(truck) {
-  return normalizePlateForCloud(truck?.Plate_Number || truck?.plateNumber || truck?.plate || "");
+  return normalizePlateForCloud(truck?.Plate_Number || truck?.plate_number || truck?.plateNumber || truck?.plate || truck?.raw_data?.Plate_Number || truck?.raw_data?.plate_number || "");
 }
 
 function getPayrollTruckGroup(truck) {
-  return normalizePayrollGroup(truck?.Group_Category || truck?.groupCategory || truck?.Group || "");
+  return normalizePayrollGroup(
+    truck?.Group_Category ||
+    truck?.group_category ||
+    truck?.groupCategory ||
+    truck?.Group ||
+    truck?.group ||
+    truck?.Category ||
+    truck?.category ||
+    truck?.Product_Line ||
+    truck?.product_line ||
+    truck?.Commodity ||
+    truck?.commodity ||
+    truck?.raw_data?.Group_Category ||
+    truck?.raw_data?.group_category ||
+    truck?.raw_data?.Product_Line ||
+    truck?.raw_data?.Commodity ||
+    ""
+  );
 }
 
 function getPayrollTruckDriver(truck) {
-  return String(truck?.Current_Driver_Name || truck?.Current_Driver || truck?.Driver || truck?.driverName || "").trim();
+  return String(truck?.Current_Driver_Name || truck?.current_driver_name || truck?.Current_Driver || truck?.Driver || truck?.driverName || truck?.driver_name || "").trim();
 }
 
 function getPayrollTruckHelper(truck) {
-  return String(truck?.Current_Helper_Name || truck?.Current_Helper || truck?.Helper || truck?.helperName || "").trim();
+  return String(truck?.Current_Helper_Name || truck?.current_helper_name || truck?.Current_Helper || truck?.Helper || truck?.helperName || truck?.helper_name || "").trim();
 }
 
 function getPayrollTruckType(truck) {
-  return String(truck?.Truck_Type || truck?.truckType || truck?.Body_Type || truck?.bodyType || "").trim();
+  return String(truck?.Truck_Type || truck?.truck_type || truck?.truckType || truck?.Body_Type || truck?.bodyType || "").trim();
 }
 
 function normalizePayrollGroup(value) {
@@ -467,7 +561,7 @@ function normalizePayrollGroup(value) {
   if (key === "sugar") return "Sugar";
   if (key === "preform" || key === "resin" || key === "preform / resin" || compact === "preformresin") return "Preform / Resin";
   if (key === "caps" || key === "crown" || key === "crowns" || key === "caps / crown" || key === "caps / crowns" || key === "caps & crown" || key === "caps & crowns" || compact === "capscrown" || compact === "capscrowns") return "Caps / Crown";
-  if (key === "2go" || key === "2 go" || compact === "2go") return "2GO";
+  if (key === "2go" || key === "2 go" || compact === "2go" || compact.includes("2go")) return "2GO";
   if (key.includes("unknown") || key.includes("update") || key.includes("other")) return "Other / Needs Update";
   return raw;
 }
@@ -485,14 +579,16 @@ function savePayrollRecord() {
   const headerWarnings = validatePayrollHeader();
   calculatePayroll();
 
-  const existing = payrollState.records.find(record => record.id === payrollState.currentId);
+  const existing = findExistingPayrollRecordForSave();
+  if (existing.id) payrollState.currentId = existing.id;
   const now = new Date().toISOString();
   const record = buildPayrollRecord(existing);
   record.status = $("payroll-status").value || "Draft";
   record.updatedAt = now;
   if (!record.createdAt) record.createdAt = now;
 
-  payrollState.records = payrollState.records.filter(item => item.id !== record.id);
+  payrollState.currentId = record.id;
+  payrollState.records = payrollState.records.filter(item => !samePayrollRecord(item, record));
   payrollState.records.unshift(record);
   writeJson(PAYROLL_RECORDS_KEY, payrollState.records);
   renderPayrollRecordsTable();
@@ -514,6 +610,16 @@ function savePayrollRecord() {
         });
     });
   return record;
+}
+
+function findExistingPayrollRecordForSave() {
+  const currentId = String(payrollState.currentId || "").trim();
+  const payrollNumber = String($("payroll-number")?.value || "").trim();
+  return payrollState.records.find(record => {
+    if (currentId && String(record.id || "").trim() === currentId) return true;
+    if (payrollNumber && payrollIdentity(record) === payrollIdentity({ payrollNumber })) return true;
+    return false;
+  }) || {};
 }
 
 function savePayrollDraft() {
@@ -614,36 +720,43 @@ function addPayrollLine(line = {}) {
 function createBlankPayrollLine(line = {}) {
   return {
     id: line.id || createId("line"),
-    tripDate: line.tripDate || "",
-    shipmentNumber: line.shipmentNumber || "",
-    poNumber: line.poNumber || "",
+    tripDate: firstPresent(line.tripDate, line.trip_date, line.date) || "",
+    shipmentNumber: firstPresent(line.shipmentNumber, line.shipment_number) || "",
+    poNumber: firstPresent(line.poNumber, line.po_number) || "",
     vanNumber: line.vanNumber || "",
+    containerNumber: firstPresent(line.containerNumber, line.container_number, line.vanNumber) || "",
     containerType: line.containerType || "",
     source: line.source || "",
     destination: line.destination || "",
-    referenceNo: line.referenceNo || line.shipmentNumber || "",
-    commodity: line.commodity || "",
-    tripType: line.tripType || "",
-    driverSalary: amountValue(line.driverSalary),
-    helperSalary: amountValue(line.helperSalary),
-    driverAllowance: amountValue(line.driverAllowance),
-    helperAllowance: amountValue(line.helperAllowance),
+    referenceNo: firstPresent(line.referenceNo, line.reference_no, line.shipmentNumber, line.shipment_number) || "",
+    commodity: firstPresent(line.commodity, line.groupCommodity, line.group_commodity) || "",
+    tripType: firstPresent(line.tripType, line.trip_type) || "",
+    driverSalary: amountValue(firstPresent(line.driverSalary, line.driver_salary, line.bayadSaDriver, line.bayad_sa_driver)),
+    helperSalary: amountValue(firstPresent(line.helperSalary, line.helper_salary, line.bayadSaHelper, line.bayad_sa_helper)),
+    driverAllowance: amountValue(firstPresent(line.driverAllowance, line.allowance_driver)),
+    helperAllowance: amountValue(firstPresent(line.helperAllowance, line.allowance_helper)),
     diesel: amountValue(line.diesel),
-    tollFee: amountValue(line.tollFee),
-    passway: amountValue(line.passway),
+    costPerLiter: amountValue(firstPresent(line.costPerLiter, line.cost_per_liter, line.perLiter, line.per_liter)),
+    tollFee: amountValue(firstPresent(line.tollFee, line.toll, line.toll_fee)),
+    passway: amountValue(firstPresent(line.passway, line.passWay, line.pass_way)),
     parking: amountValue(line.parking),
-    lagayLoaded: amountValue(line.lagayLoaded),
-    lagayEmpty: amountValue(line.lagayEmpty),
+    lagayLoaded: amountValue(firstPresent(line.lagayLoaded, line.lagay_loaded)),
+    lagayEmpty: amountValue(firstPresent(line.lagayEmpty, line.lagay_empty)),
     luna: amountValue(line.luna),
     mano: amountValue(line.mano),
+    timbang: amountValue(line.timbang),
     vulcanize: amountValue(line.vulcanize),
-    hugasTruck: amountValue(line.hugasTruck),
+    hugasTruck: amountValue(firstPresent(line.hugasTruck, line.truck_wash, line.hugas_truck)),
     checkpoint: amountValue(line.checkpoint),
-    otherExpenses: amountValue(line.otherExpenses),
+    otherExpenses: amountValue(firstPresent(line.otherExpenses, line.other_expenses)),
     budgetReleased: amountValue(line.budgetReleased),
     rowTotal: amountValue(line.rowTotal),
     rateId: line.rateId || line.rate_id || "",
     rateMatchStatus: line.rateMatchStatus || line.rate_match_status || "No Match",
+    lineStatus: firstPresent(line.lineStatus, line.status) || "",
+    sourceModule: firstPresent(line.sourceModule, line.source_module) || "",
+    sourceFile: firstPresent(line.sourceFile, line.source_file) || "",
+    encodedBy: firstPresent(line.encodedBy, line.encoded_by) || "",
     remarks: line.remarks || "",
     warnings: line.warnings || []
   };
@@ -1125,7 +1238,7 @@ function validatePayrollHeader() {
 }
 
 function isLineBlank(line) {
-  const textFields = ["tripDate", "poNumber", "referenceNo", "shipmentNumber", "vanNumber", "containerType", "source", "destination", "commodity", "tripType", "remarks"];
+  const textFields = ["tripDate", "poNumber", "referenceNo", "shipmentNumber", "containerNumber", "vanNumber", "containerType", "source", "destination", "commodity", "tripType", "lineStatus", "sourceFile", "remarks"];
   const hasText = textFields.some(field => String(line[field] || "").trim() !== "");
   const hasAmount = amountFields.some(field => parseNumber(line[field]) !== 0);
   return !hasText && !hasAmount;
@@ -1356,7 +1469,7 @@ function renderPayrollRecordsTable() {
   });
 
   recordsBody.innerHTML = rows.length ? rows.map(record => `
-    <tr>
+    <tr class="payroll-saved-record-row" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}" tabindex="0" aria-label="Open payroll details for ${escapeAttr(record.payrollNumber || record.id || "record")}">
       <td>${escapeHtml(record.payrollDate)}</td>
       <td>${escapeHtml(record.plateNumber)}</td>
       <td>${escapeHtml(record.driverName)}</td>
@@ -1367,22 +1480,90 @@ function renderPayrollRecordsTable() {
       <td>${formatCurrency(record.totals?.totalExpenses)}</td>
       <td>${formatCurrency(record.totals?.driverNetPay)}</td>
       <td>${formatCurrency(record.totals?.helperNetPay)}</td>
-      <td class="payroll-row-actions">
-        <button type="button" data-action="view" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}">View/Edit</button>
-        <button type="button" data-action="submit" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}">Submit</button>
-        <button type="button" data-action="duplicate" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}">Duplicate</button>
-        <button type="button" data-action="delete" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}">Delete</button>
-        <button type="button" data-action="message" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}">Generate Message</button>
-        ${isBudgetBalanceDraft(record) ? `<button type="button" data-action="toggle-draft" data-payroll-id="${escapeAttr(getPayrollRecordLookupId(record))}" class="payroll-draft-show-btn">Show Details</button>` : ""}
-      </td>
     </tr>
-    ${isBudgetBalanceDraft(record) ? renderBudgetBalanceDraftCard(record) : ""}
-  `).join("") : `<tr><td colspan="11" class="empty-table">No payroll records yet.</td></tr>`;
+  `).join("") : `<tr><td colspan="10" class="empty-table">No payroll records yet.</td></tr>`;
   renderForApprovalQueue();
+}
+
+function renderPayrollDetailsModal(record = {}, lines = []) {
+  const payrollId = getPayrollRecordLookupId(record);
+  return `
+    <div class="detail-block approval-detail-grid">
+      ${approvalDetailItem("Payroll ID", record.payrollNumber || record.id)}
+      ${approvalDetailItem("Plate Number", record.plateNumber)}
+      ${approvalDetailItem("Driver", record.driverName)}
+      ${approvalDetailItem("Helper", record.helperName)}
+      ${approvalDetailItem("Group", record.groupCategory)}
+      ${approvalDetailItem("Payroll Date", record.payrollDate)}
+      ${approvalDetailItem("Status", getSavedPayrollDisplayStatus(record))}
+    </div>
+    <div class="detail-block">
+      <div class="payroll-table-wrap payroll-details-table-wrap">
+        <table class="payroll-table payroll-record-details-table">
+          <thead>
+            <tr>
+              <th>Date</th><th>Source</th><th>Destination</th><th>Reference No.</th><th>PO Number</th><th>Shipment Number</th><th>Container Number</th><th>Trip Type</th><th>Diesel</th><th>Per Liter</th><th>Driver Salary</th><th>Helper Salary</th><th>Toll Fee</th><th>Passway</th><th>Parking</th><th>Lagay Loaded</th><th>Lagay Empty</th><th>Mano</th><th>Timbang</th><th>Luna</th><th>Vulcanize</th><th>Driver Allowance</th><th>Helper Allowance</th><th>Hugas Truck</th><th>Checkpoint</th><th>Other Expenses</th><th>Remarks</th>
+            </tr>
+          </thead>
+          <tbody>${renderSavedPayrollTripLines(lines)}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="payroll-details-footer">
+      <button type="button" data-modal-action="view" data-payroll-id="${escapeAttr(payrollId)}">View/Edit</button>
+      <button type="button" data-modal-action="delete" data-payroll-id="${escapeAttr(payrollId)}" class="danger-outline">Delete</button>
+      <button type="button" data-modal-action="close">Close</button>
+    </div>
+  `;
+}
+
+function renderSavedPayrollTripLines(lines = []) {
+  const visibleLines = lines.map(line => createBlankPayrollLine(line)).filter(line => !isLineBlank(line));
+  return visibleLines.length ? visibleLines.map(line => `
+    <tr>
+      <td>${escapeHtml(line.tripDate)}</td>
+      <td>${escapeHtml(line.source)}</td>
+      <td>${escapeHtml(line.destination)}</td>
+      <td>${escapeHtml(line.referenceNo)}</td>
+      <td>${escapeHtml(line.poNumber)}</td>
+      <td>${escapeHtml(line.shipmentNumber)}</td>
+      <td>${escapeHtml(line.containerNumber || line.vanNumber)}</td>
+      <td>${escapeHtml(line.tripType)}</td>
+      <td>${formatCurrency(line.diesel)}</td>
+      <td>${formatCurrency(line.costPerLiter)}</td>
+      <td>${formatCurrency(line.driverSalary)}</td>
+      <td>${formatCurrency(line.helperSalary)}</td>
+      <td>${formatCurrency(line.tollFee)}</td>
+      <td>${formatCurrency(line.passway)}</td>
+      <td>${formatCurrency(line.parking)}</td>
+      <td>${formatCurrency(line.lagayLoaded)}</td>
+      <td>${formatCurrency(line.lagayEmpty)}</td>
+      <td>${formatCurrency(line.mano)}</td>
+      <td>${formatCurrency(line.timbang)}</td>
+      <td>${formatCurrency(line.luna)}</td>
+      <td>${formatCurrency(line.vulcanize)}</td>
+      <td>${formatCurrency(line.driverAllowance)}</td>
+      <td>${formatCurrency(line.helperAllowance)}</td>
+      <td>${formatCurrency(line.hugasTruck)}</td>
+      <td>${formatCurrency(line.checkpoint)}</td>
+      <td>${formatCurrency(line.otherExpenses)}</td>
+      <td>${escapeHtml(line.remarks)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="27" class="empty-table">No trip lines found for this payroll record.</td></tr>`;
 }
 
 function getPayrollRecordLookupId(record = {}) {
   return record.payrollNumber || record.payroll_id || record.payrollId || record.id || "";
+}
+
+function payrollIdentity(record = {}) {
+  return String(record.payrollNumber || record.payroll_id || record.payrollId || record.Payroll_Number || record.Liquidation_Number || record.id || "").trim();
+}
+
+function samePayrollRecord(a = {}, b = {}) {
+  const aIdentity = payrollIdentity(a);
+  const bIdentity = payrollIdentity(b);
+  return Boolean(aIdentity && bIdentity && aIdentity === bIdentity);
 }
 
 function findPayrollRecordByLookupId(payrollId) {
@@ -1398,6 +1579,12 @@ function findPayrollRecordByLookupId(payrollId) {
 }
 
 function handleSavedPayrollRecordAction(event) {
+  const row = event.target.closest(".payroll-saved-record-row");
+  if (row && !event.target.closest("button, a, input, select, textarea")) {
+    showSavedPayrollDetails(row.dataset.payrollId);
+    return;
+  }
+
   const button = event.target.closest("[data-action][data-payroll-id]");
   if (!button) return;
   const action = button.dataset.action;
@@ -1406,34 +1593,72 @@ function handleSavedPayrollRecordAction(event) {
 
   if (action === "view") {
     editPayrollRecord(payrollId);
-  } else if (action === "submit") {
-    submitPayrollFromRecords(payrollId);
-  } else if (action === "duplicate") {
-    duplicatePayrollRecord(payrollId);
   } else if (action === "delete") {
     deletePayrollRecord(payrollId);
-  } else if (action === "message") {
-    editPayrollRecord(payrollId).then(() => generateViberMessage());
+  } else if (action === "show-details") {
+    showSavedPayrollDetails(payrollId);
   } else if (action === "draft-finalize-placeholder") {
     setStatus("Finalize payroll will be added next. This draft has not applied deductions yet.", "info");
-  } else if (action === "toggle-draft") {
-    const cardId = `draft-card-${payrollId}`;
-    const card = document.getElementById(cardId);
-    if (!card) return;
-    const willExpand = card.hidden;
-    document.querySelectorAll("[id^='draft-card-']").forEach(el => {
-      el.hidden = true;
-      const prevTr = el.previousElementSibling;
-      const btn = prevTr?.querySelector('[data-action="toggle-draft"]');
-      if (btn) btn.textContent = "Show Details";
-    });
-    card.hidden = !willExpand;
-    if (willExpand) {
-      const prevTr = card.previousElementSibling;
-      const btn = prevTr?.querySelector('[data-action="toggle-draft"]');
-      if (btn) btn.textContent = "Hide Details";
-    }
+  } else if (action === "toggle-details" || action === "toggle-draft") {
+    showSavedPayrollDetails(payrollId);
   }
+}
+
+function handleSavedPayrollRecordKeydown(event) {
+  const row = event.target.closest(".payroll-saved-record-row");
+  if (!row) return;
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  showSavedPayrollDetails(row.dataset.payrollId);
+}
+
+async function showSavedPayrollDetails(payrollId) {
+  const record = findPayrollRecordByLookupId(payrollId);
+  const panel = $("payroll-details-panel");
+  const content = $("payroll-details-content");
+  if (!record || !panel || !content) return;
+
+  const payrollLookup = getPayrollRecordLookupId(record);
+  console.log("Saved payroll details clicked", {
+    payroll_id: payrollLookup,
+    existingRecordLinesCount: (record.lines || []).length
+  });
+  content.innerHTML = `
+    <div class="detail-block">
+      <p class="payroll-info-note" style="margin:0">Loading payroll trip lines...</p>
+    </div>
+  `;
+  panel.hidden = false;
+  const lines = await loadPayrollTripLinesForRecord(record, { updateEditor: false });
+  console.log("Saved payroll details lines", {
+    payroll_id: payrollLookup,
+    fetchedTripLinesCount: lines.length,
+    firstTripLineSample: lines[0] || null
+  });
+  content.innerHTML = renderPayrollDetailsModal(record, lines);
+  bindPayrollDetailsModalActions(content);
+}
+
+function closePayrollDetails() {
+  if ($("payroll-details-panel")) $("payroll-details-panel").hidden = true;
+}
+
+function bindPayrollDetailsModalActions(content) {
+  content.querySelectorAll("[data-modal-action]").forEach(button => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.modalAction;
+      const payrollId = button.dataset.payrollId;
+      if (action === "close") {
+        closePayrollDetails();
+      } else if (action === "view") {
+        closePayrollDetails();
+        editPayrollRecord(payrollId);
+      } else if (action === "delete") {
+        closePayrollDetails();
+        deletePayrollRecord(payrollId);
+      }
+    });
+  });
 }
 
 function getSavedPayrollDisplayStatus(record) {
@@ -1705,8 +1930,9 @@ async function editPayrollRecord(id) {
   if (!record) return;
   const payrollId = getPayrollRecordLookupId(record);
   console.log("Opening payroll record", payrollId);
-  payrollState.currentId = record.id;
-  payrollState.lines = (record.lines || []).map(line => ({ ...line, warnings: line.warnings || [] }));
+  payrollState.currentId = record.id || payrollId;
+  payrollState.lines = (record.lines || []).map(line => createBlankPayrollLine({ ...line, warnings: line.warnings || [] }));
+  payrollState.originalLineIds = payrollState.lines.map(line => line.id).filter(Boolean);
   if (!payrollState.lines.length) payrollState.lines.push(createBlankPayrollLine());
   $("payroll-number").value = record.payrollNumber || record.id;
   $("payroll-date").value = record.payrollDate || "";
@@ -1729,7 +1955,11 @@ async function editPayrollRecord(id) {
   $("payment-date").value = record.approval?.paymentDate || "";
   setDeductionInputs("driver", record.deductions?.driver || {});
   setDeductionInputs("helper", record.deductions?.helper || {});
-  await loadPayrollTripLinesForRecord(record);
+  const loadedLines = await loadPayrollTripLinesForRecord(record);
+  if (loadedLines.length) {
+    payrollState.lines = loadedLines.map(line => createBlankPayrollLine(line));
+    payrollState.originalLineIds = payrollState.lines.map(line => line.id).filter(Boolean);
+  }
   renderLinesTable();
   calculatePayroll();
   generateViberMessage();
@@ -1744,6 +1974,7 @@ function duplicatePayrollRecord(id) {
   const record = findPayrollRecordByLookupId(id);
   if (!record) return;
   payrollState.currentId = createId("payroll");
+  payrollState.originalLineIds = [];
   payrollState.lines = (record.lines || []).map(line => ({ ...line, id: createId("line"), warnings: [] }));
   if (!payrollState.lines.length) payrollState.lines.push(createBlankPayrollLine());
   $("payroll-number").value = generatePayrollId();
@@ -1886,6 +2117,10 @@ function parseNumber(value) {
 
 function amountValue(value) {
   return hasValue(value) ? parseNumber(value) : "";
+}
+
+function firstPresent(...values) {
+  return values.find(value => value !== null && value !== undefined && value !== "");
 }
 
 function payrollCloudGet(action, params = {}) {
@@ -2156,16 +2391,20 @@ function cloudBatchToPayrollTotals(batch) {
 
 function mergePayrollRecords(localRecords, cloudRecords) {
   const byId = new Map();
-  localRecords.forEach(record => byId.set(record.id, record));
+  localRecords.forEach(record => byId.set(payrollIdentity(record), record));
   cloudRecords.forEach(cloudRecord => {
-    const localRecord = byId.get(cloudRecord.id);
-    byId.set(cloudRecord.id, localRecord ? mergePayrollRecord(localRecord, cloudRecord) : cloudRecord);
+    const key = payrollIdentity(cloudRecord);
+    const localRecord = byId.get(key);
+    byId.set(key, localRecord ? mergePayrollRecord(localRecord, cloudRecord) : cloudRecord);
   });
   return Array.from(byId.values()).sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
 }
 
 function mergePayrollRecord(localRecord, cloudRecord) {
   const merged = { ...cloudRecord, ...localRecord };
+  merged.id = localRecord.id || cloudRecord.id;
+  merged.supabaseId = cloudRecord.id || localRecord.supabaseId || "";
+  merged.payrollNumber = localRecord.payrollNumber || cloudRecord.payrollNumber || cloudRecord.payroll_id || "";
   Object.keys(cloudRecord).forEach(key => {
     const localValue = localRecord[key];
     const cloudValue = cloudRecord[key];
@@ -3109,50 +3348,95 @@ async function savePayrollToSupabase(record) {
 
 async function savePayrollTripLinesToSupabase(record) {
   const lines = (record.lines || []).map(line => payrollLineToSupabasePayload(record, line));
-  if (!lines.length) return { ok: true, count: 0 };
+  const activeLineIds = new Set(lines.map(line => String(line.line_id || "").trim()).filter(Boolean));
+  const deletedLines = (payrollState.originalLineIds || [])
+    .filter(lineId => lineId && !activeLineIds.has(String(lineId)))
+    .map(lineId => ({
+      line_id: lineId,
+      payroll_id: record.payrollNumber || record.id,
+      is_deleted: true,
+      status: "Deleted",
+      source_module: "Payroll",
+      raw_data: { deletedFromPayrollDraft: true, payroll_id: record.payrollNumber || record.id }
+    }));
+  const payloadLines = lines.concat(deletedLines);
+  if (!payloadLines.length) return { ok: true, count: 0 };
   const response = await fetch(`${VNS_PAYROLL_WORKER_API_BASE}/api/payroll/trip-lines-bulk-upsert`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ lines })
+    body: JSON.stringify({ lines: payloadLines })
   });
   const data = await response.json().catch(() => null);
   if (!response.ok || !data?.ok) throw new Error(data?.error || `Payroll trip line save failed (${response.status})`);
+  payrollState.originalLineIds = lines.map(line => line.line_id).filter(Boolean);
   return data;
 }
 
 function payrollLineToSupabasePayload(record, line) {
+  const tripDate = line.tripDate || null;
+  const payrollId = record.payrollNumber || record.id;
+  const plateNumber = record.plateNumber || null;
+  const groupCommodity = record.groupCategory || line.commodity || null;
+  const driverName = record.driverName || null;
+  const helperName = record.helperName || null;
+  const perLiter = parseNumber(line.costPerLiter);
+  const bayadSaDriver = parseNumber(line.driverSalary);
+  const bayadSaHelper = parseNumber(line.helperSalary);
+  const tollFee = parseNumber(line.tollFee);
+  const passWay = parseNumber(line.passway);
+  const hugasTruck = parseNumber(line.hugasTruck);
+  const status = line.lineStatus || record.status || "Draft";
   return {
     line_id: line.id,
-    payroll_id: record.payrollNumber || record.id,
-    trip_date: line.tripDate || null,
-    plate_number: record.plateNumber || null,
-    group_category: record.groupCategory || null,
-    driver_name: record.driverName || null,
-    helper_name: record.helperName || null,
+    payroll_id: payrollId,
+    trip_date: tripDate,
+    date: tripDate,
+    plate_number: plateNumber,
+    group_category: groupCommodity,
+    group_commodity: groupCommodity,
+    driver_name: driverName,
+    driver: driverName,
+    helper_name: helperName,
+    helper: helperName,
     source: line.source || null,
     destination: line.destination || null,
     reference_no: line.referenceNo || line.shipmentNumber || null,
     po_number: line.poNumber || null,
+    shipment_number: line.shipmentNumber || null,
+    container_number: line.containerNumber || line.vanNumber || null,
+    trip_type: line.tripType || null,
     diesel: parseNumber(line.diesel),
-    cost_per_liter: parseNumber(line.costPerLiter),
-    driver_salary: parseNumber(line.driverSalary),
-    helper_salary: parseNumber(line.helperSalary),
-    toll: parseNumber(line.tollFee),
-    passway: parseNumber(line.passway),
+    cost_per_liter: perLiter,
+    per_liter: perLiter,
+    driver_salary: bayadSaDriver,
+    bayad_sa_driver: bayadSaDriver,
+    helper_salary: bayadSaHelper,
+    bayad_sa_helper: bayadSaHelper,
+    toll: tollFee,
+    toll_fee: tollFee,
+    passway: passWay,
+    pass_way: passWay,
     parking: parseNumber(line.parking),
     lagay_loaded: parseNumber(line.lagayLoaded),
     lagay_empty: parseNumber(line.lagayEmpty),
     mano: parseNumber(line.mano),
+    timbang: parseNumber(line.timbang),
+    luna: parseNumber(line.luna),
     vulcanize: parseNumber(line.vulcanize),
     allowance_driver: parseNumber(line.driverAllowance),
     allowance_helper: parseNumber(line.helperAllowance),
-    truck_wash: parseNumber(line.hugasTruck),
+    truck_wash: hugasTruck,
+    hugas_truck: hugasTruck,
     checkpoint: parseNumber(line.checkpoint),
     other_expenses: parseNumber(line.otherExpenses),
     row_total: getLineRowTotal(line),
     rate_id: line.rateId || null,
     rate_match_status: line.rateMatchStatus || "No Match",
     remarks: line.remarks || null,
+    encoded_by: record.encoderName || line.encodedBy || null,
+    source_module: line.sourceModule || "Payroll",
+    source_file: line.sourceFile || null,
+    status,
     raw_data: line
   };
 }
@@ -3207,54 +3491,76 @@ function normalizeSupabasePayrollTripLine(line = {}) {
   const raw = line.raw_data || {};
   return createBlankPayrollLine({
     id: line.lineId || line.line_id || raw.id || createId("line"),
-    tripDate: line.tripDate || line.trip_date || raw.tripDate || "",
+    tripDate: line.date || line.tripDate || line.trip_date || raw.date || raw.tripDate || "",
     source: line.source || raw.source || "",
     destination: line.destination || raw.destination || "",
     referenceNo: line.referenceNo || line.reference_no || raw.referenceNo || raw.shipmentNumber || "",
     poNumber: line.poNumber || line.po_number || raw.poNumber || "",
+    shipmentNumber: line.shipmentNumber || line.shipment_number || raw.shipmentNumber || "",
+    containerNumber: line.containerNumber || line.container_number || raw.containerNumber || raw.vanNumber || "",
+    tripType: line.tripType || line.trip_type || raw.tripType || "",
     diesel: line.diesel ?? raw.diesel,
-    costPerLiter: line.costPerLiter ?? line.cost_per_liter ?? raw.costPerLiter,
-    driverSalary: line.driverSalary ?? line.driver_salary ?? raw.driverSalary,
-    helperSalary: line.helperSalary ?? line.helper_salary ?? raw.helperSalary,
-    tollFee: line.tollFee ?? line.toll ?? raw.tollFee,
-    passway: line.passway ?? raw.passway,
+    costPerLiter: line.perLiter ?? line.per_liter ?? line.costPerLiter ?? line.cost_per_liter ?? raw.perLiter ?? raw.costPerLiter,
+    driverSalary: line.bayadSaDriver ?? line.bayad_sa_driver ?? line.driverSalary ?? line.driver_salary ?? raw.bayadSaDriver ?? raw.driverSalary,
+    helperSalary: line.bayadSaHelper ?? line.bayad_sa_helper ?? line.helperSalary ?? line.helper_salary ?? raw.bayadSaHelper ?? raw.helperSalary,
+    tollFee: line.tollFee ?? line.toll_fee ?? line.toll ?? raw.tollFee,
+    passway: line.passWay ?? line.pass_way ?? line.passway ?? raw.passWay ?? raw.passway,
     parking: line.parking ?? raw.parking,
     lagayLoaded: line.lagayLoaded ?? line.lagay_loaded ?? raw.lagayLoaded,
     lagayEmpty: line.lagayEmpty ?? line.lagay_empty ?? raw.lagayEmpty,
     mano: line.mano ?? raw.mano,
+    timbang: line.timbang ?? raw.timbang,
+    luna: line.luna ?? raw.luna,
     vulcanize: line.vulcanize ?? raw.vulcanize,
     driverAllowance: line.driverAllowance ?? line.allowance_driver ?? raw.driverAllowance,
     helperAllowance: line.helperAllowance ?? line.allowance_helper ?? raw.helperAllowance,
-    hugasTruck: line.hugasTruck ?? line.truck_wash ?? raw.hugasTruck,
+    hugasTruck: line.hugasTruck ?? line.hugas_truck ?? line.truck_wash ?? raw.hugasTruck,
     checkpoint: line.checkpoint ?? raw.checkpoint,
     otherExpenses: line.otherExpenses ?? line.other_expenses ?? raw.otherExpenses,
     rowTotal: line.rowTotal ?? line.row_total ?? raw.rowTotal,
     rateId: line.rateId || line.rate_id || raw.rateId || "",
     rateMatchStatus: line.rateMatchStatus || line.rate_match_status || raw.rateMatchStatus || "No Match",
+    lineStatus: line.lineStatus || line.status || raw.lineStatus || raw.status || "",
+    sourceModule: line.sourceModule || line.source_module || raw.sourceModule || "",
+    sourceFile: line.sourceFile || line.source_file || raw.sourceFile || "",
+    encodedBy: line.encodedBy || line.encoded_by || raw.encodedBy || "",
     remarks: line.remarks || raw.remarks || "",
     warnings: []
   });
 }
 
-async function loadPayrollTripLinesForRecord(record) {
+async function loadPayrollTripLinesForRecord(record, options = {}) {
+  const updateEditor = options.updateEditor !== false;
   const payrollId = record.payrollNumber || record.payroll_id || record.payrollId || record.id;
   if (!payrollId) return [];
-  console.log("Loading payroll trip lines", payrollId);
+  console.log("Loading payroll trip lines", {
+    payroll_id: payrollId,
+    existingRecordLinesCount: (record.lines || []).length
+  });
   try {
     const response = await fetch(`${VNS_PAYROLL_WORKER_API_BASE}/api/payroll/trip-lines?payroll_id=${encodeURIComponent(payrollId)}&limit=500`);
     const data = await response.json().catch(() => null);
     if (!response.ok || !data?.ok) throw new Error(data?.error || `Payroll trip lines load failed (${response.status})`);
     const lines = Array.isArray(data.lines) ? data.lines.map(normalizeSupabasePayrollTripLine) : [];
-    console.log("Payroll trip lines loaded", lines);
+    console.log("Payroll trip lines loaded", {
+      payroll_id: payrollId,
+      fetchedTripLinesCount: lines.length,
+      firstTripLineSample: lines[0] || null
+    });
     if (lines.length) {
-      payrollState.lines = lines;
+      if (updateEditor) payrollState.lines = lines;
       record.lines = lines;
     }
-    return lines;
+    return lines.length ? lines : (record.lines || []);
   } catch (error) {
     console.warn("Payroll trip lines load failed; using record raw lines", error);
-    console.log("Payroll trip lines loaded", payrollState.lines);
-    return payrollState.lines;
+    const fallbackLines = record.lines || (updateEditor ? payrollState.lines : []);
+    console.log("Payroll trip lines fallback", {
+      payroll_id: payrollId,
+      existingRecordLinesCount: fallbackLines.length,
+      firstTripLineSample: fallbackLines[0] || null
+    });
+    return fallbackLines;
   }
 }
 

@@ -84,7 +84,7 @@
             <option>2GO</option>
             <option>Other / Needs Update</option>
           </select></label>
-          <label><span>Plate Number</span><input id="plate-number" type="text" list="payroll-truck-plates" placeholder="ABC1234"></label>
+          <label><span>Plate Number</span><input id="plate-number" type="text" list="payroll-truck-plates" placeholder="ABC1234"><small id="payroll-truck-master-status" class="payroll-person-note" hidden></small></label>
           <label><span>Driver Name</span><input id="driver-name" type="text" list="payroll-driver-names" autocomplete="off"><small id="driver-name-note" class="payroll-person-note" hidden>New name — not in master data. Will be saved as temporary until added to master data.</small></label>
           <label><span>Helper Name</span><input id="helper-name" type="text" list="payroll-helper-names" autocomplete="off"><small id="helper-name-note" class="payroll-person-note" hidden>New name — not in master data. Will be saved as temporary until added to master data.</small></label>
           <label><span>Encoder Name</span><input id="encoder-name" type="text"></label>
@@ -130,7 +130,11 @@
                 <th class="sticky-col sticky-col-4">Destination</th>
                 <th>Reference No.</th>
                 <th>PO Number</th>
+                <th>Shipment Number</th>
+                <th>Container Number</th>
+                <th>Trip Type</th>
                 <th>Diesel</th>
+                <th>Per Liter</th>
                 <th>Driver Salary</th>
                 <th>Helper Salary</th>
                 <th>Toll</th>
@@ -139,6 +143,8 @@
                 <th>Lagay Loaded</th>
                 <th>Lagay Empty</th>
                 <th>Mano</th>
+                <th>Timbang</th>
+                <th>Luna</th>
                 <th>Vulcanize</th>
                 <th>Allowance Driver</th>
                 <th>Allowance Helper</th>
@@ -147,6 +153,8 @@
                 <th>Other Expenses</th>
                 <th>Row Total</th>
                 <th>Rate Match Status</th>
+                <th>Status</th>
+                <th>Source File</th>
                 <th>Issues</th>
                 <th>Remarks</th>
                 <th>Actions</th>
@@ -438,7 +446,7 @@
               <tr>
                 <th>Payroll Date</th><th>Plate</th><th>Driver</th><th>Helper</th>
                 <th>Status</th><th>Approval Status</th><th>Payment Status</th>
-                <th>Total Expenses</th><th>Driver Net Pay</th><th>Helper Net Pay</th><th>Actions</th>
+                <th>Total Expenses</th><th>Driver Net Pay</th><th>Helper Net Pay</th>
               </tr>
             </thead>
             <tbody id="records-body"></tbody>
@@ -466,6 +474,16 @@
         <button id="approval-details-close" class="details-close" type="button">Close</button>
       </div>
       <div id="approval-details-content" class="record-details-content"></div>
+    </article>
+  </div>
+
+  <div id="payroll-details-panel" class="record-details-panel payroll-details-modal" hidden>
+    <article class="record-details-card">
+      <div class="record-details-header">
+        <h2>Payroll Details</h2>
+        <button id="payroll-details-close" class="details-close" type="button">Close</button>
+      </div>
+      <div id="payroll-details-content" class="record-details-content"></div>
     </article>
   </div>
 

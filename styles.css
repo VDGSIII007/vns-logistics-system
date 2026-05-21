@@ -584,7 +584,7 @@ body.payroll-page{
 }
 .payroll-records-table{
   width:100%;
-  min-width:1280px;
+  min-width:1040px;
 }
 .payroll-records-table th,
 .payroll-records-table td{
@@ -595,6 +595,47 @@ body.payroll-page{
 }
 .payroll-approval-details .record-details-card{
   width:min(1120px,94vw);
+}
+.payroll-details-modal .record-details-card{
+  width:min(1280px,96vw);
+  max-height:88vh;
+}
+.payroll-details-table-wrap{
+  max-height:56vh;
+  overflow:auto;
+}
+.payroll-record-details-table{
+  min-width:3100px;
+}
+.payroll-saved-record-row{
+  cursor:pointer;
+}
+.payroll-saved-record-row:hover td,
+.payroll-saved-record-row:focus td{
+  background:#fff7f7;
+}
+.payroll-saved-record-row:focus{
+  outline:2px solid rgba(215,25,32,.35);
+  outline-offset:-2px;
+}
+.payroll-details-footer{
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+  border-top:1px solid var(--line);
+  padding-top:14px;
+}
+.payroll-details-footer button{
+  border:1px solid var(--line);
+  background:#fff;
+  color:var(--red);
+  border-radius:999px;
+  padding:8px 12px;
+  font:inherit;
+  font-size:.78rem;
+  font-weight:900;
+  cursor:pointer;
 }
 .approval-detail-grid,
 .approval-totals-grid{
