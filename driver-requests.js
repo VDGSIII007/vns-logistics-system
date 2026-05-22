@@ -69,6 +69,12 @@
     };
   }
 
+  function setBackLink(context) {
+    const link = $("driver-requests-back");
+    if (!link) return;
+    link.href = context.plate_number ? `driver-portal.html?plate=${encodeURIComponent(context.plate_number)}` : "driver-portal.html";
+  }
+
   function renderContext(context) {
     $("requests-pass-plate").textContent = context.plate_number || "-";
     $("requests-pass-driver").textContent = context.driver_name || "-";
@@ -180,6 +186,7 @@
 
   document.addEventListener("DOMContentLoaded", async () => {
     const context = contextFromUrlOrSession();
+    setBackLink(context);
     renderContext(context);
     if (!context.plate_number) {
       showStatus("Please login through the VNS Driver Portal.", "error");

@@ -6495,3 +6495,89 @@ body.payroll-page{
   background:#fef2f2!important;
   border-color:#f87171!important;
 }
+
+/* Mobile portal access cards on system portal */
+.mobile-access-link {
+  color: var(--red) !important;
+  font-weight: 900;
+}
+
+.portal-mobile-section {
+  margin-top: 54px;
+  padding: 34px;
+  border: 1px solid rgba(215, 25, 32, 0.16);
+  border-radius: 34px;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(215, 25, 32, 0.09), transparent 34%),
+    linear-gradient(135deg, #fff, #fff7f7);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.06);
+  scroll-margin-top: 96px;
+}
+
+.portal-mobile-heading {
+  margin-bottom: 24px;
+}
+
+.portal-mobile-heading h2 {
+  font-size: clamp(2rem, 3.6vw, 3.5rem);
+}
+
+.portal-mobile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.portal-mobile-card {
+  display: grid;
+  gap: 12px;
+  min-height: 220px;
+  padding: 26px;
+  border: 1px solid rgba(215, 25, 32, 0.18);
+  border-radius: 28px;
+  background: #fff;
+  color: inherit;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.07);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.portal-mobile-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.12);
+}
+
+.portal-mobile-card-title {
+  color: #161616;
+  font-size: 1.28rem;
+  font-weight: 900;
+}
+
+.portal-mobile-card-desc {
+  color: #5e6470;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.portal-mobile-card-action {
+  align-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-weight: 900;
+  box-shadow: 0 14px 28px rgba(215, 25, 32, 0.24);
+}
+
+@media (max-width: 900px) {
+  .portal-mobile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-mobile-section {
+    padding: 24px;
+  }
+}

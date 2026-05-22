@@ -3,7 +3,7 @@
 
   // TODO: Role-based access required before production.
   const WORKER_API_BASE = "https://vns-push-worker.santosvicenteiii.workers.dev";
-  const state = { filter: "all", records: [], selected: null, paymentTarget: null, busy: false };
+  const state = { filter: "cash", view: "for-payment", records: [], selected: null, paymentTarget: null, busy: false, overviewShown: false };
 
   const $ = (id) => document.getElementById(id);
 
@@ -22,9 +22,16 @@
   }
 
   function money(value) {
-    const number = Number(value || 0);
-    if (!Number.isFinite(number) || number === 0) return "";
+    if (value === null || value === undefined || value === "") return "";
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "";
     return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(number);
+  }
+
+  function amountNumber(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
   }
 
   function dateText(value) {
@@ -32,6 +39,22 @@
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return String(value).slice(0, 10);
     return date.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function shortText(value, limit = 92) {
+    const clean = text(value).replace(/\s+/g, " ");
+    return clean.length > limit ? `${clean.slice(0, limit - 1)}...` : clean;
+  }
+
+  function metaRow(label, value) {
+    const clean = text(value);
+    if (!clean) return "";
+    return `<p><span class="mobile-card-label">${escapeHtml(label)}:</span> ${escapeHtml(clean)}</p>`;
+  }
+
+  function amountLine(value, label = "Amount") {
+    const formatted = money(value);
+    return formatted ? `<p class="mobile-card-amount"><span>${escapeHtml(label)}</span>${escapeHtml(formatted)}</p>` : "";
   }
 
   function isoFromDateInput(value) {
@@ -110,7 +133,7 @@
       plate_number: text(record.plate_number || record.plateNumber),
       driver_name: text(record.driver_name || record.driverName),
       helper_name: text(record.helper_name || record.helperName),
-      payee: text(record.receiver_name || record.receiverName || record.personName || record.payee),
+      payee: text(record.receiver_name || record.receiverName || record.personName || record.payee || record.depositTo),
       account_number: text(record.account_number || record.accountNumber || record.depositNumber),
       amount: record.amount || "",
       source: text(record.source),
@@ -138,7 +161,7 @@
       plate_number: text(record.plate_number || record.plateNumber || record.Plate_Number),
       driver_name: text(record.driver_name || record.driverName || record.Driver),
       helper_name: text(record.helper_name || record.helperName || record.Helper),
-      payee: text(record.payee_name || record.payee || record.Payee || record.supplier_name || record.Supplier),
+      payee: text(record.payee_name || record.payee || record.Payee || record.mechanic_name || record.supplier_name || record.Supplier),
       account_number: text(record.account_number || record.accountNumber),
       amount: record.final_cost || record.Final_Cost || record.approved_cost || record.Approved_Cost || record.total_cost || record.Total_Cost || "",
       source: "",
@@ -151,7 +174,7 @@
       paid_at: text(record.paid_at || record.paidAt || record.Paid_At),
       payment_reference: text(record.payment_reference || record.paymentReference || record.Payment_Reference),
       payment_notes: text(record.payment_notes || record.paymentNotes || record.remarks || record.Remarks),
-      remarks: text(record.remarks || record.Remarks || record.description || record.Description),
+      remarks: text(record.remarks || record.Remarks || record.description || record.Description || record.issue || record.repair_item),
       raw: record
     };
   }
@@ -183,6 +206,7 @@
       helper_paid_at: text(record.helper_paid_at || record.helperPaidAt),
       driver_payment_ref_id: text(record.driver_payment_ref_id || record.driverPaymentRefId),
       helper_payment_ref_id: text(record.helper_payment_ref_id || record.helperPaymentRefId),
+      payroll_period: text(record.payroll_period || record.period || record.payroll_date || record.payrollDate),
       source: "",
       destination: "",
       route: "",
@@ -213,8 +237,13 @@
   }
 
   function visibleRecords() {
-    if (state.filter === "all") return state.records;
-    return state.records.filter(record => record.module === state.filter);
+    let records = state.records;
+    if (state.view === "for-payment") records = records.filter(record => statusLabel(record) !== "Paid");
+    if (state.view === "paid") records = records.filter(record => statusLabel(record) === "Paid");
+    if (state.view === "paid-today") records = records.filter(record => statusLabel(record) === "Paid" && text(record.paid_at).slice(0, 10) === today());
+    if (state.view === "history") records = records.filter(record => statusLabel(record) === "Paid");
+    if (state.filter !== "all") records = records.filter(record => record.module === state.filter);
+    return records;
   }
 
   function statusLabel(record) {
@@ -235,11 +264,155 @@
     return state.records.find(record => record.ref_id === ref);
   }
 
+  function unpaidRecords() {
+    return state.records.filter(record => statusLabel(record) !== "Paid");
+  }
+
+  function countByModule(module) {
+    const records = unpaidRecords();
+    if (module === "all") return records.length;
+    return records.filter(record => record.module === module).length;
+  }
+
+  function paidCount() {
+    return state.records.filter(record => statusLabel(record) === "Paid").length;
+  }
+
+  function paidTodayCount() {
+    const day = today();
+    return state.records.filter(record => statusLabel(record) === "Paid" && text(record.paid_at).slice(0, 10) === day).length;
+  }
+
+  function updateCounts() {
+    document.querySelectorAll("[data-payment-count-for]").forEach(badge => {
+      const count = countByModule(badge.dataset.paymentCountFor);
+      badge.textContent = String(count);
+      badge.classList.toggle("is-zero", count === 0);
+    });
+    const paid = paidCount();
+    const setCount = (selector, value) => {
+      const item = document.querySelector(selector);
+      if (item) item.textContent = String(value);
+    };
+    setCount('[data-payment-app-count="for-payment"]', countByModule("all"));
+    setCount('[data-payment-app-count="paid-today"]', paidTodayCount());
+    setCount('[data-payment-app-count="history"]', paid);
+    const summary = $("mobile-payment-summary");
+    summary.hidden = false;
+    const forPaymentBadge = document.querySelector('[data-payment-state-count="for-payment"]');
+    const historyBadge = document.querySelector('[data-payment-state-count="payment-history"]');
+    if (forPaymentBadge) forPaymentBadge.textContent = String(countByModule("all"));
+    if (historyBadge) historyBadge.textContent = String(paid);
+  }
+
+  function overviewMetric(label, value) {
+    const clean = text(value);
+    if (!clean) return "";
+    return `<div class="mobile-reminder-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(clean)}</strong></div>`;
+  }
+
+  function showOverview() {
+    if (state.overviewShown) return;
+    state.overviewShown = true;
+    const unpaid = unpaidRecords();
+    const total = unpaid.reduce((sum, record) => sum + (amountNumber(record.amount) || 0), 0);
+    const highest = unpaid
+      .map(record => ({ record, amount: amountNumber(record.amount) }))
+      .filter(item => item.amount !== null)
+      .sort((a, b) => b.amount - a.amount)[0];
+    const oldest = unpaid
+      .filter(record => record.approved_at)
+      .sort((a, b) => String(a.approved_at).localeCompare(String(b.approved_at)))[0];
+    $("mobile-payment-overview-body").innerHTML = `
+      ${overviewMetric("For Payment", unpaid.length)}
+      ${overviewMetric("Cash / PO / Bali", countByModule("cash"))}
+      ${overviewMetric("Repair / Labor", countByModule("repair"))}
+      ${overviewMetric("Payroll", countByModule("payroll"))}
+      ${total ? overviewMetric("Total Unpaid", money(total)) : ""}
+      ${overviewMetric("Paid Today", paidTodayCount())}
+      ${highest ? overviewMetric("Highest Unpaid", `${highest.record.ref_id} - ${money(highest.amount)}`) : ""}
+      ${oldest ? overviewMetric("Oldest Approved", `${oldest.ref_id} - ${dateText(oldest.approved_at)}`) : ""}
+    `;
+    $("mobile-payment-overview-backdrop").hidden = false;
+    document.body.classList.add("mobile-payment-modal-open");
+  }
+
+  function closeOverview() {
+    $("mobile-payment-overview-backdrop").hidden = true;
+    if ($("mobile-payment-details-backdrop").hidden && $("mobile-payment-form-backdrop").hidden) document.body.classList.remove("mobile-payment-modal-open");
+  }
+
+  async function enableNotifications() {
+    if (!("Notification" in window)) {
+      showStatus("Notifications are not supported on this browser.", "info");
+      return;
+    }
+    if (Notification.permission === "default") await Notification.requestPermission();
+    if (Notification.permission === "granted") {
+      showStatus("Notifications are enabled on this device.", "success");
+      return;
+    }
+    showStatus("Notifications are blocked in this browser. You can enable them in browser settings.", "error");
+  }
+
+  function setPaymentView(view) {
+    state.view = view;
+    const tabView = view === "paid-today" ? "history" : view;
+    document.querySelectorAll("[data-payment-view-tab]").forEach(item => item.classList.toggle("active", item.dataset.paymentViewTab === tabView));
+    document.querySelectorAll("[data-payment-view]").forEach(item => item.classList.toggle("active", item.dataset.paymentView === view));
+    render();
+  }
+
+  function renderPaymentCard(record) {
+    if (record.module === "payroll") {
+      const driverPay = amountNumber(record.driver_amount);
+      const helperPay = amountNumber(record.helper_amount);
+      const totalPay = amountNumber(record.amount);
+      return `
+        ${metaRow("Type", "Payroll")}
+        ${metaRow("Plate", record.plate_number)}
+        ${metaRow("Driver", record.driver_name)}
+        ${metaRow("Helper", record.helper_name)}
+        ${metaRow("Payroll Date", dateText(record.payroll_period || record.approved_at))}
+        ${driverPay ? amountLine(record.driver_amount, `Driver ${record.driver_payment_status || ""}`.trim()) : metaRow("Driver Pay", "Amount not set")}
+        ${record.helper_name ? helperPay ? amountLine(record.helper_amount, `Helper ${record.helper_payment_status || ""}`.trim()) : metaRow("Helper Pay", "Amount not set") : ""}
+        ${totalPay ? amountLine(record.amount, "Total") : metaRow("Total", "Amount not set")}
+        ${metaRow("Driver Ref", record.driver_payment_ref_id)}
+        ${metaRow("Helper Ref", record.helper_payment_ref_id)}
+        ${metaRow("Approval", dateText(record.approved_at))}
+      `;
+    }
+    if (record.module === "repair") {
+      return `
+        ${metaRow("Type", record.request_type)}
+        ${metaRow("Plate", record.plate_number)}
+        ${metaRow("Payee", record.payee)}
+        ${amountLine(record.amount)}
+        ${metaRow("Approval", dateText(record.approved_at))}
+        ${metaRow("Payment", record.payment_status)}
+      `;
+    }
+    return `
+      ${metaRow("Type", record.request_type)}
+      ${metaRow("Plate", record.plate_number)}
+      ${metaRow("Driver", record.driver_name)}
+      ${metaRow("Helper", record.helper_name)}
+      ${metaRow("Payee", record.payee)}
+      ${amountLine(record.amount)}
+      ${metaRow("Route", record.route)}
+      ${metaRow("Approval", dateText(record.approved_at))}
+      ${metaRow("Payment", record.payment_status)}
+    `;
+  }
+
   function render() {
+    updateCounts();
     const list = $("mobile-payment-list");
     const records = visibleRecords();
+    $("mobile-payment-list-title").textContent = state.view === "for-payment" ? "Needs Action" : "Recently Updated";
     if (!records.length) {
-      list.innerHTML = `<section class="driver-mobile-card mobile-payment-card"><p>No payment records found.</p></section>`;
+      const message = state.view === "for-payment" ? "No records for payment right now." : "No payment history loaded yet.";
+      list.innerHTML = `<section class="driver-mobile-card mobile-payment-card mobile-empty-state"><strong>${escapeHtml(message)}</strong><p>Only records returned by the current backend list endpoints are shown here.</p></section>`;
       return;
     }
     list.innerHTML = records.map(record => {
@@ -250,14 +423,7 @@
             <strong>${escapeHtml(record.ref_id)}</strong>
             <span class="${badgeClass(record)}">${escapeHtml(statusLabel(record))}</span>
           </div>
-          ${record.payment_ref_id ? `<p>Payment Ref: ${escapeHtml(record.payment_ref_id)}</p>` : ""}
-          <p>${escapeHtml(record.request_type)}</p>
-          ${record.plate_number ? `<p>Plate: ${escapeHtml(record.plate_number)}</p>` : ""}
-          ${record.payee ? `<p>Payee: ${escapeHtml(record.payee)}</p>` : ""}
-          ${record.amount ? `<p>${escapeHtml(money(record.amount))}</p>` : ""}
-          ${record.route ? `<p>${escapeHtml(record.route)}</p>` : ""}
-          <p>Approval: ${escapeHtml(record.approval_status)}</p>
-          <p>Payment: ${escapeHtml(record.payment_status)}</p>
+          ${renderPaymentCard(record)}
           <div class="mobile-payment-action-row">
             <button class="mobile-payment-secondary-btn" type="button" data-action="view" data-ref="${escapeHtml(record.ref_id)}">View Details</button>
             ${paid ? `<button class="mobile-payment-secondary-btn" type="button" disabled>Paid</button>` : `<button class="mobile-payment-primary-btn" type="button" data-action="pay" data-ref="${escapeHtml(record.ref_id)}">${record.module === "payroll" ? "Split Pay" : "Mark as Paid"}</button>`}
@@ -488,6 +654,7 @@
       state.records = await loadRecords();
       hideStatus();
       render();
+      showOverview();
     } catch (error) {
       showStatus(`Unable to load payment list. ${error.message || ""}`.trim(), "error");
       render();
@@ -502,6 +669,13 @@
         render();
       });
     });
+    document.querySelectorAll("[data-payment-view-tab]").forEach(button => {
+      button.addEventListener("click", () => setPaymentView(button.dataset.paymentViewTab));
+    });
+    document.querySelectorAll("[data-payment-view]").forEach(button => {
+      button.addEventListener("click", () => setPaymentView(button.dataset.paymentView));
+    });
+    $("mobile-payment-notifications").addEventListener("click", enableNotifications);
     $("mobile-payment-list").addEventListener("click", event => {
       const button = event.target.closest("[data-action]");
       if (!button) return;
@@ -528,9 +702,16 @@
       if (event.target.id === "mobile-payment-form-backdrop") closePayModal();
     });
     $("mobile-payment-form").addEventListener("submit", handlePaymentSubmit);
+    $("mobile-payment-overview-close").addEventListener("click", closeOverview);
+    $("mobile-payment-overview-start").addEventListener("click", closeOverview);
+    $("mobile-payment-overview-secondary").addEventListener("click", closeOverview);
+    $("mobile-payment-overview-backdrop").addEventListener("click", event => {
+      if (event.target.id === "mobile-payment-overview-backdrop") closeOverview();
+    });
     document.addEventListener("keydown", event => {
       if (event.key !== "Escape") return;
-      if (!$("mobile-payment-form-backdrop").hidden) closePayModal();
+      if (!$("mobile-payment-overview-backdrop").hidden) closeOverview();
+      else if (!$("mobile-payment-form-backdrop").hidden) closePayModal();
       else if (!$("mobile-payment-details-backdrop").hidden) closeDetails();
     });
     init();

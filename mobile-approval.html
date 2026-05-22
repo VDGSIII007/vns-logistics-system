@@ -14,17 +14,53 @@
       <p>Pending Requests</p>
     </header>
 
-    <div id="mobile-approval-status" class="driver-mobile-status" hidden></div>
-
-    <section class="driver-mobile-card mobile-approval-tabs">
-      <button class="driver-mobile-tab active" type="button" data-filter="all">All</button>
-      <button class="driver-mobile-tab" type="button" data-filter="cash">Cash / PO / Bali</button>
-      <button class="driver-mobile-tab" type="button" data-filter="repair">Repair / Labor</button>
-      <button class="driver-mobile-tab" type="button" data-filter="payroll">Payroll</button>
-      <button class="driver-mobile-tab" type="button" data-filter="driver-trip">Driver Trips</button>
+    <section class="mobile-app-toolbar">
+      <button id="mobile-approval-notifications" class="mobile-app-notify-btn" type="button">🔔 Enable Notifications</button>
     </section>
 
-    <section id="mobile-approval-list" class="mobile-approval-list"></section>
+    <div id="mobile-approval-status" class="driver-mobile-status" hidden></div>
+
+    <section class="mobile-app-section">
+      <div class="mobile-app-section-head">
+        <h2>Shortcuts</h2>
+      </div>
+      <div class="mobile-app-action-grid">
+        <button class="mobile-app-action-card active" type="button" data-approval-view="pending">
+          <span>Pending Approval</span>
+          <strong data-app-count="pending">0</strong>
+          <small>Needs action</small>
+        </button>
+        <button class="mobile-app-action-card" type="button" data-approval-view="history">
+          <span>Approval History</span>
+          <strong data-app-count="history">0</strong>
+          <small>Approved, returned, rejected</small>
+        </button>
+        <button class="mobile-app-action-card" type="button" data-approval-shortcut="payment">
+          <span>For Payment</span>
+          <strong data-app-count="for-payment">0</strong>
+          <small>Open payment center</small>
+        </button>
+      </div>
+    </section>
+
+    <section class="driver-mobile-card mobile-approval-tabs mobile-module-tabs">
+      <button class="driver-mobile-tab active" type="button" data-filter="cash">Cash / PO / Bali <span class="mobile-count-badge is-zero" data-count-for="cash">0</span></button>
+      <button class="driver-mobile-tab" type="button" data-filter="repair">Repair / Labor <span class="mobile-count-badge is-zero" data-count-for="repair">0</span></button>
+      <button class="driver-mobile-tab" type="button" data-filter="payroll">Payroll <span class="mobile-count-badge is-zero" data-count-for="payroll">0</span></button>
+      <button class="driver-mobile-tab" type="button" data-filter="driver-trip">Driver Trips <span class="mobile-count-badge is-zero" data-count-for="driver-trip">0</span></button>
+    </section>
+
+    <section id="mobile-approval-summary" class="mobile-state-strip" hidden>
+      <button class="mobile-state-pill active" type="button" data-approval-status-view="pending">For Approval <span data-state-count="for-approval">0</span></button>
+      <button class="mobile-state-pill" type="button" data-approval-status-view="history">Approval History <span data-state-count="approval-history">0</span></button>
+    </section>
+
+    <section class="mobile-app-section">
+      <div class="mobile-app-section-head">
+        <h2 id="mobile-approval-list-title">Needs Action</h2>
+      </div>
+      <section id="mobile-approval-list" class="mobile-approval-list"></section>
+    </section>
 
     <a class="mobile-approval-payment-link" href="payment-queue.html">Payment Queue</a>
   </main>
@@ -43,6 +79,23 @@
         <button class="mobile-approval-primary-btn" type="button" data-modal-action="approve">Approve</button>
         <button class="mobile-approval-secondary-btn" type="button" data-modal-action="return">Return</button>
         <button class="mobile-approval-danger-btn" type="button" data-modal-action="reject">Reject</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="mobile-approval-overview-backdrop" class="mobile-reminder-backdrop" hidden>
+    <section class="mobile-reminder-card" role="dialog" aria-modal="true" aria-labelledby="mobile-approval-overview-title">
+      <header class="mobile-reminder-header">
+        <div>
+          <p class="driver-mobile-kicker">Today</p>
+          <h2 id="mobile-approval-overview-title">Today’s Approval Reminder</h2>
+        </div>
+        <button id="mobile-approval-overview-close" class="mobile-approval-close-btn" type="button">Close</button>
+      </header>
+      <div id="mobile-approval-overview-body" class="mobile-reminder-metrics"></div>
+      <div class="mobile-reminder-actions">
+        <button id="mobile-approval-overview-start" class="mobile-approval-primary-btn" type="button">Start Reviewing</button>
+        <button id="mobile-approval-overview-secondary" class="mobile-approval-secondary-btn" type="button">Close</button>
       </div>
     </section>
   </div>

@@ -54,6 +54,14 @@
     };
   }
 
+  function setBackLink() {
+    const link = $("driver-trip-back");
+    if (!link) return;
+    const session = readDriverSession();
+    const plate = normalizePlate(requestParam().plate || session?.plate_number || session?.plateNumber || text("plate-number"));
+    link.href = plate ? `driver-portal.html?plate=${encodeURIComponent(plate)}` : "driver-portal.html";
+  }
+
   function readDriverSession() {
     for (const storage of [sessionStorage, localStorage]) {
       try {
@@ -132,8 +140,9 @@
   async function loadDriverContext() {
     const { plate, truck } = requestParam();
     const session = readDriverSession();
-    if (!plate && !truck && session) {
-      applyTruck(sessionAsTruck(session), session.plate_number || session.plateNumber);
+    const sessionPlate = normalizePlate(session?.plate_number || session?.plateNumber);
+    if (!truck && session && (!plate || sessionPlate === plate)) {
+      applyTruck(sessionAsTruck(session), sessionPlate);
       return;
     }
     if (!plate && !truck) {
@@ -310,6 +319,7 @@
     });
     form.addEventListener("submit", submitTrip);
     await Promise.all([loadDriverContext(), loadRateOptions()]);
+    setBackLink();
     refreshRateOptions();
   });
 })();

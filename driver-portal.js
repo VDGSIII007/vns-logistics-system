@@ -139,17 +139,17 @@
 
   async function enableDriverNotifications() {
     if (!("Notification" in window)) {
-      showStatus("Notifications are not supported on this device. You can check My Requests for updates.", "error");
+      showStatus("Notifications are not supported on this browser. Please check My Requests for updates.", "info");
       return;
     }
     if (Notification.permission === "default") {
       await Notification.requestPermission();
     }
     if (Notification.permission === "granted") {
-      showStatus("Browser notifications are allowed, but driver-specific push updates are not fully connected yet. You can check My Requests for updates.", "info");
+      showStatus("Notifications are enabled on this device. You can also check My Requests for live approval and payment status.", "success");
       return;
     }
-    showStatus("Notifications are not fully connected yet. You can check My Requests for updates.", "info");
+    showStatus("Notifications are blocked in this browser. You can enable them in browser settings or check My Requests anytime.", "error");
   }
 
   document.addEventListener("DOMContentLoaded", () => {

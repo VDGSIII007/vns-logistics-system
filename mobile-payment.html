@@ -14,16 +14,52 @@
       <p>Approved Requests for Payment</p>
     </header>
 
-    <div id="mobile-payment-status" class="driver-mobile-status" hidden></div>
-
-    <section class="driver-mobile-card mobile-payment-tabs">
-      <button class="driver-mobile-tab active" type="button" data-payment-filter="all">All</button>
-      <button class="driver-mobile-tab" type="button" data-payment-filter="cash">Cash / PO / Bali</button>
-      <button class="driver-mobile-tab" type="button" data-payment-filter="repair">Repair / Labor</button>
-      <button class="driver-mobile-tab" type="button" data-payment-filter="payroll">Payroll</button>
+    <section class="mobile-app-toolbar">
+      <button id="mobile-payment-notifications" class="mobile-app-notify-btn" type="button">🔔 Enable Notifications</button>
     </section>
 
-    <section id="mobile-payment-list" class="mobile-payment-list"></section>
+    <div id="mobile-payment-status" class="driver-mobile-status" hidden></div>
+
+    <section class="mobile-app-section">
+      <div class="mobile-app-section-head">
+        <h2>Shortcuts</h2>
+      </div>
+      <div class="mobile-app-action-grid">
+        <button class="mobile-app-action-card active" type="button" data-payment-view="for-payment">
+          <span>For Payment</span>
+          <strong data-payment-app-count="for-payment">0</strong>
+          <small>Approved and unpaid</small>
+        </button>
+        <button class="mobile-app-action-card" type="button" data-payment-view="paid-today">
+          <span>Paid Today</span>
+          <strong data-payment-app-count="paid-today">0</strong>
+          <small>Released today</small>
+        </button>
+        <button class="mobile-app-action-card" type="button" data-payment-view="history">
+          <span>Payment History</span>
+          <strong data-payment-app-count="history">0</strong>
+          <small>Paid records loaded</small>
+        </button>
+      </div>
+    </section>
+
+    <section class="driver-mobile-card mobile-payment-tabs mobile-module-tabs">
+      <button class="driver-mobile-tab active" type="button" data-payment-filter="cash">Cash / PO / Bali <span class="mobile-count-badge is-zero" data-payment-count-for="cash">0</span></button>
+      <button class="driver-mobile-tab" type="button" data-payment-filter="repair">Repair / Labor <span class="mobile-count-badge is-zero" data-payment-count-for="repair">0</span></button>
+      <button class="driver-mobile-tab" type="button" data-payment-filter="payroll">Payroll <span class="mobile-count-badge is-zero" data-payment-count-for="payroll">0</span></button>
+    </section>
+
+    <section id="mobile-payment-summary" class="mobile-state-strip" hidden>
+      <button class="mobile-state-pill active" type="button" data-payment-view-tab="for-payment">For Payment <span data-payment-state-count="for-payment">0</span></button>
+      <button class="mobile-state-pill" type="button" data-payment-view-tab="history">Payment History <span data-payment-state-count="payment-history">0</span></button>
+    </section>
+
+    <section class="mobile-app-section">
+      <div class="mobile-app-section-head">
+        <h2 id="mobile-payment-list-title">Needs Action</h2>
+      </div>
+      <section id="mobile-payment-list" class="mobile-payment-list"></section>
+    </section>
   </main>
 
   <div id="mobile-payment-details-backdrop" class="mobile-payment-modal-backdrop" hidden>
@@ -68,6 +104,23 @@
           <button id="mobile-payment-cancel" class="mobile-payment-secondary-btn" type="button">Cancel</button>
         </div>
       </form>
+    </section>
+  </div>
+
+  <div id="mobile-payment-overview-backdrop" class="mobile-reminder-backdrop" hidden>
+    <section class="mobile-reminder-card" role="dialog" aria-modal="true" aria-labelledby="mobile-payment-overview-title">
+      <header class="mobile-reminder-header">
+        <div>
+          <p class="driver-mobile-kicker">Today</p>
+          <h2 id="mobile-payment-overview-title">Today’s Payment Reminder</h2>
+        </div>
+        <button id="mobile-payment-overview-close" class="mobile-payment-close-btn" type="button">Close</button>
+      </header>
+      <div id="mobile-payment-overview-body" class="mobile-reminder-metrics"></div>
+      <div class="mobile-reminder-actions">
+        <button id="mobile-payment-overview-start" class="mobile-payment-primary-btn" type="button">Start Payment Review</button>
+        <button id="mobile-payment-overview-secondary" class="mobile-payment-secondary-btn" type="button">Close</button>
+      </div>
     </section>
   </div>
 
