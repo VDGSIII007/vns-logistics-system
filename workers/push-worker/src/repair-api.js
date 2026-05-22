@@ -655,7 +655,7 @@ export async function upsertForRepairTruckToSupabase(env, input) {
     end_date: dateOrNull(firstValue(raw, ["End_Date", "end_date", "endDate"])),
     repair_status: textOrNull(firstValue(raw, ["Repair_Status", "repair_status", "repairStatus"])) || "For Repair",
     remarks: textOrNull(firstValue(raw, ["Remarks", "remarks"])),
-    odometer_reading: textOrNull(firstValue(raw, ["Odometer", "odometer", "odometer_reading", "odometerReading"])),
+    odometer_reading: textOrNull(firstValue(raw, ["Odometer_Reading", "Odometer", "odometer", "odometer_reading", "odometerReading"])),
     created_at: timestampOrNow(firstValue(raw, ["Created_At", "created_at", "createdAt"])),
     updated_at: new Date().toISOString()
   };
@@ -666,20 +666,56 @@ export async function upsertForRepairTruckToSupabase(env, input) {
     body: JSON.stringify([record])
   });
 
+  // Stage 1: Friendly columns not yet migrated — retry without them.
   if (result.error && /truck_repair_ref_id|odometer_reading/i.test(String(result.details?.message || result.error || ""))) {
     console.warn("for_repair_trucks friendly columns missing; retrying without them. Run supabase/friendly-ref-ids-and-payment-fields.sql.");
-    const fallbackRecord = { ...record };
-    delete fallbackRecord.truck_repair_ref_id;
-    delete fallbackRecord.odometer_reading;
+    const stage1Record = { ...record };
+    delete stage1Record.truck_repair_ref_id;
+    delete stage1Record.odometer_reading;
     result = await supabaseFetch(env, "for_repair_trucks?on_conflict=for_repair_id", {
       method: "POST",
       prefer: "resolution=merge-duplicates,return=representation",
-      body: JSON.stringify([fallbackRecord])
+      body: JSON.stringify([stage1Record])
+    });
+  }
+
+  // Stage 2: New columns (for_repair_id, garage_location, etc.) not yet added —
+  // fall back to the original legacy schema using source_row_id for deduplication.
+  // Fix: Run supabase/for-repair-trucks-schema-update.sql.
+  if (result.error && /column|does not exist|unknown field|schema cache/i.test(String(result.details?.message || result.error || "").toLowerCase())) {
+    console.warn("for_repair_trucks schema mismatch; falling back to legacy columns. Run supabase/for-repair-trucks-schema-update.sql.");
+    const legacyRecord = {
+      source_row_id: forRepairId,
+      plate_number: record.plate_number,
+      truck_type: record.truck_type,
+      driver: record.driver,
+      helper: record.helper,
+      issue: record.repair_issue,
+      status: record.repair_status,
+      date_started: record.start_date || null,
+      estimated_done: record.estimated_finish_date || null,
+      actual_done: record.end_date || null,
+      remarks: record.remarks,
+      created_at: record.created_at,
+      updated_at: record.updated_at
+    };
+    Object.keys(legacyRecord).forEach(k => {
+      if (legacyRecord[k] === null || legacyRecord[k] === undefined) delete legacyRecord[k];
+    });
+    result = await supabaseFetch(env, "for_repair_trucks?on_conflict=source_row_id", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=representation",
+      body: JSON.stringify([legacyRecord])
     });
   }
 
   if (result.error) {
-    return { ok: false, error: SAFE_ERROR, details: result.error, status: result.status || 500 };
+    return {
+      ok: false,
+      error: SAFE_ERROR,
+      details: String(result.details?.message || result.details || result.error || ""),
+      status: result.status || 500
+    };
   }
 
   const saved = Array.isArray(result.body) ? result.body[0] : null;

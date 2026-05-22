@@ -136,6 +136,43 @@ function createCashRequestId(record) {
   return `cash_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function friendlyDateStamp(value) {
+  const parsed = value ? new Date(value) : new Date();
+  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  return date.toISOString().slice(0, 10).replaceAll("-", "");
+}
+
+function cashFriendlyPrefix(record = {}) {
+  const type = String(firstValue(record, ["request_type", "requestType", "Request_Type", "Transaction_Type", "transactionType", "type", "Type"]) || "").toLowerCase();
+  return /(bali|cash.?advance|\bca\b)/i.test(type) ? "BALI" : "CPO";
+}
+
+async function generateFriendlyId(env, table, field, prefix, dateValue) {
+  const stamp = friendlyDateStamp(dateValue);
+  const start = `${prefix}-${stamp}-`;
+  const filters = new URLSearchParams({ select: field, [field]: `like.${start}%`, order: `${field}.desc`, limit: "100" });
+  const result = await supabaseFetch(env, `${table}?${filters.toString()}`, { method: "GET" });
+  if (result.error) {
+    console.warn("Friendly ID lookup failed; using fallback", { table, field, prefix, error: result.error });
+    return `${start}${String(Date.now()).slice(-3)}`;
+  }
+  const highest = (Array.isArray(result.body) ? result.body : []).reduce((max, row) => {
+    const match = String(row?.[field] || "").match(/-(\d+)$/);
+    return match ? Math.max(max, Number(match[1]) || 0) : max;
+  }, 0);
+  return `${start}${String(highest + 1).padStart(3, "0")}`;
+}
+
+function stripFriendlyCashColumns(record = {}) {
+  const copy = { ...record };
+  ["request_no", "cash_ref_id", "payment_ref_id", "payment_reference", "payment_notes"].forEach(key => delete copy[key]);
+  return copy;
+}
+
+function cashMissingFriendlyColumn(result = {}) {
+  return /request_no|cash_ref_id|payment_ref_id|payment_reference|payment_notes/i.test(String(result.details?.message || result.error || result.details || ""));
+}
+
 function cashAmount(record) {
   return numberOrNull(firstValue(record, [
     "amount",
@@ -163,6 +200,8 @@ function mapCashRecord(record) {
 
   return {
     request_id: requestId,
+    request_no: textOrNull(firstValue(record, ["request_no", "requestNo", "Request_No", "cash_ref_id", "cashRefId", "Cash_Ref_ID"])),
+    cash_ref_id: textOrNull(firstValue(record, ["cash_ref_id", "cashRefId", "Cash_Ref_ID", "request_no", "requestNo", "Request_No"])),
     request_date: dateOrNull(firstValue(record, ["request_date", "requestDate", "Request_Date", "Date", "date"])),
     group_name: textOrNull(firstValue(record, ["group_name", "groupName", "Group_Name", "Group_Category", "groupCategory", "Truck_Group"])),
     plate_number: textOrNull(firstValue(record, ["plate_number", "plateNumber", "Plate_Number", "Sender"])),
@@ -187,6 +226,9 @@ function mapCashRecord(record) {
     approved_at: timestampOrNull(firstValue(record, ["approved_at", "approvedAt", "Approved_At"])),
     paid_by: textOrNull(firstValue(record, ["paid_by", "paidBy", "Paid_By"])),
     paid_at: timestampOrNull(firstValue(record, ["paid_at", "paidAt", "Paid_At", "paymentDate"])),
+    payment_ref_id: textOrNull(firstValue(record, ["payment_ref_id", "paymentRefId", "Payment_Ref_ID"])),
+    payment_reference: textOrNull(firstValue(record, ["payment_reference", "paymentReference", "Payment_Reference", "reference", "Reference"])),
+    payment_notes: textOrNull(firstValue(record, ["payment_notes", "paymentNotes", "Payment_Notes", "notes", "Notes"])),
     backup_status: "pending",
     backup_synced_at: null,
     backup_error: null,
@@ -222,6 +264,12 @@ function formatCashRecord(record = {}) {
     request_id: record.request_id,
     requestId: record.request_id,
     Cash_ID: record.request_id,
+    request_no: record.request_no || raw.request_no || raw.requestNo || raw.Request_No || "",
+    requestNo: record.request_no || raw.requestNo || raw.Request_No || "",
+    Request_No: record.request_no || raw.Request_No || raw.requestNo || "",
+    cash_ref_id: record.cash_ref_id || raw.cash_ref_id || raw.cashRefId || raw.Cash_Ref_ID || record.request_no || "",
+    cashRefId: record.cash_ref_id || raw.cashRefId || raw.Cash_Ref_ID || record.request_no || "",
+    Cash_Ref_ID: record.cash_ref_id || raw.Cash_Ref_ID || raw.cashRefId || record.request_no || "",
     date: record.request_date || raw.date || raw.Date || "",
     Date: record.request_date || raw.Date || raw.date || "",
     type: displayType,
@@ -267,6 +315,14 @@ function formatCashRecord(record = {}) {
     approvedAt: record.approved_at || raw.approvedAt || raw.Approved_At || "",
     paid_at: record.paid_at || raw.paid_at || raw.Paid_At || raw.paidAt || "",
     paidAt: record.paid_at || raw.paidAt || raw.Paid_At || "",
+    payment_ref_id: record.payment_ref_id || raw.payment_ref_id || raw.paymentRefId || "",
+    paymentRefId: record.payment_ref_id || raw.paymentRefId || "",
+    Payment_Ref_ID: record.payment_ref_id || raw.Payment_Ref_ID || "",
+    payment_reference: record.payment_reference || raw.payment_reference || raw.paymentReference || raw.Payment_Reference || raw.Reference || "",
+    paymentReference: record.payment_reference || raw.paymentReference || raw.Payment_Reference || raw.Reference || "",
+    Payment_Reference: record.payment_reference || raw.Payment_Reference || raw.paymentReference || raw.Reference || "",
+    payment_notes: record.payment_notes || raw.payment_notes || raw.paymentNotes || "",
+    paymentNotes: record.payment_notes || raw.paymentNotes || "",
     isDeleted: raw.isDeleted ?? raw.Is_Deleted ?? record.is_deleted ?? false
   };
   console.log("Cash type source check", {
@@ -286,11 +342,25 @@ export async function upsertCashRequestToSupabase(env, input) {
     return { ok: false, error: "No valid cash request records were provided", status: 400 };
   }
 
-  const result = await supabaseFetch(env, "cash_requests?on_conflict=request_id", {
+  for (const record of records) {
+    if (!record.request_no) record.request_no = await generateFriendlyId(env, "cash_requests", "request_no", cashFriendlyPrefix(record.raw_data || record), record.request_date || record.created_at);
+    if (!record.cash_ref_id) record.cash_ref_id = record.request_no;
+  }
+
+  let result = await supabaseFetch(env, "cash_requests?on_conflict=request_id", {
     method: "POST",
     prefer: "resolution=merge-duplicates,return=representation",
     body: JSON.stringify(records)
   });
+
+  if (result.error && cashMissingFriendlyColumn(result)) {
+    console.warn("Cash friendly ref columns missing; retrying without friendly fields. Run supabase/friendly-ref-ids-and-payment-fields.sql.", result.error);
+    result = await supabaseFetch(env, "cash_requests?on_conflict=request_id", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=representation",
+      body: JSON.stringify(records.map(stripFriendlyCashColumns))
+    });
+  }
 
   if (result.error) {
     return { ok: false, error: SAFE_ERROR, details: result.error, status: result.status || 500 };
@@ -393,6 +463,9 @@ export async function updateCashRequestStatus(env, input = {}) {
     approved_at: timestampOrNull(input.approved_at || input.approvedAt || input.Approved_At) || (isPaidUpdate ? null : now),
     paid_by: textOrNull(input.paid_by || input.paidBy || input.Paid_By || input.Released_By),
     paid_at: timestampOrNull(input.paid_at || input.paidAt || input.Paid_At || input.Released_At) || (isPaidUpdate ? now : null),
+    payment_ref_id: textOrNull(input.payment_ref_id || input.paymentRefId || input.Payment_Ref_ID),
+    payment_reference: textOrNull(input.payment_reference || input.paymentReference || input.Payment_Reference || input.reference || input.Reference),
+    payment_notes: textOrNull(input.payment_notes || input.paymentNotes || input.Payment_Notes || input.notes || input.Notes),
     remarks: textOrNull(input.notes || input.Notes || input.remarks || input.Remarks),
     backup_status: "pending",
     backup_synced_at: null,
@@ -403,15 +476,26 @@ export async function updateCashRequestStatus(env, input = {}) {
   Object.keys(payload).forEach(key => {
     if (payload[key] === null || payload[key] === undefined || payload[key] === "") delete payload[key];
   });
+  if (isPaidUpdate && !payload.payment_ref_id) payload.payment_ref_id = await generateFriendlyId(env, "cash_requests", "payment_ref_id", "PMT", now);
 
   const filters = new URLSearchParams({
     request_id: `eq.${requestId}`
   });
-  const result = await supabaseFetch(env, `cash_requests?${filters.toString()}`, {
+  let result = await supabaseFetch(env, `cash_requests?${filters.toString()}`, {
     method: "PATCH",
     prefer: "return=representation",
     body: JSON.stringify(payload)
   });
+
+  if (result.error && cashMissingFriendlyColumn(result)) {
+    const fallbackPayload = { ...payload };
+    ["payment_ref_id", "payment_reference", "payment_notes"].forEach(key => delete fallbackPayload[key]);
+    result = await supabaseFetch(env, `cash_requests?${filters.toString()}`, {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: JSON.stringify(fallbackPayload)
+    });
+  }
 
   if (result.error) {
     return { ok: false, error: SAFE_ERROR, details: result.error, status: result.status || 500 };

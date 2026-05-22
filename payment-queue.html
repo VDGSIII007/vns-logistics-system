@@ -91,9 +91,44 @@
         </table>
       </div>
       <div id="pq-mobile-list" class="ops-mobile-list"></div>
-      <p class="ops-footnote muted">Cash and Repair payment actions are active. Payroll payment actions are not yet connected.</p>
+      <p class="ops-footnote muted">Cash, Repair, and Payroll payment actions are active.</p>
     </section>
   </main>
+
+  <div class="ops-modal" id="pq-pay-modal" hidden>
+    <div class="ops-modal-card pq-pay-card" role="dialog" aria-modal="true" aria-labelledby="pq-pay-modal-title">
+      <div class="pq-pay-header">
+        <div class="pq-pay-header-text">
+          <p class="ops-eyebrow">Mark as Paid</p>
+          <h2 id="pq-pay-modal-title">Payroll Payment</h2>
+          <p id="pq-pay-ref-label" class="pq-pay-source-ref"></p>
+        </div>
+        <button class="ops-modal-close" id="pq-pay-close" type="button" aria-label="Close payment form">Close</button>
+      </div>
+      <div id="pq-pay-summary" class="pq-pay-summary"></div>
+      <form id="pq-pay-form">
+        <div class="pq-pay-fields">
+          <div class="pq-pay-field">
+            <label for="pq-pay-date">Payment Date <span class="pq-required" aria-hidden="true">*</span></label>
+            <input type="date" id="pq-pay-date" required>
+          </div>
+          <div class="pq-pay-field">
+            <label for="pq-pay-ref">External Reference</label>
+            <input type="text" id="pq-pay-ref" placeholder="GCash ref, bank trace no., check no.">
+          </div>
+          <div class="pq-pay-field">
+            <label for="pq-pay-notes">Payment Notes</label>
+            <textarea id="pq-pay-notes" rows="3" placeholder="Optional notes"></textarea>
+          </div>
+        </div>
+        <p id="pq-pay-status" class="pq-pay-status" role="alert" aria-live="polite"></p>
+        <div class="pq-pay-footer">
+          <button type="button" id="pq-pay-cancel" class="ops-secondary-btn">Cancel</button>
+          <button type="submit" id="pq-pay-submit" class="ops-primary-btn">Confirm Payment</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <div class="ops-modal" id="pq-modal" hidden>
     <div class="ops-modal-card" role="dialog" aria-modal="true" aria-labelledby="pq-modal-title">
@@ -113,6 +148,7 @@
   </footer>
 
   <script src="auth.js"></script>
+  <script src="app-toast.js"></script>
   <script src="payment-queue.js"></script>
   <script src="script.js"></script>
 </body>

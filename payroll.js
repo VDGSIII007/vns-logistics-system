@@ -70,6 +70,26 @@ function $(id) {
   return document.getElementById(id);
 }
 
+function getPayrollToastRef(record = {}) {
+  return window.getAppFriendlyRef?.(record, [
+    "payroll_ref_id", "payrollRefId", "Payroll_Ref_ID",
+    "payroll_id", "payrollId", "Payroll_ID",
+    "payrollNumber", "Payroll_Number"
+  ]) || "Pending Ref";
+}
+
+function showPayrollToast(type, title, record = {}, options = {}) {
+  window.showAppToast?.({
+    type,
+    title,
+    message: options.message || "",
+    refLabel: "Ref ID",
+    refValue: getPayrollToastRef(record),
+    extra: options.extra || "",
+    duration: options.duration || 4500
+  });
+}
+
 function readJson(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -644,6 +664,14 @@ function savePayrollDraft() {
   $("payroll-status").value = "Draft";
   const record = savePayrollRecord();
   updateLockState();
+  Promise.resolve(payrollState.lastSavePromise)
+    .then(() => showPayrollToast("success", "Payroll draft saved", record))
+    .catch(error => {
+      console.warn("Payroll draft cloud sync failed after local save", error);
+      showPayrollToast("warning", "Payroll draft saved locally", record, {
+        message: "Cloud sync failed. Please check console/network."
+      });
+    });
   return record;
 }
 
@@ -710,11 +738,17 @@ function submitPayrollForApproval() {
         : "Payroll submitted for approval successfully.";
       setStatus(successMessage, "success");
       setPasahodSubmitStatus(successMessage, "success");
+      showPayrollToast("success", "Payroll submitted for approval", record, {
+        message: successMessage
+      });
     })
     .catch(error => {
       console.error("Submit for Approval failed", error);
       setStatus("Submit for Approval failed. Please check console/network.", "error");
       setPasahodSubmitStatus("Submit for Approval failed. Please check console/network.", "error");
+      showPayrollToast("error", "Submit for Approval failed", record, {
+        message: "Please check console/network."
+      });
     });
 }
 
@@ -2402,6 +2436,7 @@ function deletePayrollRecord(id) {
   writeJson(PAYROLL_RECORDS_KEY, payrollState.records);
   renderPayrollRecordsTable();
   setStatus("Payroll record deleted.", "warning");
+  showPayrollToast("success", "Deleted successfully", record);
 }
 
 function updateBalanceLedger(record, eventType) {
@@ -4524,6 +4559,7 @@ function submitPayrollFromRecords(id) {
       renderPayrollRecordsTable();
       renderForApprovalQueue();
       setStatus(`${record.payrollNumber || record.id} submitted for approval.`, "success");
+      showPayrollToast("success", "Payroll submitted for approval", record);
       loadSavedPayrollRecordsFromSupabase();
     })
     .catch(error => {
@@ -4532,10 +4568,14 @@ function submitPayrollFromRecords(id) {
         .then(() => {
           renderPayrollRecordsTable();
           setStatus(`${record.payrollNumber || record.id} submitted locally and synced.`, "success");
+          showPayrollToast("success", "Payroll submitted for approval", record);
         })
         .catch(syncError => {
           console.warn("Payroll submit fallback save failed", syncError);
           setStatus("Submitted locally. Supabase sync failed.", "warning");
+          showPayrollToast("warning", "Payroll submitted locally", record, {
+            message: "Supabase sync failed. Please check console/network."
+          });
         });
     });
 }

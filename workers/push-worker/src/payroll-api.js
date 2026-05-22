@@ -154,6 +154,32 @@ function generatePayrollId() {
   return `payroll_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function friendlyDateStamp(value) {
+  const parsed = value ? new Date(value) : new Date();
+  const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  return date.toISOString().slice(0, 10).replaceAll("-", "");
+}
+
+async function generateFriendlyId(env, table, field, prefix, dateValue) {
+  const stamp = friendlyDateStamp(dateValue);
+  const start = `${prefix}-${stamp}-`;
+  const filters = new URLSearchParams({ select: field, [field]: `like.${start}%`, order: `${field}.desc`, limit: "100" });
+  const result = await supabaseFetch(env, `${table}?${filters.toString()}`, { method: "GET" });
+  if (result.error) {
+    console.warn("Friendly ID lookup failed; using fallback", { table, field, prefix, error: result.error });
+    return `${start}${String(Date.now()).slice(-3)}`;
+  }
+  const highest = (Array.isArray(result.body) ? result.body : []).reduce((max, row) => {
+    const match = String(row?.[field] || "").match(/-(\d+)$/);
+    return match ? Math.max(max, Number(match[1]) || 0) : max;
+  }, 0);
+  return `${start}${String(highest + 1).padStart(3, "0")}`;
+}
+
+function payrollMissingPaymentColumn(result = {}) {
+  return /payment_ref_id|payment_reference|payment_notes|paid_at|payroll_ref_id|driver_payment|helper_payment/i.test(String(result.details?.message || result.error || result.details || ""));
+}
+
 function generatePayrollLineId() {
   return `pline_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -177,6 +203,7 @@ function mapPayrollRecord(input) {
 
   return {
     payroll_id: payrollId,
+    payroll_ref_id: textOrNull(firstValue(input, ["payroll_ref_id", "payrollRefId", "Payroll_Ref_ID"])),
     payroll_date: dateOrNull(firstValue(input, ["payroll_date", "payrollDate"])),
     cutoff_from: dateOrNull(firstValue(input, ["cutoff_from", "cutoffFrom", "cutoffStart"])),
     cutoff_to: dateOrNull(firstValue(input, ["cutoff_to", "cutoffTo", "cutoffEnd"])),
@@ -203,6 +230,10 @@ function mapPayrollRecord(input) {
     approved_by: textOrNull(firstValue(input, ["approved_by", "approvedBy"])),
     approved_at: timestampOrNull(firstValue(input, ["approved_at", "approvedAt"])),
     deposited_at: timestampOrNull(firstValue(input, ["deposited_at", "depositedAt"])),
+    payment_ref_id: textOrNull(firstValue(input, ["payment_ref_id", "paymentRefId", "Payment_Ref_ID"])),
+    payment_reference: textOrNull(firstValue(input, ["payment_reference", "paymentReference", "Payment_Reference"])),
+    payment_notes: textOrNull(firstValue(input, ["payment_notes", "paymentNotes", "Payment_Notes"])),
+    paid_at: timestampOrNull(firstValue(input, ["paid_at", "paidAt", "Paid_At"])),
     raw_data: (input && typeof input === "object") ? input : {},
     created_at: timestampOrNow(firstValue(input, ["created_at", "createdAt"])),
     updated_at: timestampOrNow(firstValue(input, ["updated_at", "updatedAt"]) || now),
@@ -215,6 +246,8 @@ function formatPayrollRecord(r = {}) {
     id: r.id || r.payroll_id || "",
     payroll_id: r.payroll_id || "",
     payrollId: r.payroll_id || "",
+    payroll_ref_id: r.payroll_ref_id || "",
+    payrollRefId: r.payroll_ref_id || "",
     payroll_date: r.payroll_date || "",
     payrollDate: r.payroll_date || "",
     cutoff_from: r.cutoff_from || "",
@@ -266,6 +299,34 @@ function formatPayrollRecord(r = {}) {
     approvedAt: r.approved_at || "",
     deposited_at: r.deposited_at || "",
     depositedAt: r.deposited_at || "",
+    payment_ref_id: r.payment_ref_id || "",
+    paymentRefId: r.payment_ref_id || "",
+    payment_reference: r.payment_reference || "",
+    paymentReference: r.payment_reference || "",
+    payment_notes: r.payment_notes || "",
+    paymentNotes: r.payment_notes || "",
+    paid_at: r.paid_at || "",
+    paidAt: r.paid_at || "",
+    driver_payment_status: r.driver_payment_status || "Unpaid",
+    driverPaymentStatus: r.driver_payment_status || "Unpaid",
+    helper_payment_status: r.helper_payment_status || "Unpaid",
+    helperPaymentStatus: r.helper_payment_status || "Unpaid",
+    driver_paid_at: r.driver_paid_at || "",
+    driverPaidAt: r.driver_paid_at || "",
+    helper_paid_at: r.helper_paid_at || "",
+    helperPaidAt: r.helper_paid_at || "",
+    driver_payment_ref_id: r.driver_payment_ref_id || "",
+    driverPaymentRefId: r.driver_payment_ref_id || "",
+    helper_payment_ref_id: r.helper_payment_ref_id || "",
+    helperPaymentRefId: r.helper_payment_ref_id || "",
+    driver_payment_reference: r.driver_payment_reference || "",
+    driverPaymentReference: r.driver_payment_reference || "",
+    helper_payment_reference: r.helper_payment_reference || "",
+    helperPaymentReference: r.helper_payment_reference || "",
+    driver_payment_notes: r.driver_payment_notes || "",
+    driverPaymentNotes: r.driver_payment_notes || "",
+    helper_payment_notes: r.helper_payment_notes || "",
+    helperPaymentNotes: r.helper_payment_notes || "",
     raw_data: r.raw_data || {},
     created_at: r.created_at || "",
     createdAt: r.created_at || "",
@@ -546,11 +607,34 @@ export async function upsertPayrollRecordToSupabase(env, input) {
 
   const record = mapPayrollRecord(raw);
 
-  const result = await supabaseFetch(env, "payroll_records?on_conflict=payroll_id", {
+  if (!record.payroll_ref_id) {
+    if (/^PAY-\d{8}-\d+$/.test(record.payroll_id)) {
+      record.payroll_ref_id = record.payroll_id;
+    } else {
+      record.payroll_ref_id = await generateFriendlyId(env, "payroll_records", "payroll_ref_id", "PAY", record.payroll_date || null);
+    }
+  }
+
+  let result = await supabaseFetch(env, "payroll_records?on_conflict=payroll_id", {
     method: "POST",
     prefer: "resolution=merge-duplicates,return=representation",
     body: JSON.stringify([record])
   });
+
+  if (payrollMissingPaymentColumn(result)) {
+    console.warn("Payroll payment/ref columns missing. Retrying payroll save without optional payment fields. Apply friendly-ref-ids-and-payment-fields.sql.");
+    const fallbackRecord = { ...record };
+    delete fallbackRecord.payroll_ref_id;
+    delete fallbackRecord.payment_ref_id;
+    delete fallbackRecord.payment_reference;
+    delete fallbackRecord.payment_notes;
+    delete fallbackRecord.paid_at;
+    result = await supabaseFetch(env, "payroll_records?on_conflict=payroll_id", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=representation",
+      body: JSON.stringify([fallbackRecord])
+    });
+  }
 
   if (result.error) {
     return { ok: false, error: SAFE_ERROR, details: result.error, status: result.status || 500 };
@@ -561,6 +645,7 @@ export async function upsertPayrollRecordToSupabase(env, input) {
     ok: true,
     source: "supabase",
     payroll_id: record.payroll_id,
+    payroll_ref_id: record.payroll_ref_id,
     record: formatPayrollRecord(saved || record)
   };
 }
@@ -608,6 +693,9 @@ export async function updatePayrollStatusInSupabase(env, input = {}) {
   const approvedBy = textOrNull(input.approved_by || input.approvedBy);
   const approvedAt = timestampOrNull(input.approved_at || input.approvedAt);
   const depositedAt = timestampOrNull(input.deposited_at || input.depositedAt);
+  const paymentReference = textOrNull(input.payment_reference || input.paymentReference || input.Payment_Reference);
+  const paymentNotes = textOrNull(input.payment_notes || input.paymentNotes || input.Payment_Notes);
+  const paidAt = timestampOrNull(input.paid_at || input.paidAt || input.Paid_At);
 
   if (approvedBy) payload.approved_by = approvedBy;
   if (approvedAt) {
@@ -620,13 +708,71 @@ export async function updatePayrollStatusInSupabase(env, input = {}) {
   } else if (rawStatus === "Deposited") {
     payload.deposited_at = now;
   }
+  if (paymentReference) payload.payment_reference = paymentReference;
+  if (paymentNotes) payload.payment_notes = paymentNotes;
+  if (paidAt) {
+    payload.paid_at = paidAt;
+  } else if (rawStatus === "Paid" || rawPaymentStatus === "Paid") {
+    payload.paid_at = now;
+  }
+  if ((rawStatus === "Paid" || rawPaymentStatus === "Paid") && !textOrNull(input.payment_ref_id || input.paymentRefId || input.Payment_Ref_ID)) {
+    payload.payment_ref_id = await generateFriendlyId(env, "payroll_records", "payment_ref_id", "PMT", now);
+  } else {
+    const paymentRefId = textOrNull(input.payment_ref_id || input.paymentRefId || input.Payment_Ref_ID);
+    if (paymentRefId) payload.payment_ref_id = paymentRefId;
+  }
+
+  // Per-person payment: driver and helper can be paid independently.
+  const personTarget = textOrNull(input.person_target || input.personTarget);
+  if (personTarget === "driver" || personTarget === "helper") {
+    const isDriver = personTarget === "driver";
+    const personPaidAt = timestampOrNull(
+      isDriver
+        ? (input.driver_paid_at || input.driverPaidAt)
+        : (input.helper_paid_at || input.helperPaidAt)
+    ) || now;
+    if (isDriver) {
+      payload.driver_payment_status = "Paid";
+      payload.driver_paid_at = personPaidAt;
+      const driverRef = textOrNull(input.driver_payment_reference || input.driverPaymentReference);
+      const driverNotes = textOrNull(input.driver_payment_notes || input.driverPaymentNotes);
+      if (driverRef) payload.driver_payment_reference = driverRef;
+      if (driverNotes) payload.driver_payment_notes = driverNotes;
+      payload.driver_payment_ref_id = await generateFriendlyId(env, "payroll_records", "driver_payment_ref_id", "PMT", now);
+    } else {
+      payload.helper_payment_status = "Paid";
+      payload.helper_paid_at = personPaidAt;
+      const helperRef = textOrNull(input.helper_payment_reference || input.helperPaymentReference);
+      const helperNotes = textOrNull(input.helper_payment_notes || input.helperPaymentNotes);
+      if (helperRef) payload.helper_payment_reference = helperRef;
+      if (helperNotes) payload.helper_payment_notes = helperNotes;
+      payload.helper_payment_ref_id = await generateFriendlyId(env, "payroll_records", "helper_payment_ref_id", "PMT", now);
+    }
+  }
 
   const filters = new URLSearchParams({ payroll_id: `eq.${payrollId}` });
-  const result = await supabaseFetch(env, `payroll_records?${filters.toString()}`, {
+  let result = await supabaseFetch(env, `payroll_records?${filters.toString()}`, {
     method: "PATCH",
     prefer: "return=representation",
     body: JSON.stringify(payload)
   });
+
+  if (payrollMissingPaymentColumn(result)) {
+    console.warn("Payroll payment/ref columns missing. Retrying status update without optional payment fields. Apply friendly-ref-ids-and-payment-fields.sql.");
+    const fallbackPayload = { ...payload };
+    delete fallbackPayload.payment_ref_id;
+    delete fallbackPayload.payment_reference;
+    delete fallbackPayload.payment_notes;
+    delete fallbackPayload.paid_at;
+    ["driver_payment_status","driver_paid_at","driver_payment_ref_id","driver_payment_reference","driver_payment_notes",
+     "helper_payment_status","helper_paid_at","helper_payment_ref_id","helper_payment_reference","helper_payment_notes"
+    ].forEach(f => delete fallbackPayload[f]);
+    result = await supabaseFetch(env, `payroll_records?${filters.toString()}`, {
+      method: "PATCH",
+      prefer: "return=representation",
+      body: JSON.stringify(fallbackPayload)
+    });
+  }
 
   if (result.error) {
     return { ok: false, error: SAFE_ERROR, details: result.error, status: result.status || 500 };

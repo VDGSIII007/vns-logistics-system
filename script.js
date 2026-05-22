@@ -137,6 +137,7 @@ let garageTruckRecords = [];
 let repairTruckFormOpen = false;
 let garageTruckSearchQuery = '';
 let localForRepairTrucks = [];
+let forRepairSaveStatusTimer = null;
 let savedRecordsQuickFilter = '';
 let activeSavedRepairCategory = 'equipment';
 let activeSavedRepairSubtab = 'active';
@@ -1466,6 +1467,19 @@ function getForRepairLocalValue(field) {
   return forRepairLocalForm?.querySelector(`[data-for-repair-field="${field}"]`)?.value.trim() || '';
 }
 
+function setForRepairStatus(msg, persistClass = '') {
+  if (!forRepairLocalStatus) return;
+  if (forRepairSaveStatusTimer) { clearTimeout(forRepairSaveStatusTimer); forRepairSaveStatusTimer = null; }
+  forRepairLocalStatus.textContent = msg;
+  forRepairLocalStatus.className = persistClass ? `save-status ${persistClass}` : 'save-status';
+  if (!persistClass && msg) {
+    forRepairSaveStatusTimer = setTimeout(() => {
+      if (forRepairLocalStatus) forRepairLocalStatus.textContent = '';
+      forRepairSaveStatusTimer = null;
+    }, 4000);
+  }
+}
+
 function loadLocalForRepairTrucks() {
   try {
     localForRepairTrucks = JSON.parse(localStorage.getItem(FOR_REPAIR_TRUCKS_KEY) || '[]');
@@ -1492,7 +1506,7 @@ function saveForRepairTruck(record) {
   renderLocalForRepairTrucks();
 }
 
-function syncForRepairTruck(record) {
+async function syncForRepairTruck(record) {
   const workerPayload = {
     For_Repair_ID: record.forRepairId,
     Plate_Number: record.plateNumber || '',
@@ -1502,6 +1516,7 @@ function syncForRepairTruck(record) {
     Helper: record.helper || '',
     Garage_Location: record.garageLocation || '',
     Repair_Issue: record.repairIssue || '',
+    Odometer_Reading: record.odometer || '',
     Start_Date: record.startDate || '',
     Estimated_Finish_Date: record.estimatedFinishDate || '',
     End_Date: record.endDate || '',
@@ -1510,19 +1525,25 @@ function syncForRepairTruck(record) {
     Created_At: record.createdAt || '',
     Updated_At: record.updatedAt || ''
   };
-  // Parallel Worker sync for Supabase and TRKREP generation
-  fetch(`${VNS_WORKER_API_BASE}/api/repair/for-repair-truck`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ record: workerPayload })
-  }).catch(err => console.warn('[ForRepair] Worker sync failed:', err));
-  // Existing AppScript sync (unchanged)
-  return fetch(REPAIR_WEB_APP_URL, {
+  // Fire-and-forget AppScript (no-cors, response unreadable)
+  fetch(REPAIR_WEB_APP_URL, {
     method: 'POST',
     mode: 'no-cors',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({ action: 'saveForRepairTruck', record: workerPayload })
+  }).catch(() => {});
+  // Await Worker for Supabase upsert and TRKREP ref ID
+  const resp = await fetch(`${VNS_WORKER_API_BASE}/api/repair/for-repair-truck`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ record: workerPayload })
   });
+  if (!resp.ok) {
+    let errMsg = `HTTP ${resp.status}`;
+    try { const errData = await resp.clone().json(); if (errData?.error) errMsg = errData.error; } catch {}
+    throw new Error(errMsg);
+  }
+  return resp.json();
 }
 
 async function deleteForRepairTruck(index) {
@@ -1544,7 +1565,7 @@ async function deleteForRepairTruck(index) {
   localForRepairTrucks[index] = updatedRecord;
   saveLocalForRepairTrucks();
   renderLocalForRepairTrucks();
-  if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Deleted locally. Syncing delete to cloud...';
+  setForRepairStatus('Deleted locally. Syncing delete to cloud...');
 
   try {
     await fetch(REPAIR_WEB_APP_URL, {
@@ -1560,10 +1581,10 @@ async function deleteForRepairTruck(index) {
       })
     });
     console.log('[ForRepair] Delete sync success:', record.forRepairId);
-    if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Deleted and logged in cloud.';
+    setForRepairStatus('Deleted and logged in cloud.');
   } catch (error) {
     console.error('[ForRepair] Delete sync failed:', error);
-    if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Deleted locally. Cloud sync failed.';
+    setForRepairStatus('Deleted locally. Cloud sync failed.', 'save-status-error');
   }
 }
 
@@ -1584,15 +1605,15 @@ async function completeForRepairTruck(index) {
   localForRepairTrucks[index] = updatedRecord;
   saveLocalForRepairTrucks();
   renderLocalForRepairTrucks();
-  if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Completed locally. Syncing to cloud...';
+  setForRepairStatus('Completed locally. Syncing to cloud...');
 
   try {
     await syncForRepairTruck(updatedRecord);
     console.log('[ForRepair] Complete sync success:', updatedRecord.forRepairId);
-    if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Completed and synced to cloud.';
+    setForRepairStatus('Completed and synced to cloud.');
   } catch (error) {
     console.error('[ForRepair] Complete sync failed:', error);
-    if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Completed locally. Cloud sync failed.';
+    setForRepairStatus('Completed locally. Cloud sync failed.', 'save-status-error');
   }
 }
 
@@ -1601,7 +1622,7 @@ function showRepairTruckForm() {
   repairTruckFormOpen = true;
   forRepairLocalForm.hidden = false;
   if (addForRepairButton) addForRepairButton.textContent = 'Hide Form';
-  if (forRepairLocalStatus) forRepairLocalStatus.textContent = '';
+  setForRepairStatus('');
   console.log('Repair truck form opened');
 }
 
@@ -1611,7 +1632,7 @@ function hideRepairTruckForm() {
   forRepairLocalForm.hidden = true;
   forRepairLocalForm.reset();
   if (addForRepairButton) addForRepairButton.textContent = '+ Add For Repair Unit';
-  if (forRepairLocalStatus) forRepairLocalStatus.textContent = '';
+  setForRepairStatus('');
   console.log('Repair truck form closed');
 }
 
@@ -1643,31 +1664,39 @@ function renderLocalForRepairTrucks() {
   if (!visible.length) {
     const emptyMsg = active.length
       ? 'No repair trucks match the current filters.'
-      : 'No for repair trucks added yet.';
-    forRepairLocalBody.innerHTML = `<tr class="repair-empty-row"><td colspan="9" class="empty">${emptyMsg}</td></tr>`;
+      : 'No for-repair trucks added yet.';
+    const emptyHint = active.length ? '' : '<br><span style="font-weight:400;color:#9ca3af">Click <strong>+ Add For Repair Unit</strong> to create one.</span>';
+    forRepairLocalBody.innerHTML = `<tr><td colspan="11" class="ops-empty">${emptyMsg}${emptyHint}</td></tr>`;
     return;
   }
 
   forRepairLocalBody.innerHTML = visible.map(record => {
     const actualIndex = localForRepairTrucks.indexOf(record);
     const isCompleted = /completed/i.test(record.repairStatus || '');
+    const refId = record.truck_repair_ref_id || record.truckRepairRefId || record.Truck_Repair_Ref_ID || record.request_no || record.requestNo || '';
+    const isLocalOnly = !refId;
+    const refCell = refId
+      ? `<span class="ops-mono for-repair-ref-id">${escapeHtml(refId)}</span>`
+      : `<span class="for-repair-pending-badge">Pending Ref</span> <span class="for-repair-local-badge">Local</span>`;
     return `
-      <tr>
-        <td data-label="Plate">${escapeHtml(truncateRecordValue(record.plateNumber, 18))}</td>
-        <td data-label="Garage">${escapeHtml(truncateRecordValue(record.garageLocation, 28))}</td>
-        <td data-label="Repair Issue">${escapeHtml(truncateRecordValue(record.repairIssue))}</td>
-        <td data-label="Start Date">${escapeHtml(truncateRecordValue(record.startDate, 18))}</td>
-        <td data-label="Est. Finish">${escapeHtml(truncateRecordValue(record.estimatedFinishDate, 18))}</td>
-        <td data-label="End Date">${escapeHtml(truncateRecordValue(record.endDate, 18))}</td>
-        <td data-label="Status">${escapeHtml(truncateRecordValue(record.repairStatus, 24))}</td>
-        <td data-label="Remarks">${escapeHtml(truncateRecordValue(record.remarks))}</td>
-        <td data-label="">
-          <div class="change-request-actions">
+      <tr${isLocalOnly ? ' class="for-repair-local-row"' : ''}>
+        <td data-label="Ref ID">${refCell}</td>
+        <td data-label="Plate"><strong>${escapeHtml(truncateRecordValue(record.plateNumber, 18))}</strong></td>
+        <td data-label="Odometer">${escapeHtml(record.odometer || '—')}</td>
+        <td data-label="Garage">${escapeHtml(truncateRecordValue(record.garageLocation, 22))}</td>
+        <td data-label="Repair Issue" class="for-repair-issue-cell">${escapeHtml(truncateRecordValue(record.repairIssue))}</td>
+        <td data-label="Start"><span class="ops-mono">${escapeHtml(record.startDate || '—')}</span></td>
+        <td data-label="Est. Finish"><span class="ops-mono">${escapeHtml(record.estimatedFinishDate || '—')}</span></td>
+        <td data-label="End Date"><span class="ops-mono">${escapeHtml(record.endDate || '—')}</span></td>
+        <td data-label="Status">${renderStatusBadge('repair', record.repairStatus || 'For Repair')}</td>
+        <td data-label="Remarks">${escapeHtml(truncateRecordValue(record.remarks || '—'))}</td>
+        <td data-label="Actions">
+          <div class="ops-actions">
             ${isCompleted
-              ? '<span class="save-status">Completed</span>'
-              : `<button class="details-button action-mini-button" type="button" data-for-repair-complete="${actualIndex}">Complete</button>`
+              ? '<span class="for-repair-done-label">Completed</span>'
+              : `<button class="details-button" type="button" data-for-repair-complete="${actualIndex}">Complete</button>`
             }
-            <button class="details-button action-mini-button" type="button" data-for-repair-delete="${actualIndex}">Delete</button>
+            <button class="details-button for-repair-delete-btn" type="button" data-for-repair-delete="${actualIndex}">Delete</button>
           </div>
         </td>
       </tr>
@@ -4989,6 +5018,7 @@ if (forRepairLocalForm) {
       driver: getForRepairLocalValue('driver'),
       helper: getForRepairLocalValue('helper'),
       garageLocation: getForRepairLocalValue('garageLocation'),
+      odometer: getForRepairLocalValue('odometer'),
       repairIssue: getForRepairLocalValue('repairIssue'),
       startDate: getForRepairLocalValue('startDate'),
       estimatedFinishDate: getForRepairLocalValue('estimatedFinishDate'),
@@ -5006,21 +5036,34 @@ if (forRepairLocalForm) {
     if (!record.repairIssue) { forRepairLocalForm.querySelector('[data-for-repair-field="repairIssue"]')?.classList.add('input-error'); frMissing.push('Repair Issue'); }
     if (!record.startDate) { forRepairLocalForm.querySelector('[data-for-repair-field="startDate"]')?.classList.add('input-error'); frMissing.push('Start Date'); }
     if (frMissing.length) {
-      if (forRepairLocalStatus) { forRepairLocalStatus.className = 'save-status save-status-warning'; forRepairLocalStatus.textContent = `Required: ${frMissing.join(', ')}.`; }
+      setForRepairStatus(`Required: ${frMissing.join(', ')}.`, 'save-status-warning');
       return;
     }
 
     saveForRepairTruck(record);
     hideRepairTruckForm();
-    if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Saved locally. Syncing to cloud...';
+    setForRepairStatus('Saved locally. Syncing to cloud...');
 
     try {
-      await syncForRepairTruck(record);
-      console.log('[ForRepair] Save sync success:', record.forRepairId);
-      if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Saved locally and synced to cloud.';
+      const workerResult = await syncForRepairTruck(record);
+      const refId = workerResult?.truck_repair_ref_id || '';
+      console.log('[ForRepair] Save sync success:', record.forRepairId, refId);
+      if (refId) {
+        const savedIndex = localForRepairTrucks.indexOf(record);
+        if (savedIndex >= 0) {
+          localForRepairTrucks[savedIndex].truck_repair_ref_id = refId;
+          saveLocalForRepairTrucks();
+          renderLocalForRepairTrucks();
+        }
+      }
+      setForRepairStatus('Saved locally and synced to cloud.');
+      if (window.showAppToast) {
+        window.showAppToast({ type: 'success', title: 'For Repair Truck saved', refLabel: 'Ref ID', refValue: refId || 'Pending Ref' });
+      }
     } catch (error) {
       console.error('[ForRepair] Save sync failed:', error);
-      if (forRepairLocalStatus) forRepairLocalStatus.textContent = 'Saved locally. Cloud sync failed.';
+      const reason = error?.message || 'Unknown error';
+      setForRepairStatus(`Saved locally. Cloud sync failed: ${reason}`, 'save-status-error');
     }
   });
 }

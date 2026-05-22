@@ -754,6 +754,7 @@
                   <option value="Other">Other</option>
                 </select>
               </label>
+              <label><span>Odometer / KM Reading</span><input type="text" data-for-repair-field="odometer" placeholder="e.g. 125,400 km"></label>
               <label class="wide-field"><span class="required-label">Repair Issue</span><textarea rows="3" data-for-repair-field="repairIssue" placeholder="Describe repair issue"></textarea></label>
               <label><span class="required-label">Start Date</span><input type="date" data-for-repair-field="startDate"></label>
               <label><span>Estimated Finish Date</span><input type="date" data-for-repair-field="estimatedFinishDate"></label>
@@ -806,23 +807,25 @@
                 <input id="for-repair-plate-search" type="text" placeholder="Search plate number...">
               </label>
             </div>
-            <div class="table-wrap repair-mobile-wrap">
-              <table class="module-table garage-table for-repair-table repair-responsive-table">
+            <div class="for-repair-wrap">
+              <table class="ops-table for-repair-table">
                 <thead>
                   <tr>
+                    <th>Ref ID</th>
                     <th>Plate Number</th>
+                    <th>Odometer</th>
                     <th>Garage Location</th>
                     <th>Repair Issue</th>
                     <th>Start Date</th>
-                    <th>Estimated Finish</th>
+                    <th>Est. Finish</th>
                     <th>End Date</th>
-                    <th>Repair Status</th>
+                    <th>Status</th>
                     <th>Remarks</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody id="for-repair-local-body">
-                  <tr><td colspan="9" class="empty">No for repair trucks added yet.</td></tr>
+                  <tr><td colspan="11" class="ops-empty">No for-repair trucks added yet.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -941,6 +944,7 @@
                 <label><span class="required-label">Date</span><input type="date" data-parts-field="date"></label>
                 <label><span class="required-label">Group</span><select data-parts-field="plateGroup" data-plate-group-select="parts"></select></label>
                 <label><span class="required-label">Plate Number</span><select data-parts-field="plateNumber" data-plate-select="parts"></select></label>
+                <label><span>Odometer Reading / KM Reading</span><input type="number" min="0" step="1" data-parts-field="odometer" placeholder="Current KM"></label>
                 <label>
                   <span>Truck Type</span>
                   <select data-parts-field="truckType">
@@ -1013,6 +1017,7 @@
                 <label class="wide-field"><span>Units Affected</span><textarea rows="4" data-equipment-field="workDone" placeholder="List plates, drivers, helpers, or assigned units"></textarea></label>
                 <label><span>Supplier</span><input type="text" data-equipment-field="supplier"></label>
                 <label><span>Payee</span><input type="text" data-equipment-field="payee"></label>
+                <label><span>Account / Number</span><input type="text" data-equipment-field="accountNumber"></label>
                 <section class="repair-items-section" id="equipment-items-section">
                   <div class="repair-items-header">
                     <div>
@@ -1054,12 +1059,21 @@
                 <label><span>Driver</span><input type="text" data-labor-field="driver"></label>
                 <label><span>Helper</span><input type="text" data-labor-field="helper"></label>
                 <label><span>Mechanic / Worker</span><input type="text" data-labor-field="mechanic"></label>
+                <label><span>Payee</span><input type="text" data-labor-field="payee"></label>
+                <label><span>Account / Number</span><input type="text" data-labor-field="accountNumber"></label>
                 <label><span>Priority</span><select data-labor-field="priority"><option value="Medium">Medium</option><option value="Critical">Critical</option><option value="High">High</option><option value="Low">Low</option></select></label>
                 <label class="wide-field"><span class="required-label">Work Done / Repair Issue</span><textarea rows="4" data-labor-field="workDone"></textarea></label>
                 <label><span>Shop Name</span><input type="text" data-labor-field="shopName"></label>
-                <label><span>Parts / Item Name</span><input type="text" data-labor-field="item" placeholder="Optional"></label>
-                <label><span>Quantity</span><input type="number" step="0.01" data-labor-field="quantity" placeholder="Optional"></label>
-                <label><span>Unit Cost</span><input type="number" step="0.01" data-labor-field="unitCost" placeholder="Optional"></label>
+                <section class="repair-items-section" id="labor-items-section">
+                  <div class="repair-items-header">
+                    <div>
+                      <h4>Labor Items</h4>
+                      <p>Add each labor/work item included in this payment request.</p>
+                    </div>
+                    <button class="repair-add-item-button" type="button" id="add-labor-item-button">+ Add Labor Item</button>
+                  </div>
+                  <div class="repair-items-list" id="labor-items-list"></div>
+                </section>
                 <label><span class="required-label">Total Amount</span><input type="number" step="0.01" data-labor-field="totalCost"></label>
                 <label class="wide-field"><span>Remarks</span><textarea rows="4" data-labor-field="remarks"></textarea></label>
               </div>
@@ -1111,7 +1125,7 @@
 
             <section class="manual-request-card" data-manual-form="Repair Monitoring Update" hidden>
               <div class="manual-card-header monitoring">
-                <h3>Repair Monitoring Update</h3>
+                <h3>Other Repair Request</h3>
               </div>
               <div class="manual-fields">
                 <label><span class="required-label">Date</span><input type="date" data-monitoring-field="date"></label>
@@ -1134,14 +1148,21 @@
                 </label>
                 <label><span>Driver</span><input type="text" data-monitoring-field="driver"></label>
                 <label><span>Helper</span><input type="text" data-monitoring-field="helper"></label>
-                <label><span>Priority</span><select data-monitoring-field="priority"><option value="Medium">Medium</option><option value="Critical">Critical</option><option value="High">High</option><option value="Low">Low</option></select></label>
-                <label><span>Current Status</span><select data-monitoring-field="repairStatus"><option value="For inspection">For inspection</option><option value="Waiting for approval">Waiting for approval</option><option value="Approved">Approved</option><option value="In progress">In progress</option><option value="Waiting for parts">Waiting for parts</option><option value="For testing">For testing</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option></select></label>
                 <label class="wide-field"><span class="required-label">Work Done / Repair Issue</span><textarea rows="4" data-monitoring-field="workDone"></textarea></label>
                 <label><span>Mechanic / Worker</span><input type="text" data-monitoring-field="mechanic"></label>
+                <label><span>Payee</span><input type="text" data-monitoring-field="payee"></label>
+                <label><span>Account / Number</span><input type="text" data-monitoring-field="accountNumber"></label>
                 <label><span>Shop Name</span><input type="text" data-monitoring-field="shopName"></label>
-                <label><span>Parts / Item Name</span><input type="text" data-monitoring-field="item" placeholder="Optional"></label>
-                <label><span>Quantity</span><input type="number" step="0.01" data-monitoring-field="quantity" placeholder="Optional"></label>
-                <label><span>Unit Cost</span><input type="number" step="0.01" data-monitoring-field="unitCost" placeholder="Optional"></label>
+                <section class="repair-items-section" id="other-repair-items-section">
+                  <div class="repair-items-header">
+                    <div>
+                      <h4>Repair Items</h4>
+                      <p>Add each part, item, or charge included in this request.</p>
+                    </div>
+                    <button class="repair-add-item-button" type="button" id="add-other-repair-item-button">+ Add Item</button>
+                  </div>
+                  <div class="repair-items-list" id="other-repair-items-list"></div>
+                </section>
                 <label><span>Total Amount</span><input type="number" step="0.01" data-monitoring-field="totalCost" placeholder="Optional"></label>
                 <label class="wide-field"><span>Remarks</span><textarea rows="4" data-monitoring-field="remarks"></textarea></label>
               </div>
@@ -1352,7 +1373,7 @@
               <thead>
                 <tr>
                   <th class="selection-cell"><input id="savedRecordsSelectAll" type="checkbox" aria-label="Select all visible saved records"></th>
-                  <th>Record ID</th>
+                  <th>Ref ID</th>
                   <th>Date Requested</th>
                   <th>Plate Number</th>
                   <th>Truck Type</th>
@@ -1441,6 +1462,7 @@
     </div>
   </footer>
 
+  <script src="app-toast.js"></script>
   <script src="script.js"></script>
   <script src="auth.js"></script>
 </body>

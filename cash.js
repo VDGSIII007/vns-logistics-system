@@ -104,6 +104,9 @@ function backupCashRecordToGoogleSheets(record, statusId, action = 'saveEntry', 
       console.warn('Cash Google Sheets backup failed', error);
       await updateCashBackupStatus(record, 'failed', error?.message || 'Google Sheets backup failed');
       setStatus(statusId, withCashNotice('Saved to Supabase. Google Sheets backup failed.', notice), 'warning');
+      showCashToast("warning", "Sync failed", record, {
+        message: "Saved to Supabase, but Google Sheets backup failed."
+      });
     });
 }
 
@@ -635,6 +638,32 @@ function setStatus(id, message, type = "") {
   el.textContent = message;
 }
 
+function getCashToastRef(record = {}) {
+  const ref = getCashDisplayReference(record);
+  return ref || "Pending Ref";
+}
+
+function getCashToastTitle(record = {}, action = "saveEntry") {
+  if (action === "updateEntry") return "Updated successfully";
+  const type = String(record.type || record.requestType || "").trim();
+  if (/diesel/i.test(type)) return "Diesel PO saved";
+  if (/budget/i.test(type)) return "Trip Budget saved";
+  if (/bali|cash advance/i.test(type)) return "Bali / Cash Advance saved";
+  return "Cash request saved";
+}
+
+function showCashToast(type, title, record = {}, options = {}) {
+  window.showAppToast?.({
+    type,
+    title,
+    message: options.message || "",
+    refLabel: "Ref ID",
+    refValue: getCashToastRef(record),
+    extra: options.extra || "",
+    duration: options.duration || 4500
+  });
+}
+
 function switchCashTab(tabId) {
   document.querySelectorAll(".cash-tab").forEach(button => button.classList.toggle("active", button.dataset.cashTab === tabId));
   document.querySelectorAll(".cash-tab-panel").forEach(panel => panel.classList.toggle("active", panel.id === tabId));
@@ -718,6 +747,7 @@ async function saveCashSupabaseFirst(record, storageKey, statusId, action = 'sav
       .concat(savedCashRecordsCache.filter(item => item.id !== savedRecord.id));
     refreshAllCashData();
     setStatus(statusId, withCashNotice('Saved to Supabase. Backing up to Google Sheets...', notice), 'success');
+    showCashToast("success", getCashToastTitle(savedRecord, action), savedRecord);
     backupCashRecordToGoogleSheets(savedRecord, statusId, action, notice);
     return savedRecord;
   } catch (supabaseError) {
@@ -729,9 +759,15 @@ async function saveCashSupabaseFirst(record, storageKey, statusId, action = 'sav
     try {
       await saveCashRecordToGoogleSheets(record, action);
       setStatus(statusId, withCashNotice('Saved to Google Sheets fallback.', notice), 'success');
+      showCashToast("success", getCashToastTitle(record, action), record, {
+        message: "Saved through Google Sheets fallback."
+      });
     } catch (sheetsError) {
       console.error('Cash Supabase and Google Sheets save failed', sheetsError);
       setStatus(statusId, 'Save failed. Please try again.', 'warning');
+      showCashToast("error", "Save failed", record, {
+        message: sheetsError?.message || supabaseError?.message || "Please try again."
+      });
     }
     return record;
   }
@@ -1154,6 +1190,8 @@ function detectCashRecordType(record = {}) {
 function normalizeCashRecordForTable(record = {}, index = 0) {
   const type = detectCashRecordType(record);
   const requestId = firstCashValue(record, ["request_id", "requestId", "Request_ID", "Cash_ID", "Record_ID", "id", "recordId", "cashId"], `cash_${index + 1}`);
+  const friendlyRequestId = getCashDisplayReference(record);
+  const displayId = friendlyRequestId || "Pending Ref";
   const rawType = firstCashValue(record, ["Transaction_Type", "Type", "transactionType", "type"]);
   console.log("Cash display type", { request_id: requestId, request_type: firstCashValue(record, ["request_type", "requestType", "Request_Type"]), raw_type: rawType, display_type: type });
   console.log("Cash type source check", {
@@ -1176,6 +1214,7 @@ function normalizeCashRecordForTable(record = {}, index = 0) {
 
   return {
     id: requestId,
+    displayId,
     date: firstCashValue(record, ["request_date", "Date", "date", "Message_Date", "Encoded_At", "created_at", "Created_At", "createdAt"]),
     type,
     rawType,
@@ -1223,6 +1262,10 @@ function normalizeSavedCashRecord(record = {}, index = 0, source = "local") {
     id: display.id,
     request_id: firstCashValue(record, ["request_id", "requestId", "Request_ID"], display.id),
     requestId: firstCashValue(record, ["request_id", "requestId", "Request_ID"], display.id),
+    request_no: firstCashValue(record, ["request_no", "requestNo", "Request_No"], ""),
+    requestNo: firstCashValue(record, ["requestNo", "Request_No", "request_no"], ""),
+    cash_ref_id: firstCashValue(record, ["cash_ref_id", "cashRefId", "Cash_Ref_ID"], ""),
+    cashRefId: firstCashValue(record, ["cashRefId", "Cash_Ref_ID", "cash_ref_id"], ""),
     type: display.type,
     request_type: display.type,
     requestType: display.type,
@@ -1347,6 +1390,37 @@ function cashDetailField(label, value) {
   return `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value || "-"))}</strong></div>`;
 }
 
+function getCashDisplayReference(record = {}) {
+  return firstCashValue(record, [
+    "cash_ref_id",
+    "cashRefId",
+    "Cash_Ref_ID",
+    "request_no",
+    "requestNo",
+    "Request_No",
+    "cpo_ref_id",
+    "cpoRefId",
+    "CPO_Ref_ID",
+    "bali_ref_id",
+    "baliRefId",
+    "Bali_Ref_ID",
+    "diesel_ref_id",
+    "dieselRefId",
+    "Diesel_Ref_ID",
+    "reference_id",
+    "referenceId",
+    "Reference_ID"
+  ]);
+}
+
+function cashDetailsEyebrow(type = "") {
+  const normalized = String(type || "").trim().toLowerCase();
+  if (normalized.includes("diesel")) return "Diesel PO Details";
+  if (normalized.includes("trip budget") || normalized.includes("budget")) return "Trip Budget Details";
+  if (normalized.includes("bali") || normalized.includes("cash advance")) return "Bali / Cash Advance Details";
+  return "Cash Request Details";
+}
+
 function openCashDetailsModal(id) {
   const record = findSavedCashRecord(id);
   if (!record) return;
@@ -1361,39 +1435,54 @@ function openCashDetailsModal(id) {
     modal.id = "cash-details-modal";
     modal.className = "cash-edit-modal";
     modal.innerHTML = `
-      <div class="cash-edit-dialog">
-        <button id="cash-details-close" class="cash-edit-close" type="button" aria-label="Close">x</button>
-        <h2>Cash Request Details</h2>
-        <div id="cash-details-body" class="cash-edit-grid"></div>
+      <div class="cash-edit-card" role="dialog" aria-modal="true" aria-labelledby="cash-details-title">
+        <div class="cash-edit-head">
+          <div>
+            <p id="cash-details-eyebrow" class="cash-details-eyebrow">Cash Request Details</p>
+            <h2 id="cash-details-title">Cash Request Details</h2>
+          </div>
+          <button id="cash-details-close" class="cash-edit-close" type="button" aria-label="Close details modal">&times;</button>
+        </div>
+        <div class="cash-edit-body">
+          <div id="cash-details-body" class="cash-detail-grid"></div>
+        </div>
+        <div class="cash-edit-actions">
+          <button id="cash-details-footer-close" class="btn btn-secondary" type="button">Close</button>
+        </div>
       </div>
     `;
     document.body.appendChild(modal);
     $("cash-details-close")?.addEventListener("click", closeCashDetailsModal);
+    $("cash-details-footer-close")?.addEventListener("click", closeCashDetailsModal);
     modal.addEventListener("click", event => {
       if (event.target.id === "cash-details-modal") closeCashDetailsModal();
     });
   }
   const body = $("cash-details-body");
   if (!body) return;
+  const displayReference = getCashDisplayReference(record) || display.displayId || "Pending Ref";
+  const eyebrow = $("cash-details-eyebrow");
+  if (eyebrow) eyebrow.textContent = cashDetailsEyebrow(display.type).toUpperCase();
   body.innerHTML = [
-    cashDetailField("Reference ID", record.request_id || record.requestId || display.id),
+    cashDetailField("Reference ID", displayReference),
     cashDetailField("Request Type", record.request_type || record.requestType || display.type),
     rawTypeField,
     cashDetailField("Status", record.status || record.Status || display.status),
     cashDetailField("Approval Status", record.approval_status || record.approvalStatus || record.Approval_Status),
     cashDetailField("Payment Status", record.payment_status || record.paymentStatus || record.Payment_Status),
     cashDetailField("Backup Status", record.backup_status || record.backupStatus || record.backupStatus),
-    cashDetailField("Backup Error", record.backup_error || record.backupError),
     cashDetailField("Amount", formatCurrency(display.amount)),
     cashDetailField("Plate", record.plate_number || record.plateNumber || display.plate),
+    cashDetailField("Group", record.group_name || record.groupCategory || record.Group_Category || display.group),
     cashDetailField("Receiver / Payee", record.receiver_name || record.receiverName || record.receiverName || display.receiver),
-    cashDetailField("Remarks", record.remarks || record.Remarks || record.reason),
     cashDetailField("Source", record.source || record.Source),
     cashDetailField("Destination", record.destination || record.Destination),
     cashDetailField("Fuel Station", record.fuelStation || record.Fuel_Station),
     cashDetailField("PO / Budget Type", record.poNumber || record.PO_Number || record.budgetType || record.Budget_Type),
     cashDetailField("Created At", record.created_at || record.createdAt || record.Created_At),
-    cashDetailField("Updated At", record.updated_at || record.updatedAt || record.Updated_At)
+    cashDetailField("Updated At", record.updated_at || record.updatedAt || record.Updated_At),
+    cashDetailField("Remarks", record.remarks || record.Remarks || record.reason),
+    cashDetailField("Backup Error", record.backup_error || record.backupError)
   ].filter(Boolean).join("");
   modal.hidden = false;
 }
@@ -1424,7 +1513,7 @@ function renderSavedCashRecords() {
     const lockedTitle = "Only Draft records can be edited/deleted here. Ask Mother/Admin to return this request if changes are needed.";
     const editAttrs = isDraft ? "" : ` disabled title="${lockedTitle}"`;
     const deleteAttrs = isDraft ? "" : ` disabled title="${lockedTitle}"`;
-    return `<tr class="cash-clickable-row" tabindex="0" data-cash-row-id="${escapeHtml(display.id)}"><td>${escapeHtml(display.date || "")}</td><td>${escapeHtml(display.id)}</td><td>${escapeHtml(display.type)}</td><td>${escapeHtml(display.plate)}</td><td>${escapeHtml(display.group)}</td><td>${formatCurrency(display.amount)}</td><td>${escapeHtml(display.receiver)}</td><td>${renderCashStatusChip(display.status)}</td><td class="cash-row-actions"><button data-action="edit" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}"${editAttrs}>Edit</button><button data-action="message" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}">Message</button><button data-action="delete" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}"${deleteAttrs}>Delete</button></td></tr>`;
+    return `<tr class="cash-clickable-row" tabindex="0" data-cash-row-id="${escapeHtml(display.id)}"><td>${escapeHtml(display.date || "")}</td><td>${escapeHtml(display.displayId || display.id)}</td><td>${escapeHtml(display.type)}</td><td>${escapeHtml(display.plate)}</td><td>${escapeHtml(display.group)}</td><td>${formatCurrency(display.amount)}</td><td>${escapeHtml(display.receiver)}</td><td>${renderCashStatusChip(display.status)}</td><td class="cash-row-actions"><button data-action="edit" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}"${editAttrs}>Edit</button><button data-action="message" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}">Message</button><button data-action="delete" data-type="${escapeHtml(display.type)}" data-id="${escapeHtml(display.id)}"${deleteAttrs}>Delete</button></td></tr>`;
   }).join("") : '<tr><td colspan="9" class="empty">No saved records found.</td></tr>';
 }
 
@@ -1640,6 +1729,7 @@ async function saveCashEditModal(event) {
     closeCashEditModal();
     await loadSavedCashRecordsFromCloud();
     setSavedRecordsStatus("Draft changes saved.", "success");
+    showCashToast("success", "Updated successfully", updated);
     return;
   }
 
@@ -1649,6 +1739,7 @@ async function saveCashEditModal(event) {
   savedCashRecordsSource = "local";
   closeCashEditModal();
   setSavedRecordsStatus("Draft changes saved.", "success");
+  showCashToast("success", "Updated successfully", updated);
   refreshAllCashData();
 }
 
@@ -1663,12 +1754,23 @@ function deleteSavedCashRecord(type, id) {
     cashPost({ action: "deleteEntry", cashId: cached.Cash_ID || cached.cashId || cached.id, deletedBy: "" })
       .then(res => {
         if (res && res.ok) {
-          loadSavedCashRecordsFromCloud().then(() => setSavedRecordsStatus("Record deleted. Records refreshed.", "success"));
+          loadSavedCashRecordsFromCloud().then(() => {
+            setSavedRecordsStatus("Record deleted. Records refreshed.", "success");
+            showCashToast("success", "Deleted successfully", cached);
+          });
         } else {
           setSavedRecordsStatus("Cloud records cannot be deleted here yet.", "warning");
+          showCashToast("error", "Delete failed", cached, {
+            message: "Cloud records cannot be deleted here yet."
+          });
         }
       })
-      .catch(() => setSavedRecordsStatus("Cloud records cannot be deleted here yet.", "warning"));
+      .catch(error => {
+        setSavedRecordsStatus("Cloud records cannot be deleted here yet.", "warning");
+        showCashToast("error", "Delete failed", cached, {
+          message: error?.message || "Cloud records cannot be deleted here yet."
+        });
+      });
     return;
   }
   if (!confirm("Delete this local Draft record?")) return;
@@ -1690,6 +1792,7 @@ function deleteSavedCashRecord(type, id) {
   savedCashRecordsSource = "local";
   refreshAllCashData();
   setSavedRecordsStatus("Record deleted. Records refreshed.", "success");
+  showCashToast("success", "Deleted successfully", deletedRecord);
   const statusId = getStatusIdForType(type);
   cashPost({ action: "deleteEntry", cashId: deletedRecord.id, deletedBy: "" })
     .then(res => setStatus(statusId, (res && res.ok) ? "Deleted locally and synced." : "Deleted locally. Google Sheets delete sync failed.", (res && res.ok) ? "success" : "warning"))
