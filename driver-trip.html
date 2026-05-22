@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VNS Driver Portal - Trip Details</title>
+  <link rel="stylesheet" href="mobile-driver.css">
+</head>
+<body class="driver-mobile-page">
+  <main class="driver-mobile-shell">
+    <header class="driver-mobile-header">
+      <p class="driver-mobile-kicker">VNS Logistics</p>
+      <h1>Current Trip</h1>
+      <p>Submit Trip Details</p>
+    </header>
+
+    <section class="driver-mobile-truck-card">
+      <p class="driver-mobile-kicker">Vehicle Pass</p>
+      <h2 id="trip-pass-plate">-</h2>
+      <dl>
+        <div><dt>Driver</dt><dd id="trip-pass-driver">-</dd></div>
+        <div><dt>Helper</dt><dd id="trip-pass-helper">-</dd></div>
+        <div><dt>Assignment</dt><dd id="trip-pass-group">-</dd></div>
+      </dl>
+      <p id="truck-summary" class="driver-mobile-truck-note">Login through the VNS Driver Portal to prefill assignment details.</p>
+    </section>
+
+    <div id="driver-trip-status" class="driver-mobile-status" hidden></div>
+
+    <form id="driver-trip-form" class="driver-mobile-form" novalidate>
+      <section class="driver-mobile-card driver-mobile-section">
+        <h2>Truck Details</h2>
+        <label class="driver-mobile-field">
+          <span>Plate Number</span>
+          <input id="plate-number" class="driver-mobile-input" required>
+        </label>
+        <label class="driver-mobile-field">
+          <span>Driver Name</span>
+          <input id="driver-name" class="driver-mobile-input" autocomplete="name" required>
+        </label>
+        <label class="driver-mobile-field">
+          <span>Helper Name</span>
+          <input id="helper-name" class="driver-mobile-input">
+        </label>
+        <label class="driver-mobile-field">
+          <span>Mobile Number</span>
+          <input id="mobile-number" class="driver-mobile-input" type="tel" autocomplete="tel">
+        </label>
+      </section>
+
+      <section class="driver-mobile-card driver-mobile-section">
+        <h2>Trip Details</h2>
+        <label class="driver-mobile-field">
+          <span>Trip Date</span>
+          <input id="trip-date" class="driver-mobile-input" type="date" required>
+        </label>
+        <label class="driver-mobile-field">
+          <span>Shipping Number</span>
+          <input id="shipment-number" class="driver-mobile-input" required>
+        </label>
+        <label class="driver-mobile-field">
+          <span>Container Number</span>
+          <input id="container-number" class="driver-mobile-input">
+        </label>
+        <label class="driver-mobile-field">
+          <span>Group</span>
+          <select id="product-line" class="driver-mobile-input">
+            <option value="">Select group</option>
+            <option>Sugar</option>
+            <option>Bottle</option>
+            <option>Preform</option>
+            <option>Resin</option>
+            <option>Caps & Crowns</option>
+            <option>2GO</option>
+            <option>Other</option>
+          </select>
+        </label>
+        <label class="driver-mobile-field">
+          <span>Source</span>
+          <input id="source" class="driver-mobile-input" list="source-options" autocomplete="off" required>
+        </label>
+        <label class="driver-mobile-field">
+          <span>Destination</span>
+          <input id="destination" class="driver-mobile-input" list="destination-options" autocomplete="off" required>
+        </label>
+        <label class="driver-mobile-field">
+          <span>Status</span>
+          <select id="trip-status" class="driver-mobile-input">
+            <option>Loaded</option>
+            <option>In Transit</option>
+            <option>Delivered</option>
+            <option>Pending Documents</option>
+          </select>
+        </label>
+        <label class="driver-mobile-field">
+          <span>Remarks</span>
+          <textarea id="remarks" class="driver-mobile-input" rows="3"></textarea>
+        </label>
+      </section>
+
+      <datalist id="source-options"></datalist>
+      <datalist id="destination-options"></datalist>
+      <div class="driver-mobile-spacer"></div>
+    </form>
+  </main>
+
+  <div class="driver-mobile-submit-bar">
+    <button id="driver-trip-submit" class="driver-mobile-submit driver-mobile-primary-btn" type="submit" form="driver-trip-form">Submit Trip Details</button>
+  </div>
+
+  <script src="driver-trip.js"></script>
+</body>
+</html>

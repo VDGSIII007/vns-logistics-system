@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VNS Driver Portal - Request</title>
+  <link rel="stylesheet" href="mobile-driver.css">
+</head>
+<body class="driver-mobile-page">
+  <main class="driver-mobile-shell">
+    <header class="driver-mobile-header">
+      <p class="driver-mobile-kicker">VNS Logistics</p>
+      <h1 id="cash-page-title">PO Request</h1>
+      <p>Driver Portal</p>
+    </header>
+
+    <section class="driver-mobile-truck-card">
+      <p class="driver-mobile-kicker">Vehicle Pass</p>
+      <h2 id="cash-pass-plate">-</h2>
+      <dl>
+        <div><dt>Driver</dt><dd id="cash-pass-driver">-</dd></div>
+        <div><dt>Helper</dt><dd id="cash-pass-helper">-</dd></div>
+        <div><dt>Assignment</dt><dd id="cash-pass-group">-</dd></div>
+      </dl>
+      <p id="truck-summary" class="driver-mobile-truck-note">Login through the VNS Driver Portal to prefill assignment details.</p>
+    </section>
+
+    <div id="driver-cash-status" class="driver-mobile-status" hidden></div>
+
+    <section class="driver-mobile-card driver-mobile-tabs-card">
+      <div class="driver-mobile-tabs" role="tablist" aria-label="Request type">
+        <button class="driver-mobile-tab active" type="button" data-request-type="PO">PO</button>
+        <button class="driver-mobile-tab" type="button" data-request-type="Trip Budget">Trip Budget</button>
+        <button class="driver-mobile-tab" type="button" data-request-type="Bali">Bali</button>
+      </div>
+    </section>
+
+      <form id="driver-cash-form" class="driver-mobile-form" novalidate>
+        <section class="driver-mobile-card driver-mobile-section">
+          <h2>Truck Details</h2>
+          <label class="driver-mobile-field">
+            <span>Plate Number</span>
+            <input id="plate-number" class="driver-mobile-input" autocomplete="off" required>
+          </label>
+          <label class="driver-mobile-field">
+            <span>Driver Name</span>
+            <input id="driver-name" class="driver-mobile-input" autocomplete="name" required>
+          </label>
+          <label class="driver-mobile-field">
+            <span>Helper Name</span>
+            <input id="helper-name" class="driver-mobile-input" autocomplete="off">
+          </label>
+          <label class="driver-mobile-field">
+            <span>Mobile Number</span>
+            <input id="mobile-number" class="driver-mobile-input" type="tel" autocomplete="tel">
+          </label>
+        </section>
+
+        <section id="po-panel" class="driver-mobile-card driver-mobile-section" data-panel="PO">
+          <h2>PO Request</h2>
+          <label class="driver-mobile-field">
+            <span>Source</span>
+            <input id="po-source" class="driver-mobile-input" list="source-options" autocomplete="off">
+          </label>
+          <label class="driver-mobile-field">
+            <span>Destination</span>
+            <input id="po-destination" class="driver-mobile-input" list="destination-options" autocomplete="off">
+          </label>
+          <label class="driver-mobile-field">
+            <span>Date Needed</span>
+            <input id="po-date-needed" class="driver-mobile-input" type="date" required>
+          </label>
+          <label class="driver-mobile-field">
+            <span>Amount</span>
+            <input id="po-amount" class="driver-mobile-input" type="number" inputmode="decimal" min="0" step="0.01" required>
+          </label>
+        </section>
+
+        <section id="trip-budget-panel" class="driver-mobile-card driver-mobile-section" data-panel="Trip Budget" hidden>
+          <h2>Trip Budget</h2>
+          <label class="driver-mobile-field">
+            <span>Source</span>
+            <input id="budget-source" class="driver-mobile-input" list="source-options" autocomplete="off">
+          </label>
+          <label class="driver-mobile-field">
+            <span>Destination</span>
+            <input id="budget-destination" class="driver-mobile-input" list="destination-options" autocomplete="off">
+          </label>
+          <label class="driver-mobile-field">
+            <span>Trip Budget Amount</span>
+            <input id="budget-amount" class="driver-mobile-input" type="number" inputmode="decimal" min="0" step="0.01" required>
+          </label>
+          <label class="driver-mobile-field">
+            <span>Person to Deposit To</span>
+            <input id="budget-person-to-deposit" class="driver-mobile-input" required>
+          </label>
+          <label class="driver-mobile-field">
+            <span>Account Number / GCash Number</span>
+            <input id="budget-account-number" class="driver-mobile-input" inputmode="numeric" required>
+          </label>
+          <label class="driver-mobile-field">
+            <span>Date Needed</span>
+            <input id="budget-date-needed" class="driver-mobile-input" type="date" required>
+          </label>
+        </section>
+
+        <section id="bali-panel" class="driver-mobile-card driver-mobile-section" data-panel="Bali" hidden>
+          <h2>Bali Request</h2>
+          <label class="driver-mobile-field">
+            <span>Person to Receive Money</span>
+            <input id="bali-person-name" class="driver-mobile-input" required>
+          </label>
+          <label class="driver-mobile-field">
+            <span>Amount</span>
+            <input id="bali-amount" class="driver-mobile-input" type="number" inputmode="decimal" min="0" step="0.01" required>
+          </label>
+          <label class="driver-mobile-field">
+            <span>Purpose / Reason</span>
+            <textarea id="bali-purpose" class="driver-mobile-input" rows="3" required></textarea>
+          </label>
+          <label class="driver-mobile-field">
+            <span>GCash / Account Number</span>
+            <input id="bali-account-number" class="driver-mobile-input" inputmode="numeric" required>
+          </label>
+          <label class="driver-mobile-field">
+            <span>Date Needed</span>
+            <input id="bali-date-needed" class="driver-mobile-input" type="date" required>
+          </label>
+        </section>
+
+        <datalist id="source-options"></datalist>
+        <datalist id="destination-options"></datalist>
+        <div class="driver-mobile-spacer"></div>
+      </form>
+  </main>
+
+  <div class="driver-mobile-submit-bar">
+    <button id="driver-cash-submit" class="driver-mobile-submit driver-mobile-primary-btn" type="submit" form="driver-cash-form">Submit for Approval</button>
+  </div>
+
+  <script src="driver-cash.js"></script>
+</body>
+</html>

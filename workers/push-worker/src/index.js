@@ -15,6 +15,15 @@ import {
   debugPaymentQueueSources,
   runPaymentQueuePushCheck
 } from "./checkers/payment-queue.js";
+import {
+  createDriverTripSubmissionInSupabase,
+  listDriverTripSubmissionsFromSupabase,
+  updateDriverTripSubmissionStatusInSupabase
+} from "./driver-trip-api.js";
+import {
+  getDriverPortalUser,
+  loginDriverPortalUser
+} from "./driver-portal-api.js";
 import { debugRepairSource } from "./checkers/repair.js";
 import {
   deleteSubscriptionByEndpoint,
@@ -87,6 +96,15 @@ const BUDGET_BALANCE_API_PATHS = new Set([
 ]);
 const TRUCK_API_PATHS = new Set([
   "/api/trucks/list"
+]);
+const DRIVER_TRIP_API_PATHS = new Set([
+  "/api/driver-trip/create",
+  "/api/driver-trip/list",
+  "/api/driver-trip/update-status"
+]);
+const DRIVER_PORTAL_API_PATHS = new Set([
+  "/api/driver-portal/login",
+  "/api/driver-portal/me"
 ]);
 const CORS_ALLOWED_ORIGINS = new Set([
   "https://portal.vns-logistics.com",
@@ -619,6 +637,58 @@ async function handlePayrollTripLineUpsert(request, env) {
   return jsonResponse(result);
 }
 
+async function handleDriverTripCreate(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
+  const result = await createDriverTripSubmissionInSupabase(env, input);
+  if (!result.ok) {
+    return jsonResponse({ ok: false, error: result.error || "Driver trip save failed" }, result.status || 500);
+  }
+  return jsonResponse({
+    ok: true,
+    source: result.source,
+    refId: result.refId,
+    trip_ref_id: result.trip_ref_id,
+    record: result.record
+  });
+}
+
+async function handleDriverTripList(url, env) {
+  const result = await listDriverTripSubmissionsFromSupabase(env, url.searchParams);
+  if (!result.ok) {
+    return jsonResponse({ ok: false, error: result.error || "Driver trip list failed" }, result.status || 500);
+  }
+  return jsonResponse(result);
+}
+
+async function handleDriverTripUpdateStatus(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid JSON body" }, 400);
+  const result = await updateDriverTripSubmissionStatusInSupabase(env, input);
+  if (!result.ok) {
+    return jsonResponse({ ok: false, error: result.error || "Driver trip status update failed" }, result.status || 500);
+  }
+  return jsonResponse(result);
+}
+
+async function handleDriverPortalLogin(request, env) {
+  const input = await readJson(request);
+  if (!input) return jsonResponse({ ok: false, error: "Invalid username or password" }, 401);
+  const result = await loginDriverPortalUser(env, input);
+  if (!result.ok) {
+    return jsonResponse({ ok: false, error: result.error || "Invalid username or password" }, result.status || 401);
+  }
+  return jsonResponse({ ok: true, driver: result.driver });
+}
+
+async function handleDriverPortalMe(url, env) {
+  const result = await getDriverPortalUser(env, url.searchParams.get("username"));
+  if (!result.ok) {
+    return jsonResponse({ ok: false, error: result.error || "Driver user not found" }, result.status || 404);
+  }
+  return jsonResponse({ ok: true, driver: result.driver });
+}
+
 async function handleBudgetBalanceSummary(url, env) {
   const result = await getBudgetBalanceSummaryFromSupabase(env, url.searchParams);
   if (!result.ok) {
@@ -713,6 +783,10 @@ async function handleTruckList(url, env) {
     limit: String(limit)
   });
   if (activeOnly) filters.set("active", "eq.true");
+  if (url.searchParams.get("plate_number")) filters.set("plate_number", `ilike.${url.searchParams.get("plate_number")}`);
+  if (url.searchParams.get("plateNumber")) filters.set("plate_number", `ilike.${url.searchParams.get("plateNumber")}`);
+  if (url.searchParams.get("truck_id")) filters.set("truck_id", `eq.${url.searchParams.get("truck_id")}`);
+  if (url.searchParams.get("truckId")) filters.set("truck_id", `eq.${url.searchParams.get("truckId")}`);
   if (url.searchParams.get("group_category")) filters.set("group_category", `eq.${url.searchParams.get("group_category")}`);
 
   const result = await truckSupabaseFetch(env, `trucks?${filters.toString()}`);
@@ -762,6 +836,15 @@ async function routeRequest(request, env) {
   if (request.method === "POST" && url.pathname === "/api/payroll/trip-line-upsert") return withCors(await handlePayrollTripLineUpsert(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/payroll/trip-lines-bulk-upsert") return withCors(await handlePayrollTripLineUpsert(request, env), request);
   if (isPayrollApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
+  const isDriverTripApiRoute = DRIVER_TRIP_API_PATHS.has(url.pathname);
+  if (request.method === "POST" && url.pathname === "/api/driver-trip/create") return withCors(await handleDriverTripCreate(request, env), request);
+  if (request.method === "GET" && url.pathname === "/api/driver-trip/list") return withCors(await handleDriverTripList(url, env), request);
+  if (request.method === "POST" && url.pathname === "/api/driver-trip/update-status") return withCors(await handleDriverTripUpdateStatus(request, env), request);
+  if (isDriverTripApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
+  const isDriverPortalApiRoute = DRIVER_PORTAL_API_PATHS.has(url.pathname);
+  if (request.method === "POST" && url.pathname === "/api/driver-portal/login") return withCors(await handleDriverPortalLogin(request, env), request);
+  if (request.method === "GET" && url.pathname === "/api/driver-portal/me") return withCors(await handleDriverPortalMe(url, env), request);
+  if (isDriverPortalApiRoute) return withCors(jsonResponse({ ok: false, error: "Method not allowed" }, 405), request);
   const isBudgetBalanceApiRoute = BUDGET_BALANCE_API_PATHS.has(url.pathname);
   if (request.method === "GET" && url.pathname === "/api/budget-balance/summary") return withCors(await handleBudgetBalanceSummary(url, env), request);
   if (request.method === "GET" && url.pathname === "/api/budget-balance/transactions") return withCors(await handleBudgetBalanceTransactions(url, env), request);

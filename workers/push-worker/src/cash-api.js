@@ -144,6 +144,7 @@ function friendlyDateStamp(value) {
 
 function cashFriendlyPrefix(record = {}) {
   const type = String(firstValue(record, ["request_type", "requestType", "Request_Type", "Transaction_Type", "transactionType", "type", "Type"]) || "").toLowerCase();
+  if (/trip.?budget|budget/i.test(type)) return "TBUD";
   return /(bali|cash.?advance|\bca\b)/i.test(type) ? "BALI" : "CPO";
 }
 
@@ -390,6 +391,10 @@ export async function listCashRequestsFromSupabase(env, searchParams) {
   if (searchParams.get("status")) filters.set("status", `eq.${searchParams.get("status")}`);
   if (searchParams.get("approval_status")) filters.set("approval_status", `eq.${searchParams.get("approval_status")}`);
   if (searchParams.get("payment_status")) filters.set("payment_status", `eq.${searchParams.get("payment_status")}`);
+  if (searchParams.get("plate_number")) filters.set("plate_number", `ilike.${searchParams.get("plate_number")}`);
+  if (searchParams.get("plateNumber")) filters.set("plate_number", `ilike.${searchParams.get("plateNumber")}`);
+  if (searchParams.get("driver_name")) filters.set("driver_name", `ilike.${searchParams.get("driver_name")}`);
+  if (searchParams.get("driverName")) filters.set("driver_name", `ilike.${searchParams.get("driverName")}`);
 
   const result = await supabaseFetch(env, `cash_requests?${filters.toString()}`, {
     method: "GET"

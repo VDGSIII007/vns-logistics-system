@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VNS Mobile Payment Center</title>
+  <link rel="stylesheet" href="mobile-driver.css">
+</head>
+<body class="driver-mobile-page mobile-payment-page">
+  <main class="driver-mobile-shell">
+    <header class="driver-mobile-header mobile-payment-header">
+      <p class="driver-mobile-kicker">VNS Logistics</p>
+      <h1>VNS Payment Center</h1>
+      <p>Approved Requests for Payment</p>
+    </header>
+
+    <div id="mobile-payment-status" class="driver-mobile-status" hidden></div>
+
+    <section class="driver-mobile-card mobile-payment-tabs">
+      <button class="driver-mobile-tab active" type="button" data-payment-filter="all">All</button>
+      <button class="driver-mobile-tab" type="button" data-payment-filter="cash">Cash / PO / Bali</button>
+      <button class="driver-mobile-tab" type="button" data-payment-filter="repair">Repair / Labor</button>
+      <button class="driver-mobile-tab" type="button" data-payment-filter="payroll">Payroll</button>
+    </section>
+
+    <section id="mobile-payment-list" class="mobile-payment-list"></section>
+  </main>
+
+  <div id="mobile-payment-details-backdrop" class="mobile-payment-modal-backdrop" hidden>
+    <section class="mobile-payment-modal" role="dialog" aria-modal="true" aria-labelledby="mobile-payment-details-title">
+      <header class="mobile-payment-modal-header">
+        <div>
+          <p class="driver-mobile-kicker">Payment Details</p>
+          <h2 id="mobile-payment-details-title">Details</h2>
+        </div>
+        <button id="mobile-payment-details-close" class="mobile-payment-close-btn" type="button">Close</button>
+      </header>
+      <div id="mobile-payment-details-body" class="mobile-payment-modal-body"></div>
+      <div id="mobile-payment-details-actions" class="mobile-payment-modal-actions"></div>
+    </section>
+  </div>
+
+  <div id="mobile-payment-form-backdrop" class="mobile-payment-modal-backdrop" hidden>
+    <section class="mobile-payment-modal" role="dialog" aria-modal="true" aria-labelledby="mobile-payment-form-title">
+      <header class="mobile-payment-modal-header">
+        <div>
+          <p class="driver-mobile-kicker">Payment</p>
+          <h2 id="mobile-payment-form-title">Mark as Paid</h2>
+        </div>
+        <button id="mobile-payment-form-close" class="mobile-payment-close-btn" type="button">Close</button>
+      </header>
+      <form id="mobile-payment-form" class="mobile-payment-modal-body" novalidate>
+        <div id="mobile-payment-form-summary" class="mobile-payment-form-summary"></div>
+        <label class="driver-mobile-field">
+          <span>Payment Date</span>
+          <input id="mobile-payment-date" class="driver-mobile-input" type="date" required>
+        </label>
+        <label class="driver-mobile-field">
+          <span>External Payment Reference</span>
+          <input id="mobile-payment-reference" class="driver-mobile-input">
+        </label>
+        <label class="driver-mobile-field">
+          <span>Notes</span>
+          <textarea id="mobile-payment-notes" class="driver-mobile-input" rows="3"></textarea>
+        </label>
+        <div class="mobile-payment-modal-actions">
+          <button id="mobile-payment-confirm" class="mobile-payment-primary-btn" type="submit">Confirm Payment</button>
+          <button id="mobile-payment-cancel" class="mobile-payment-secondary-btn" type="button">Cancel</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <script src="mobile-payment.js"></script>
+</body>
+</html>

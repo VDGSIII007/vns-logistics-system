@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VNS Mobile Approval Center</title>
+  <link rel="stylesheet" href="mobile-driver.css">
+</head>
+<body class="driver-mobile-page mobile-approval-page">
+  <main class="driver-mobile-shell">
+    <header class="driver-mobile-header mobile-approval-header">
+      <p class="driver-mobile-kicker">VNS Logistics</p>
+      <h1>VNS Approval Center</h1>
+      <p>Pending Requests</p>
+    </header>
+
+    <div id="mobile-approval-status" class="driver-mobile-status" hidden></div>
+
+    <section class="driver-mobile-card mobile-approval-tabs">
+      <button class="driver-mobile-tab active" type="button" data-filter="all">All</button>
+      <button class="driver-mobile-tab" type="button" data-filter="cash">Cash / PO / Bali</button>
+      <button class="driver-mobile-tab" type="button" data-filter="repair">Repair / Labor</button>
+      <button class="driver-mobile-tab" type="button" data-filter="payroll">Payroll</button>
+      <button class="driver-mobile-tab" type="button" data-filter="driver-trip">Driver Trips</button>
+    </section>
+
+    <section id="mobile-approval-list" class="mobile-approval-list"></section>
+
+    <a class="mobile-approval-payment-link" href="payment-queue.html">Payment Queue</a>
+  </main>
+
+  <div id="mobile-approval-modal-backdrop" class="mobile-approval-modal-backdrop" hidden>
+    <section id="mobile-approval-modal" class="mobile-approval-modal" role="dialog" aria-modal="true" aria-labelledby="mobile-approval-modal-title">
+      <header class="mobile-approval-modal-header">
+        <div>
+          <p class="driver-mobile-kicker">Request Details</p>
+          <h2 id="mobile-approval-modal-title">Details</h2>
+        </div>
+        <button id="mobile-approval-modal-close" class="mobile-approval-close-btn" type="button" aria-label="Close details">Close</button>
+      </header>
+      <div id="mobile-approval-modal-body" class="mobile-approval-modal-body"></div>
+      <div class="mobile-approval-modal-actions">
+        <button class="mobile-approval-primary-btn" type="button" data-modal-action="approve">Approve</button>
+        <button class="mobile-approval-secondary-btn" type="button" data-modal-action="return">Return</button>
+        <button class="mobile-approval-danger-btn" type="button" data-modal-action="reject">Reject</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="mobile-approval.js"></script>
+</body>
+</html>
