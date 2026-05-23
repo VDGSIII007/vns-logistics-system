@@ -12,6 +12,41 @@
 const DISPATCH_APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwkA_gMbqPvtW3kEDsCKAkgylrakQwRHlPNPYENT2GYvjH1AGAsmusUuPUvWrB_KakH/exec";
 const VNS_SYNC_KEY = "vns-dispatch-sync-2026-Jay";
 
+/* ──────────────────────────────────────────
+   SUPABASE CONNECTION (GPS source of truth)
+   Trucks + live GPS are written here every 30 min by the
+   vns-itrackcare-sync Cloudflare Worker. Anon key — read-only safe.
+────────────────────────────────────────── */
+const DISPATCH_SUPABASE_URL = "https://zsitagfxenfehqujhuyo.supabase.co";
+const DISPATCH_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpzaXRhZ2Z4ZW5mZWhxdWpodXlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwMTQyNjksImV4cCI6MjA5NDU5MDI2OX0.VniXrbmPl5-WlxzxBnKyAPi1nGb1NE3qj2VCQHkjIYo";
+
+function sbTrucksFetch(extraQuery = '') {
+  const select = 'truck_id,plate_number,group_category,truck_type,current_driver_name,current_helper_name,driver_name,helper_name,status,last_known_latitude,last_known_longitude,last_gps_timestamp,imei';
+  const url = `${DISPATCH_SUPABASE_URL}/rest/v1/trucks?select=${select}&active=eq.true&order=plate_number.asc${extraQuery}`;
+  return fetch(url, {
+    headers: {
+      apikey: DISPATCH_SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${DISPATCH_SUPABASE_ANON_KEY}`,
+    },
+  });
+}
+
+function sbRowToTruck(r) {
+  return {
+    id:               r.truck_id || null,
+    plateNumber:      r.plate_number || '',
+    driverName:       r.current_driver_name || r.driver_name || '',
+    helperName:       r.current_helper_name || r.helper_name || '',
+    truckType:        r.truck_type || '',
+    status:           r.status || '',
+    groupCategory:    r.group_category || '',
+    imei:             r.imei || '',
+    latitude:         (r.last_known_latitude  != null) ? Number(r.last_known_latitude)  : null,
+    longitude:        (r.last_known_longitude != null) ? Number(r.last_known_longitude) : null,
+    lastUpdated:      r.last_gps_timestamp || null,
+  };
+}
+
 /*
   Expected doGet actions:
     ?action=getDispatchDashboard
@@ -154,9 +189,25 @@ const DISPATCH_EXTRA_COLUMNS = [
 async function fetchDispatchDashboardData() {
   if (!DISPATCH_APP_SCRIPT_URL) return buildLocalDashboardData();
   try {
-    const res  = await fetch(`${DISPATCH_APP_SCRIPT_URL}?action=getDispatchDashboard`);
-    const data = await res.json();
+    // Apps Script still serves trips/logs/geofences/recentActivity. Trucks come
+    // from Supabase (fed by the vns-itrackcare-sync Worker every 30 min).
+    // Both fired in parallel — total latency = max(appsScript, supabase).
+    const [appsRes, sbRes] = await Promise.all([
+      fetch(`${DISPATCH_APP_SCRIPT_URL}?action=getDispatchDashboard`),
+      sbTrucksFetch(),
+    ]);
+    const data = await appsRes.json();
     if (data.ok === false) throw new Error(data.error || 'API returned ok: false');
+    // Swap in Supabase trucks if the call succeeded — otherwise keep whatever
+    // Apps Script returned (graceful degrade).
+    if (sbRes.ok) {
+      const rows = await sbRes.json();
+      if (Array.isArray(rows)) {
+        data.trucks = rows.map(sbRowToTruck);
+      }
+    } else {
+      console.warn('[VNS Dispatch] Supabase trucks fetch returned', sbRes.status, '— keeping Apps Script trucks for this load');
+    }
     return data;
   } catch (err) {
     console.warn('[VNS Dispatch] fetchDispatchDashboardData failed, using local data:', err.message);
@@ -165,14 +216,16 @@ async function fetchDispatchDashboardData() {
 }
 
 async function fetchDispatchTrucks() {
-  if (!DISPATCH_APP_SCRIPT_URL) return loadTrucks();
+  // Direct from Supabase — fed every 30 min by vns-itrackcare-sync Worker.
+  // No more Apps Script call here. Falls back to localStorage on error.
   try {
-    const res  = await fetch(`${DISPATCH_APP_SCRIPT_URL}?action=getDispatchTrucks`);
-    const data = await res.json();
-    if (data && data.error) throw new Error(data.error);
-    return data.trucks || [];
+    const res = await sbTrucksFetch();
+    if (!res.ok) throw new Error(`Supabase trucks ${res.status}`);
+    const rows = await res.json();
+    if (!Array.isArray(rows)) throw new Error('unexpected payload');
+    return rows.map(sbRowToTruck);
   } catch (err) {
-    console.warn('[VNS Dispatch] fetchDispatchTrucks failed:', err.message);
+    console.warn('[VNS Dispatch] fetchDispatchTrucks (Supabase) failed:', err.message);
     return loadTrucks();
   }
 }
@@ -204,14 +257,15 @@ async function fetchDispatchLogs() {
 }
 
 async function fetchTruckLocations() {
-  if (!DISPATCH_APP_SCRIPT_URL) return [];
+  // Direct from Supabase — only the GPS-bearing trucks.
   try {
-    const res  = await fetch(`${DISPATCH_APP_SCRIPT_URL}?action=getTruckLocations`);
-    const data = await res.json();
-    if (data && data.error) throw new Error(data.error);
-    return data.locations || [];
+    const res = await sbTrucksFetch('&last_known_latitude=not.is.null&last_known_longitude=not.is.null');
+    if (!res.ok) throw new Error(`Supabase locations ${res.status}`);
+    const rows = await res.json();
+    if (!Array.isArray(rows)) throw new Error('unexpected payload');
+    return rows.map(sbRowToTruck);
   } catch (err) {
-    console.warn('[VNS Dispatch] fetchTruckLocations failed:', err.message);
+    console.warn('[VNS Dispatch] fetchTruckLocations (Supabase) failed:', err.message);
     return [];
   }
 }
