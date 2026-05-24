@@ -324,6 +324,12 @@ function formatCashRecord(record = {}) {
     Payment_Reference: record.payment_reference || raw.Payment_Reference || raw.paymentReference || raw.Reference || "",
     payment_notes: record.payment_notes || raw.payment_notes || raw.paymentNotes || "",
     paymentNotes: record.payment_notes || raw.paymentNotes || "",
+    po_issued_number: record.po_issued_number || raw.po_issued_number || raw.PO_Issued_Number || "",
+    po_issued_at: record.po_issued_at || raw.po_issued_at || raw.PO_Issued_At || "",
+    po_issued_by: record.po_issued_by || raw.po_issued_by || raw.PO_Issued_By || "",
+    estimated_liters: record.estimated_liters ?? raw.estimated_liters ?? raw.Estimated_Liters ?? "",
+    cost_per_liter: record.cost_per_liter ?? raw.cost_per_liter ?? raw.Cost_Per_Liter ?? "",
+    gas_station: record.gas_station || raw.gas_station || raw.Gas_Station || "",
     isDeleted: raw.isDeleted ?? raw.Is_Deleted ?? record.is_deleted ?? false
   };
   console.log("Cash type source check", {

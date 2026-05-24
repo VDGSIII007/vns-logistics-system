@@ -29,6 +29,7 @@ import {
   deleteSubscriptionByEndpoint,
   endpointHash,
   getSubscriptionByEndpoint,
+  listSubscriptionsByPlate,
   listSubscriptionsByRoles,
   saveSubscription,
   subscriptionKey
@@ -292,10 +293,23 @@ async function handleNotifyPaid(request, env) {
   if (!kvReady(env)) return jsonResponse({ ok: false, error: "KV binding is not configured" }, 500);
 
   const input = await readJson(request) || {};
+  // Honor caller-supplied title/body/url so each paid item creates a unique
+  // notification that deep-links straight to that record in the React app.
+  // The `tag` makes each notif stack separately in the OS tray instead of
+  // collapsing into one. The `data.url` is what the click handler opens.
+  const safeText = (v, fallback) => (typeof v === "string" && v.trim() ? v.trim() : fallback);
   const payload = {
-    title: "VNS Payment Released",
-    body: "A payment item has been marked paid/released.",
-    url: "/payment-queue.html?tab=paid"
+    title: safeText(input.title, "VNS Payment Released"),
+    body:  safeText(input.body,  "A payment item has been marked paid/released."),
+    url:   safeText(input.url,   "/mobile/payment?tab=paid"),
+    tag:   safeText(input.tag,   `paid-${input.module || "item"}-${Date.now()}`),
+    timestamp: typeof input.timestamp === "number" ? input.timestamp : Date.now(),
+    // Carry the module/ref so the SW click handler can build a richer URL if needed
+    data: {
+      module: input.module || null,
+      ref:    input.ref    || input.payment_reference || null,
+      target: input.target || null,
+    },
   };
 
   const TARGET_ROLES = ["Sister", "Payment", "Admin", "Encoder"];
@@ -314,6 +328,46 @@ async function handleNotifyPaid(request, env) {
   }));
 
   return jsonResponse({ ok: true, sent, failed, module: input.module || null });
+}
+
+async function handleNotifyDriver(request, env) {
+  if (!kvReady(env)) return jsonResponse({ ok: false, error: "KV binding is not configured" }, 500);
+
+  const input = await readJson(request) || {};
+  const plate = String(input.plate || "").trim().toUpperCase();
+  if (!plate) return jsonResponse({ ok: false, error: "plate is required" }, 400);
+
+  const safeText = (v, fallback) => (typeof v === "string" && v.trim() ? v.trim() : fallback);
+  const payload = {
+    title: safeText(input.title, "VNS Update"),
+    body:  safeText(input.body,  "You have a new update."),
+    url:   safeText(input.url,   "/mobile/driver-requests"),
+    tag:   safeText(input.tag,   `driver-${input.module || "item"}-${Date.now()}`),
+    timestamp: typeof input.timestamp === "number" ? input.timestamp : Date.now(),
+    data: {
+      module: input.module || null,
+      ref:    input.ref    || input.payment_reference || null,
+      plate,
+      po_number: input.po_number || null,
+      liters:    input.liters    || null,
+    },
+  };
+
+  const targets = await listSubscriptionsByPlate(env.VNS_PUSH_SUBSCRIPTIONS, plate, "Driver");
+  let sent = 0;
+  let failed = 0;
+
+  await Promise.all(targets.map(async record => {
+    try {
+      const result = await sendWebPush(record.subscription, payload, env);
+      if (result.expired) await env.VNS_PUSH_SUBSCRIPTIONS.delete(subscriptionKey(record.endpointHash));
+      if (result.ok) { sent += 1; } else { failed += 1; }
+    } catch {
+      failed += 1;
+    }
+  }));
+
+  return jsonResponse({ ok: true, sent, failed, plate, module: input.module || null });
 }
 
 async function handleAcknowledge(request, env) {
@@ -861,6 +915,7 @@ async function routeRequest(request, env) {
   if (request.method === "POST" && url.pathname === "/api/push/run-check") return withCors(await handleRunCheck(env), request);
   if (request.method === "POST" && url.pathname === "/api/push/run-payment-check") return withCors(await handleRunPaymentCheck(env), request);
   if (request.method === "POST" && url.pathname === "/api/push/notify-paid") return withCors(await handleNotifyPaid(request, env), request);
+  if (request.method === "POST" && url.pathname === "/api/push/notify-driver") return withCors(await handleNotifyDriver(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/push/acknowledge") return withCors(await handleAcknowledge(request, env), request);
   return withCors(jsonResponse({ ok: false, error: "Not found" }, 404), request);
 }

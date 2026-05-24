@@ -31,6 +31,7 @@ export async function saveSubscription(kv, input) {
     endpointHash: hash,
     subscription: input.subscription,
     role: String(input.role || existing?.role || "Viewer").trim() || "Viewer",
+    plate: String(input.plate || existing?.plate || "").trim().toUpperCase() || undefined,
     createdAt: existing?.createdAt || now,
     updatedAt: now,
     lastSeenAt: now,
@@ -82,4 +83,27 @@ export async function listSubscriptionsByRoles(kv, roles) {
 
 export async function listTargetSubscriptions(kv) {
   return listSubscriptionsByRoles(kv, ["Admin", "Mother", "Approver"]);
+}
+
+export async function listSubscriptionsByPlate(kv, plate, role) {
+  const target = String(plate || "").trim().toUpperCase();
+  if (!target) return [];
+  const targetRole = role ? String(role).trim().toLowerCase() : "";
+  const records = [];
+  let cursor;
+
+  do {
+    const page = await kv.list({ prefix: "push:sub:", cursor });
+    await Promise.all(page.keys.map(async item => {
+      const record = await kv.get(item.name, "json");
+      if (!record?.subscription || record.enabled !== true) return;
+      const recPlate = String(record.plate || "").trim().toUpperCase();
+      if (recPlate !== target) return;
+      if (targetRole && String(record.role || "").trim().toLowerCase() !== targetRole) return;
+      records.push(record);
+    }));
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+
+  return records;
 }
