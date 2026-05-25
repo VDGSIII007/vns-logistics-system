@@ -370,6 +370,64 @@ async function handleNotifyDriver(request, env) {
   return jsonResponse({ ok: true, sent, failed, plate, module: input.module || null });
 }
 
+async function handleNotifyChat(request, env) {
+  if (!kvReady(env)) return jsonResponse({ ok: false, error: "KV binding is not configured" }, 500);
+
+  const input = await readJson(request) || {};
+  const plate = String(input.plate || "").trim().toUpperCase();
+  const senderRole = String(input.sender_role || "").trim().toLowerCase();
+  const senderName = String(input.sender_name || "").trim() || "VNS";
+  const preview = String(input.preview || "").trim() || "New message";
+  const url = String(input.url || "/chat").trim();
+  const isPhoto = Boolean(input.is_photo);
+
+  const safeText = (v, fallback) => (typeof v === "string" && v.trim() ? v.trim() : fallback);
+  const bodyLine = isPhoto ? "Sent a photo" : safeText(preview, "New message");
+  const payload = {
+    title: `${senderName} · ${senderRole ? senderRole.charAt(0).toUpperCase() + senderRole.slice(1) : 'Chat'}`,
+    body: bodyLine,
+    url,
+    tag: `chat-${plate || 'thread'}-${Date.now()}`,
+    timestamp: Date.now(),
+    data: {
+      module: "chat",
+      plate,
+      sender_role: senderRole,
+    },
+  };
+
+  // Recipients: based on who SENT the message. We notify the other two roles.
+  //   client     → notify dispatchers + driver-by-plate
+  //   dispatcher → notify driver-by-plate (client push is skipped for MVP)
+  //   driver     → notify dispatchers (client push is skipped for MVP)
+  const officeRoles = ["Sister", "Payment", "Admin", "Encoder", "Mother", "Approver"];
+  let officeTargets = [];
+  let driverTargets = [];
+
+  if (senderRole === "client" || senderRole === "driver") {
+    officeTargets = await listSubscriptionsByRoles(env.VNS_PUSH_SUBSCRIPTIONS, officeRoles);
+  }
+  if ((senderRole === "client" || senderRole === "dispatcher") && plate) {
+    driverTargets = await listSubscriptionsByPlate(env.VNS_PUSH_SUBSCRIPTIONS, plate, "Driver");
+  }
+
+  let sent = 0;
+  let failed = 0;
+  const all = [...officeTargets, ...driverTargets];
+
+  await Promise.all(all.map(async record => {
+    try {
+      const result = await sendWebPush(record.subscription, payload, env);
+      if (result.expired) await env.VNS_PUSH_SUBSCRIPTIONS.delete(subscriptionKey(record.endpointHash));
+      if (result.ok) sent += 1; else failed += 1;
+    } catch {
+      failed += 1;
+    }
+  }));
+
+  return jsonResponse({ ok: true, sent, failed, plate, sender_role: senderRole });
+}
+
 async function handleAcknowledge(request, env) {
   if (!kvReady(env)) return jsonResponse({ ok: false, error: "KV binding is not configured" }, 500);
 
@@ -916,6 +974,7 @@ async function routeRequest(request, env) {
   if (request.method === "POST" && url.pathname === "/api/push/run-payment-check") return withCors(await handleRunPaymentCheck(env), request);
   if (request.method === "POST" && url.pathname === "/api/push/notify-paid") return withCors(await handleNotifyPaid(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/push/notify-driver") return withCors(await handleNotifyDriver(request, env), request);
+  if (request.method === "POST" && url.pathname === "/api/push/notify-chat") return withCors(await handleNotifyChat(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/push/acknowledge") return withCors(await handleAcknowledge(request, env), request);
   return withCors(jsonResponse({ ok: false, error: "Not found" }, 404), request);
 }
