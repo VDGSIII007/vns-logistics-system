@@ -1,7 +1,79 @@
-import { fetchCashPendingCount } from "./checkers/cash.js";
-import { fetchRepairPendingCount } from "./checkers/repair.js";
+import { extractCashRows, fetchCashSource } from "./checkers/cash.js";
+import { extractRepairRows, fetchRepairSource } from "./checkers/repair.js";
 import { listTargetSubscriptions, subscriptionKey } from "./subscriptions.js";
 import { sendWebPush } from "./webpush.js";
+
+const CASH_PENDING_STATUSES = new Set([
+  "for approval", "pending", "pending approval", "submitted", "for review"
+]);
+const CASH_FINAL_STATUSES = new Set([
+  "approved", "paid", "deposited", "used", "rejected", "returned",
+  "deleted", "cancelled", "canceled"
+]);
+const REPAIR_PENDING_STATUSES = new Set([
+  "for approval", "pending", "pending approval", "submitted", "for review"
+]);
+const REPAIR_FINAL_STATUSES = new Set([
+  "approved", "paid", "rejected", "returned", "deleted", "cancelled", "canceled"
+]);
+
+function norm(v) { return String(v ?? "").trim().toLowerCase(); }
+
+function rowStatuses(row) {
+  return [
+    row?.Review_Status, row?.reviewStatus, row?.Status, row?.status,
+    row?.Approval_Status, row?.approvalStatus, row?.payment_status,
+    row?.Payment_Status, row?.Request_Status, row?.requestStatus,
+  ].map(norm).filter(Boolean);
+}
+
+function isPending(row, pendingSet, finalSet) {
+  if (!row || row.isDeleted || norm(row.Is_Deleted) === "true") return false;
+  for (const s of rowStatuses(row)) {
+    if (s === "draft") continue;
+    if ([...finalSet].some(t => s === t || (t.length > 4 && s.includes(t)))) return false;
+    if ([...pendingSet].some(t => s === t || (t.length > 4 && s.includes(t)))) return true;
+  }
+  return false;
+}
+
+function firstField(row, fields) {
+  for (const f of fields) {
+    const v = row?.[f];
+    if (v != null && String(v).trim()) return String(v).trim();
+  }
+  return "";
+}
+
+function summarizeCashRow(row) {
+  const plate = firstField(row, ["Plate_Number", "plateNumber", "plate_number"]);
+  const ref   = firstField(row, ["Request_No", "requestNo", "request_no", "Cash_Ref_ID", "cashRefId", "cash_ref_id"]);
+  const type  = firstField(row, ["Transaction_Type", "transactionType", "Type", "type", "Request_Type", "requestType", "request_type"]) || "Cash";
+  const amt   = firstField(row, ["Amount", "amount", "budgetAmount"]);
+  return { plate, ref, type, amount: amt };
+}
+
+function summarizeRepairRow(row) {
+  const plate = firstField(row, ["Plate_Number", "plateNumber", "plate_number"]);
+  const ref   = firstField(row, ["Request_No", "requestNo", "request_no", "Repair_Ref_ID", "repairRefId", "repair_ref_id"]);
+  const type  = firstField(row, ["Request_Type", "requestType", "request_type", "Type", "type"]) || "Repair";
+  const amt   = firstField(row, ["Total_Amount", "totalAmount", "total_amount", "Amount", "amount"]);
+  return { plate, ref, type, amount: amt };
+}
+
+function formatAmount(amt) {
+  const n = Number(amt);
+  if (!Number.isFinite(n) || n === 0) return "";
+  return ` ₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+}
+
+function bodyFromSummary(s) {
+  const bits = [];
+  if (s.plate) bits.push(s.plate);
+  if (s.type)  bits.push(s.type);
+  const base = bits.join(" · ");
+  return `${base}${formatAmount(s.amount)}${s.ref ? ` · ${s.ref}` : ""}`.trim() || "New request waiting for approval.";
+}
 
 const LAST_COUNTS_KEY = "push:last-counts:global";
 const LAST_SENT_KEY = "push:last-sent:global";
@@ -16,27 +88,33 @@ function buildCounts(cashPending, repairPending) {
   };
 }
 
-function buildPayload(cashIncreased, repairIncreased) {
+function buildPayload(cashIncreased, repairIncreased, latestCash, latestRepair) {
   if (cashIncreased && !repairIncreased) {
+    const s = latestCash ? summarizeCashRow(latestCash) : null;
     return {
       title: "VNS Cash Approval",
-      body: "New Cash / PO / Bali request waiting for approval.",
-      url: "/approval-center.html?tab=cash"
+      body: s ? bodyFromSummary(s) : "New Cash / PO / Bali request waiting for approval.",
+      url: s?.ref
+        ? `/mobile/approval?module=cash&ref=${encodeURIComponent(s.ref)}`
+        : "/mobile/approval?module=cash"
     };
   }
 
   if (repairIncreased && !cashIncreased) {
+    const s = latestRepair ? summarizeRepairRow(latestRepair) : null;
     return {
       title: "VNS Repair Approval",
-      body: "New Repair / Labor request waiting for approval.",
-      url: "/approval-center.html?tab=repair"
+      body: s ? bodyFromSummary(s) : "New Repair / Labor request waiting for approval.",
+      url: s?.ref
+        ? `/mobile/approval?module=repair&ref=${encodeURIComponent(s.ref)}`
+        : "/mobile/approval?module=repair"
     };
   }
 
   return {
     title: "VNS Approval Alert",
     body: "New approval requests are waiting.",
-    url: "/approval-center.html"
+    url: "/mobile/approval"
   };
 }
 
@@ -106,10 +184,16 @@ async function sendToTargets(env, payload) {
 export async function runApprovalPushCheck(env) {
   if (!env.VNS_PUSH_SUBSCRIPTIONS) throw new Error("KV binding is not configured");
 
-  const [cashPending, repairPending] = await Promise.all([
-    fetchCashPendingCount(env),
-    fetchRepairPendingCount(env)
+  const [cashRaw, repairRaw] = await Promise.all([
+    fetchCashSource(env).catch(() => null),
+    fetchRepairSource(env).catch(() => null)
   ]);
+  const cashRows = cashRaw ? extractCashRows(cashRaw).rows.filter(r => isPending(r, CASH_PENDING_STATUSES, CASH_FINAL_STATUSES)) : [];
+  const repairRows = repairRaw ? extractRepairRows(repairRaw).rows.filter(r => isPending(r, REPAIR_PENDING_STATUSES, REPAIR_FINAL_STATUSES)) : [];
+  const cashPending = cashRows.length;
+  const repairPending = repairRows.length;
+  const latestCash = cashRows[0] || null;
+  const latestRepair = repairRows[0] || null;
   const counts = buildCounts(cashPending, repairPending);
   const previous = await env.VNS_PUSH_SUBSCRIPTIONS.get(LAST_COUNTS_KEY, "json");
   const lastNotification = await getLastNotification(env);
@@ -137,7 +221,7 @@ export async function runApprovalPushCheck(env) {
   let pushed = false;
 
   if (shouldPush && !rateLimited) {
-    const payload = buildPayload(cashIncreased, repairIncreased);
+    const payload = buildPayload(cashIncreased, repairIncreased, latestCash, latestRepair);
     const result = await sendToTargets(env, payload);
     sent = result.sent;
     failed = result.failed;

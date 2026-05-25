@@ -184,19 +184,65 @@ async function sendPaymentQueuePush(env, payload) {
   return { sent, failed };
 }
 
+function firstFieldPQ(row, fields) {
+  for (const f of fields) {
+    const v = row?.[f];
+    if (v != null && String(v).trim()) return String(v).trim();
+  }
+  return "";
+}
+
+function summarizePaymentRow(row, kind) {
+  const plate = firstFieldPQ(row, ["Plate_Number", "plateNumber", "plate_number"]);
+  const ref   = firstFieldPQ(row, ["Request_No", "requestNo", "request_no",
+                                   "Cash_Ref_ID", "cashRefId", "cash_ref_id",
+                                   "Repair_Ref_ID", "repairRefId", "repair_ref_id"]);
+  const type  = firstFieldPQ(row, ["Transaction_Type", "transactionType", "Request_Type",
+                                   "requestType", "request_type", "Type", "type"]) || (kind === "repair" ? "Repair" : "Cash");
+  const amt   = firstFieldPQ(row, ["Total_Amount", "totalAmount", "total_amount", "Amount", "amount"]);
+  return { plate, ref, type, amount: amt, kind };
+}
+
+function buildPaymentBody(s) {
+  const bits = [];
+  if (s.plate) bits.push(s.plate);
+  if (s.type)  bits.push(s.type);
+  const n = Number(s.amount);
+  const amt = Number.isFinite(n) && n > 0 ? ` ₱${n.toLocaleString("en-PH", { minimumFractionDigits: 2 })}` : "";
+  const base = bits.join(" · ");
+  return `${base}${amt}${s.ref ? ` · ${s.ref}` : ""}`.trim() || "New item ready for payment release.";
+}
+
 export async function runPaymentQueuePushCheck(env) {
   if (!env.VNS_PUSH_SUBSCRIPTIONS) throw new Error("KV binding is not configured");
 
-  const paymentQueue = await debugPaymentQueueSources(env);
-  const paymentQueuePending = paymentQueue.paymentQueuePending;
+  // Fetch raw rows so we can both count AND grab the latest record for the push body.
+  const [cashRaw, repairRaw] = await Promise.all([
+    fetchCashSource(env).catch(() => null),
+    fetchRepairSource(env).catch(() => null)
+  ]);
+  const cashRows   = cashRaw   ? extractCashRows(cashRaw).rows.filter(r => paymentQueueReady(r, CASH_STATUS_FIELDS))   : [];
+  const repairRows = repairRaw ? extractRepairRows(repairRaw).rows.filter(r => paymentQueueReady(r, REPAIR_STATUS_FIELDS)) : [];
+  const paymentQueuePending = cashRows.length + repairRows.length;
+  // Pick the most relevant single record to highlight in the push body:
+  // prefer repair (fewer per day; usually higher signal), fall back to cash.
+  const latest = repairRows[0]
+    ? { row: repairRows[0], kind: "repair" }
+    : cashRows[0]
+      ? { row: cashRows[0], kind: "cash" }
+      : null;
+
   const previous = await env.VNS_PUSH_SUBSCRIPTIONS.get(LAST_PAYMENT_COUNT_KEY, "json");
   const previousCount = Number(previous?.paymentQueuePending || 0);
   const hasPrevious = Boolean(previous);
   const shouldPush = hasPrevious && paymentQueuePending > previousCount;
+
+  const summary = latest ? summarizePaymentRow(latest.row, latest.kind) : null;
+  const deepRef = summary?.ref ? `?ref=${encodeURIComponent(summary.ref)}&module=${latest.kind}` : "";
   const payload = {
-    title: "VNS Payment Queue",
-    body: "New item ready for payment release.",
-    url: "/payment-queue.html"
+    title: summary?.kind === "repair" ? "VNS Payment · Repair" : "VNS Payment · Cash",
+    body: summary ? buildPaymentBody(summary) : "New item ready for payment release.",
+    url: `/mobile/payment${deepRef}`
   };
 
   let sent = 0;
