@@ -220,6 +220,12 @@ function mapCashRecord(record) {
     receiver_name: textOrNull(firstValue(record, ["receiver_name", "receiverName", "Receiver_Name", "Person_Name", "personName"])),
     deposit_to: textOrNull(firstValue(record, ["deposit_to", "depositTo", "Deposit_To"])),
     account_number: textOrNull(firstValue(record, ["account_number", "accountNumber", "Account_Number", "GCash_Number", "depositNumber"])),
+    // Diesel PO metadata — was being silently dropped on insert before, so
+    // POs created via chat / driver mobile / staff form never persisted
+    // liters or gas station. Sister now sees these on the payment card.
+    estimated_liters: numberOrNull(firstValue(record, ["estimated_liters", "estimatedLiters", "Estimated_Liters", "liters", "Liters"])),
+    cost_per_liter:   numberOrNull(firstValue(record, ["cost_per_liter", "costPerLiter", "Cost_Per_Liter"])),
+    gas_station:      textOrNull(firstValue(record, ["gas_station", "gasStation", "Gas_Station", "fuelStation", "Fuel_Station"])),
     status: normalizedStatuses.status,
     approval_status: normalizedStatuses.approval_status,
     payment_status: normalizedStatuses.payment_status,
