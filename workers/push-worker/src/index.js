@@ -29,6 +29,7 @@ import {
   deleteSubscriptionByEndpoint,
   endpointHash,
   getSubscriptionByEndpoint,
+  listSubscriptionsByClient,
   listSubscriptionsByPlate,
   listSubscriptionsByRoles,
   saveSubscription,
@@ -198,6 +199,8 @@ async function handleSubscribe(request, env) {
   const result = await saveSubscription(env.VNS_PUSH_SUBSCRIPTIONS, {
     subscription: input.subscription,
     role: input.role,
+    plate: input.plate,         // was dropped before — needed for driver-by-plate push routing
+    client_id: input.client_id, // was dropped before — needed for client portal push routing
     userAgent: input.userAgent || request.headers.get("user-agent") || ""
   });
   if (result.error) return jsonResponse({ ok: false, error: result.error }, 400);
@@ -375,6 +378,7 @@ async function handleNotifyChat(request, env) {
 
   const input = await readJson(request) || {};
   const plate = String(input.plate || "").trim().toUpperCase();
+  const clientId = String(input.client_id || "").trim();
   const senderRole = String(input.sender_role || "").trim().toLowerCase();
   const senderName = String(input.sender_name || "").trim() || "VNS";
   const preview = String(input.preview || "").trim() || "New message";
@@ -396,13 +400,14 @@ async function handleNotifyChat(request, env) {
     },
   };
 
-  // Recipients: based on who SENT the message. We notify the other two roles.
-  //   client     → notify dispatchers + driver-by-plate
-  //   dispatcher → notify driver-by-plate (client push is skipped for MVP)
-  //   driver     → notify dispatchers (client push is skipped for MVP)
+  // Recipients: based on who SENT the message. We notify the other roles.
+  //   client     → notify office + dispatchers + driver-by-plate
+  //   dispatcher → notify driver-by-plate + client (by client_id)
+  //   driver     → notify office + dispatchers + client (by client_id)
   const officeRoles = ["Sister", "Payment", "Admin", "Encoder", "Mother", "Approver"];
   let officeTargets = [];
   let driverTargets = [];
+  let clientTargets = [];
 
   if (senderRole === "client" || senderRole === "driver") {
     officeTargets = await listSubscriptionsByRoles(env.VNS_PUSH_SUBSCRIPTIONS, officeRoles);
@@ -410,10 +415,15 @@ async function handleNotifyChat(request, env) {
   if ((senderRole === "client" || senderRole === "dispatcher") && plate) {
     driverTargets = await listSubscriptionsByPlate(env.VNS_PUSH_SUBSCRIPTIONS, plate, "Driver");
   }
+  // Client-portal push: fire whenever someone OTHER than the client posts in
+  // the client's thread, as long as we know which client_id owns the thread.
+  if ((senderRole === "dispatcher" || senderRole === "driver" || senderRole === "system") && clientId) {
+    clientTargets = await listSubscriptionsByClient(env.VNS_PUSH_SUBSCRIPTIONS, clientId, "Client");
+  }
 
   let sent = 0;
   let failed = 0;
-  const all = [...officeTargets, ...driverTargets];
+  const all = [...officeTargets, ...driverTargets, ...clientTargets];
 
   await Promise.all(all.map(async record => {
     try {
@@ -976,7 +986,67 @@ async function routeRequest(request, env) {
   if (request.method === "POST" && url.pathname === "/api/push/notify-driver") return withCors(await handleNotifyDriver(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/push/notify-chat") return withCors(await handleNotifyChat(request, env), request);
   if (request.method === "POST" && url.pathname === "/api/push/acknowledge") return withCors(await handleAcknowledge(request, env), request);
+  if (request.method === "POST" && url.pathname === "/api/driver/ping") return withCors(await handleDriverPing(request, env), request);
   return withCors(jsonResponse({ ok: false, error: "Not found" }, 404), request);
+}
+
+// Per-isolate soft rate limit for driver phone pings. Workers may run several
+// isolates so this isn't a hard cap — it's just defense against a buggy client
+// firing pings in a tight loop. One ping per plate per 60s.
+const driverPingLastSeen = new Map();
+
+async function handleDriverPing(request, env) {
+  let body;
+  try { body = await request.json(); }
+  catch { return jsonResponse({ ok: false, error: "Invalid JSON" }, 400); }
+
+  const plate = String(body?.plate_number || "").trim().toUpperCase();
+  const lat = Number(body?.latitude);
+  const lng = Number(body?.longitude);
+  if (!plate) return jsonResponse({ ok: false, error: "plate_number required" }, 400);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return jsonResponse({ ok: false, error: "latitude/longitude must be numbers" }, 400);
+  }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return jsonResponse({ ok: false, error: "latitude/longitude out of range" }, 400);
+  }
+
+  const now = Date.now();
+  const prev = driverPingLastSeen.get(plate) || 0;
+  if (now - prev < 60_000) {
+    return jsonResponse({ ok: true, throttled: true });
+  }
+  driverPingLastSeen.set(plate, now);
+  if (driverPingLastSeen.size > 1000) driverPingLastSeen.clear();
+
+  const config = truckSupabaseConfig(env);
+  if (config.error) return jsonResponse({ ok: false, error: config.error }, 500);
+
+  const res = await fetch(`${config.url}/rest/v1/truck_gps_pings`, {
+    method: "POST",
+    headers: {
+      apikey: config.key,
+      Authorization: `Bearer ${config.key}`,
+      "content-type": "application/json",
+      Prefer: "return=minimal"
+    },
+    body: JSON.stringify({
+      plate_number: plate,
+      imei: null,
+      latitude: lat,
+      longitude: lng,
+      recorded_at: new Date(now).toISOString(),
+      source: "driver_phone",
+      speed_kph: null,
+      heading: null
+    })
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    return jsonResponse({ ok: false, error: text || "ping insert failed" }, res.status || 500);
+  }
+  return jsonResponse({ ok: true });
 }
 
 export default {
