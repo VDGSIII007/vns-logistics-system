@@ -226,6 +226,11 @@ function mapCashRecord(record) {
     estimated_liters: numberOrNull(firstValue(record, ["estimated_liters", "estimatedLiters", "Estimated_Liters", "liters", "Liters"])),
     cost_per_liter:   numberOrNull(firstValue(record, ["cost_per_liter", "costPerLiter", "Cost_Per_Liter"])),
     gas_station:      textOrNull(firstValue(record, ["gas_station", "gasStation", "Gas_Station", "fuelStation", "Fuel_Station"])),
+    // Allowance metadata (amount = allowance_days × daily_rate). Was being
+    // dropped on insert, so allowance requests persisted only the total — the
+    // days/rate breakdown vanished from the payment card and history.
+    allowance_days:   numberOrNull(firstValue(record, ["allowance_days", "allowanceDays", "Allowance_Days", "days", "Days"])),
+    daily_rate:       numberOrNull(firstValue(record, ["daily_rate", "dailyRate", "Daily_Rate", "rate", "Rate"])),
     status: normalizedStatuses.status,
     approval_status: normalizedStatuses.approval_status,
     payment_status: normalizedStatuses.payment_status,
@@ -336,6 +341,8 @@ function formatCashRecord(record = {}) {
     estimated_liters: record.estimated_liters ?? raw.estimated_liters ?? raw.Estimated_Liters ?? "",
     cost_per_liter: record.cost_per_liter ?? raw.cost_per_liter ?? raw.Cost_Per_Liter ?? "",
     gas_station: record.gas_station || raw.gas_station || raw.Gas_Station || "",
+    allowance_days: record.allowance_days ?? raw.allowance_days ?? raw.Allowance_Days ?? "",
+    daily_rate: record.daily_rate ?? raw.daily_rate ?? raw.Daily_Rate ?? "",
     isDeleted: raw.isDeleted ?? raw.Is_Deleted ?? record.is_deleted ?? false
   };
   console.log("Cash type source check", {
