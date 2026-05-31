@@ -12,6 +12,11 @@
   const PUSH_ENDPOINT_HASH_KEY = "vnsPushEndpointHash";
   const PUSH_PUBLIC_KEY = window.VNS_PUSH_PUBLIC_KEY || "";
   const PUSH_API_BASE = window.VNS_PUSH_API_BASE || "/api/push";
+  // Push notifications have moved to vns-react (app.vns-logistics.com).
+  // This portal stops subscribing and auto-cleans any existing subscription
+  // on the device to avoid duplicate pings.
+  const PUSH_DEPRECATED = true;
+  const PUSH_DEPRECATION_MESSAGE = "Background alerts moved to app.vns-logistics.com — subscribe there.";
   const ORIGINAL_TITLE = (document.title.replace(/^\(\d+\)\s*/, "") || "VNS Portal")
     .replace(/^VNS Logistics System Portal$/, "VNS Portal");
 
@@ -402,10 +407,11 @@
     const unsubscribeButton = document.querySelector("[data-vns-unsubscribe-push]");
     const testButton = document.querySelector("[data-vns-test-push]");
 
-    if (status) status.textContent = `Background push: ${pushState.status}`;
-    if (message) message.textContent = messageOverride || pushState.message || "";
+    if (status) status.textContent = PUSH_DEPRECATED ? "Background push: moved to app.vns" : `Background push: ${pushState.status}`;
+    if (message) message.textContent = PUSH_DEPRECATED ? PUSH_DEPRECATION_MESSAGE : (messageOverride || pushState.message || "");
     if (subscribeButton) {
-      subscribeButton.hidden = pushState.subscribed;
+      // Deprecated here — always hide subscribe so nobody re-subscribes from this portal.
+      subscribeButton.hidden = PUSH_DEPRECATED || pushState.subscribed;
       subscribeButton.disabled = !pushState.supported || !pushState.registered;
     }
     if (unsubscribeButton) {
@@ -467,6 +473,27 @@
 
     const subscription = await registration.pushManager.getSubscription();
     pushState.subscribed = Boolean(subscription);
+    // Auto-unsubscribe legacy portal subscriptions: pushes have moved to
+    // app.vns-logistics.com (vns-react). Without this, each device gets
+    // duplicate notifications — once from the portal, once from the new app.
+    if (PUSH_DEPRECATED && subscription) {
+      try {
+        const endpoint = subscription.endpoint || "";
+        await subscription.unsubscribe();
+        if (endpoint) {
+          await postPushApi("/unsubscribe", { endpoint }).catch(() => null);
+        }
+        removeStorageValue(PUSH_SUBSCRIPTION_KEY);
+        removeStorageValue(PUSH_ENDPOINT_HASH_KEY);
+        pushState.subscribed = false;
+        pushState.status = "Migrated";
+        pushState.message = PUSH_DEPRECATION_MESSAGE;
+      } catch (error) {
+        console.warn("VNS notifications: legacy auto-unsubscribe failed.", error);
+      }
+      renderBackgroundPushStatus();
+      return null;
+    }
     if (subscription) {
       const serializedSubscription = subscription.toJSON ? subscription.toJSON() : subscription;
       writeJsonValue(PUSH_SUBSCRIPTION_KEY, serializedSubscription);
@@ -702,6 +729,15 @@
   }
 
   async function subscribeToPushAlerts() {
+    // Push subscriptions moved to vns-react. If anyone still triggers this
+    // path (e.g. via a stale cached button), redirect to the new app instead
+    // of re-subscribing here.
+    if (PUSH_DEPRECATED) {
+      pushState.message = PUSH_DEPRECATION_MESSAGE;
+      pushState.status = "Migrated";
+      renderBackgroundPushStatus();
+      return;
+    }
     if (!pushSupported()) {
       pushState.status = "Not supported";
       pushState.message = "Background push is not supported on this device.";

@@ -24,8 +24,17 @@ self.addEventListener("push", event => {
   const title = payload.title || "VNS Portal";
   const options = {
     body: payload.body || "New item needs attention",
+    // Unique tag → each paid item shows as its own notification in the OS tray
+    // instead of collapsing into one. Falls back to a timestamped tag.
+    tag:  payload.tag || ("vns-" + Date.now()),
+    // `renotify` makes the OS re-alert even when a notif with the same tag exists
+    renotify: true,
+    timestamp: payload.timestamp || Date.now(),
     data: {
-      url: payload.url || "/portal.html"
+      url:    payload.url    || "/mobile/payment?tab=paid",
+      module: payload.data?.module || payload.module || null,
+      ref:    payload.data?.ref    || payload.ref    || null,
+      target: payload.data?.target || payload.target || null,
     }
   };
 
