@@ -296,6 +296,13 @@ async function handleNotifyPaid(request, env) {
   if (!kvReady(env)) return jsonResponse({ ok: false, error: "KV binding is not configured" }, 500);
 
   const input = await readJson(request) || {};
+  const result = await sendPaymentQueueNotification(env, input);
+  return jsonResponse({ ok: true, ...result, module: input.module || null });
+}
+
+async function sendPaymentQueueNotification(env, input = {}) {
+  if (!kvReady(env)) return { sent: 0, failed: 0, skipped: true, error: "KV binding is not configured" };
+
   // Honor caller-supplied title/body/url so each paid item creates a unique
   // notification that deep-links straight to that record in the React app.
   // The `tag` makes each notif stack separately in the OS tray instead of
@@ -330,7 +337,43 @@ async function handleNotifyPaid(request, env) {
     }
   }));
 
-  return jsonResponse({ ok: true, sent, failed, module: input.module || null });
+  return { sent, failed };
+}
+
+function firstNotifyValue(record = {}, keys = []) {
+  for (const key of keys) {
+    const value = record?.[key];
+    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+  }
+  return "";
+}
+
+function moneyText(value) {
+  const amount = Number(String(value ?? "").replace(/[^\d.-]/g, ""));
+  if (!Number.isFinite(amount) || amount <= 0) return "";
+  return `PHP ${amount.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+async function notifyCashRequestCreated(env, result) {
+  const record = result?.record || result?.records?.[0] || {};
+  const ref = firstNotifyValue(record, ["cash_ref_id", "cashRefId", "Cash_Ref_ID", "request_no", "requestNo", "Request_No", "request_id", "requestId", "Cash_ID"]);
+  const type = firstNotifyValue(record, ["request_type", "requestType", "Request_Type", "Transaction_Type", "type", "Type"]) || "Cash Request";
+  const plate = firstNotifyValue(record, ["plateNumber", "Plate_Number", "plate_number", "Sender"]) || "No Plate";
+  const amount = firstNotifyValue(record, ["amount", "Amount", "budgetAmount", "Budget_Amount"]);
+  const bodyParts = [plate, moneyText(amount), ref].filter(Boolean);
+
+  try {
+    return await sendPaymentQueueNotification(env, {
+      module: "cash",
+      ref,
+      title: `New ${type} submitted`,
+      body: bodyParts.length ? bodyParts.join(" - ") : "New cash request waiting.",
+      url: `/mobile/payment?module=cash&ref=${encodeURIComponent(ref || "")}`,
+      tag: `new-cash-${ref || Date.now()}`
+    });
+  } catch (error) {
+    return { sent: 0, failed: 0, skipped: true, error: error?.message || "Cash submit notification failed" };
+  }
 }
 
 async function handleNotifyDriver(request, env) {
@@ -464,13 +507,16 @@ async function handleCashCreate(request, env) {
     }, result.status || 500);
   }
 
+  const notification = await notifyCashRequestCreated(env, result);
+
   return jsonResponse({
     ok: true,
     request_id: result.request_id,
     count: result.count,
     source: result.source,
     record: result.record,
-    records: result.records
+    records: result.records,
+    notification
   });
 }
 
